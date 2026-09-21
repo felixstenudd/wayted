@@ -1,0 +1,9 @@
+{
+  "app": {
+    "name": "wayted"
+  },
+  "planner": {
+    "title": "Plan a route",
+    "placeholder": "The map goes here."
+  }
+}
