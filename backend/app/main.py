@@ -1,8 +1,9 @@
 import os
 from contextlib import asynccontextmanager
 
-from app.db.pool import pool
 from fastapi import FastAPI
+
+from app.db.pool import pool
 
 
 @asynccontextmanager
