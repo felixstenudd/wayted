@@ -1,5 +1,4 @@
-import os
-
 from psycopg_pool import AsyncConnectionPool
 
-pool = AsyncConnectionPool(os.environ["DATABASE_URL"], open=False)
+# An empty conninfo makes libpq read PGHOST, PGUSER, PGPASSWORD etc. from the environment.
+pool = AsyncConnectionPool("", open=False)
