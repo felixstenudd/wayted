@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from app.db.pool import pool
@@ -11,7 +12,16 @@ async def lifespan(app: FastAPI):
     await pool.close()
 
 
-app = FastAPI(title="wayted", lifespan=lifespan)
+# Docs and the OpenAPI spec are opt-in so production never exposes the API surface by accident.
+docs_enabled = os.environ.get("API_DOCS_ENABLED") == "true"
+
+app = FastAPI(
+    title="wayted",
+    lifespan=lifespan,
+    docs_url="/docs" if docs_enabled else None,
+    redoc_url="/redoc" if docs_enabled else None,
+    openapi_url="/openapi.json" if docs_enabled else None,
+)
 
 
 @app.get("/")
