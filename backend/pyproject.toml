@@ -1,8 +1,26 @@
 [project]
 name = "wayted-backend"
 version = "0.1.0"
+requires-python = ">=3.12"
 dependencies = [
   "fastapi",
   "uvicorn[standard]",
   "psycopg[binary,pool]",
 ]
+
+[project.optional-dependencies]
+dev = ["ruff", "mypy"]
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]  # pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+strict = true
