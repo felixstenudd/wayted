@@ -1,7 +1,13 @@
 {
-  "semi": false,
-  "singleQuote": true,
-  "printWidth": 100,
-  "trailingComma": "all",
-  "vueIndentScriptAndStyle": false
+	"semi": false,
+	"singleQuote": true,
+	"printWidth": 100,
+	"trailingComma": "all",
+	"useTabs": true,
+	"tabWidth": 4,
+	"vueIndentScriptAndStyle": false,
+	"plugins": [
+		"prettier-plugin-tailwindcss"
+	],
+	"tailwindStylesheet": "./src/assets/main.css"
 }
