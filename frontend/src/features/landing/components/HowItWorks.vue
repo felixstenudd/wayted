@@ -7,16 +7,16 @@ import { CourseSymbol } from '@/shared/ui/course-symbol'
 interface Step {
 	id: string
 	symbol: CourseSymbolKind
-	controlNumber?: number
 }
 
 const { t } = useI18n()
 
-// The steps are drawn as a course because they are a real sequence.
+// The steps are drawn as a course because they are a real sequence. Controls
+// stay unnumbered here: numbers mean waypoints, and the list carries the order.
 const steps: Step[] = [
 	{ id: 'start', symbol: 'start' },
-	{ id: 'distance', symbol: 'control', controlNumber: 1 },
-	{ id: 'preferences', symbol: 'control', controlNumber: 2 },
+	{ id: 'distance', symbol: 'control' },
+	{ id: 'preferences', symbol: 'control' },
 	{ id: 'pick', symbol: 'finish' },
 ]
 
@@ -40,13 +40,9 @@ const lastStepIndex = steps.length - 1
 					<span
 						v-if="index < lastStepIndex"
 						aria-hidden="true"
-						class="absolute top-8 bottom-1 left-3.25 w-0.5 bg-overprint md:top-3.25 md:-right-5 md:bottom-auto md:left-8 md:h-0.5 md:w-auto"
+						class="absolute top-8 bottom-1 left-2.75 w-1.5 border-x border-overprint-contrast bg-overprint md:top-2.75 md:-right-5 md:bottom-auto md:left-8 md:h-1.5 md:w-auto md:border-x-0 md:border-y"
 					/>
-					<CourseSymbol
-						:kind="step.symbol"
-						:control-number="step.controlNumber"
-						class="relative size-7 shrink-0"
-					/>
+					<CourseSymbol :kind="step.symbol" class="relative size-7 shrink-0" />
 					<div class="flex flex-col gap-1">
 						<h3 class="text-title">{{ t(`landing.howItWorks.${step.id}.title`) }}</h3>
 						<p class="max-w-xs text-graphite">

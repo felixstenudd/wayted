@@ -5,8 +5,11 @@
  * Raw token values live on :root so the dark theme can swap them without
  * components needing dark: variants. @theme below maps them to utilities.
  *
- * overprint is reserved for the course (selected route, course symbols) and
- * keyboard focus. Chrome never uses it.
+ * overprint is reserved for the course (selected route, course symbols).
+ * Chrome never uses it. It is a bright yellow in both themes, so anything
+ * drawn in it gets an overprint-contrast edge: ink on light, where yellow
+ * alone vanishes on white, and paper on dark, where the edge blends away.
+ * Text on overprint uses overprint-contrast too.
  */
 :root {
 	color-scheme: light;
@@ -17,7 +20,9 @@
 	--graphite: oklch(48.7% 0.014 259.8);
 	--line: oklch(90.2% 0.006 255.5);
 	--line-strong: oklch(65.5% 0.013 259.8);
-	--overprint: oklch(49.6% 0.202 337.3);
+	--overprint: oklch(88.549% 0.13038 99.514);
+	--overprint-contrast: var(--ink);
+	--focus-ring: var(--ink);
 	--vegetation: oklch(51.5% 0.123 147.4);
 	--contour: oklch(49.2% 0.129 46.1);
 
@@ -35,7 +40,9 @@
 		--graphite: oklch(71.1% 0.013 259.8);
 		--line: oklch(31.6% 0.012 258.4);
 		--line-strong: oklch(52.6% 0.016 258.4);
-		--overprint: oklch(72.5% 0.194 336.3);
+		--overprint: oklch(88.549% 0.13038 99.514);
+		--overprint-contrast: var(--paper);
+		--focus-ring: var(--overprint);
 		--vegetation: oklch(72.8% 0.142 147.8);
 		--contour: oklch(73.2% 0.134 55.2);
 
@@ -57,6 +64,7 @@
 	--color-line: var(--line);
 	--color-line-strong: var(--line-strong);
 	--color-overprint: var(--overprint);
+	--color-overprint-contrast: var(--overprint-contrast);
 	--color-vegetation: var(--vegetation);
 	--color-contour: var(--contour);
 
@@ -121,17 +129,17 @@
 	}
 
 	::selection {
-		background-color: color-mix(in oklch, var(--overprint) 22%, transparent);
+		background-color: color-mix(in oklab, var(--overprint) 45%, transparent);
 		color: var(--ink);
 	}
 
 	input,
 	textarea {
-		caret-color: var(--overprint);
+		caret-color: var(--focus-ring);
 	}
 
 	:focus-visible {
-		outline: 2px solid var(--overprint);
+		outline: 2px solid var(--focus-ring);
 		outline-offset: 2px;
 	}
 

@@ -24,7 +24,7 @@ const passwordVisible = ref(false)
 		/>
 		<button
 			type="button"
-			class="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-sm text-graphite transition-colors duration-150 ease-out hover:text-ink"
+			class="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-sm text-graphite transition-[color] duration-150 ease-out hover:text-ink"
 			:aria-label="passwordVisible ? t('auth.password.hide') : t('auth.password.show')"
 			@click="passwordVisible = !passwordVisible"
 		>

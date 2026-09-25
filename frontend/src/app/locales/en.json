@@ -15,15 +15,17 @@
 			"lead": "Set a start, a finish and how far you want to go. Say what matters to you, like parks or quiet streets, and choose from routes that fit."
 		},
 		"illustration": {
-			"label": "Example map. A route drawn in purple runs from a start triangle through waypoints 1 and 2 to a finish circle. A second route is drawn in grey.",
-			"caption": "Example: two routes for a 10 km run. The purple one is selected.",
-			"candidate": "{letter} {distanceKm} km"
+			"label": "Example map. Route A, drawn in yellow, runs from a start triangle through waypoints 1 and 2 to a finish circle. Route B is drawn in grey.",
+			"caption": "Example: two routes for a 10 km run. Route A is selected.",
+			"candidate": "{letter} {distanceKm} km",
+			"scale": "1 km",
+			"scaleLabel": "Scale: this bar is 1 km on the map."
 		},
 		"howItWorks": {
 			"title": "How it works",
 			"start": {
-				"title": "Start and finish",
-				"body": "Place them on the map. Add waypoints if there is somewhere you want to pass."
+				"title": "Place your points",
+				"body": "Put a start and a finish on the map. Add waypoints if there is somewhere you want to pass."
 			},
 			"distance": {
 				"title": "Target distance",

@@ -25,7 +25,7 @@ const { t } = useI18n()
 						t('landing.startPlanning')
 					}}</RouterLink>
 				</Button>
-				<Button as-child variant="link" class="self-start sm:self-auto">
+				<Button as-child variant="link" class="self-center sm:self-auto">
 					<RouterLink :to="{ name: 'create-account' }">{{
 						t('landing.createAccount')
 					}}</RouterLink>
