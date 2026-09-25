@@ -2,6 +2,43 @@
 	"app": {
 		"name": "wayted"
 	},
+	"landing": {
+		"nav": {
+			"label": "Main",
+			"footerLabel": "Account"
+		},
+		"signIn": "Sign in",
+		"createAccount": "Create account",
+		"startPlanning": "Start planning",
+		"hero": {
+			"title": "Routes that fit your distance and the streets you like.",
+			"lead": "Set a start, a finish and how far you want to go. Say what matters to you, like parks or quiet streets, and choose from routes that fit."
+		},
+		"illustration": {
+			"label": "Example map. A route drawn in purple runs from a start triangle through waypoints 1 and 2 to a finish circle. A second route is drawn in grey.",
+			"caption": "Example: two routes for a 10 km run. The purple one is selected.",
+			"candidate": "{letter} {distanceKm} km"
+		},
+		"howItWorks": {
+			"title": "How it works",
+			"start": {
+				"title": "Start and finish",
+				"body": "Place them on the map. Add waypoints if there is somewhere you want to pass."
+			},
+			"distance": {
+				"title": "Target distance",
+				"body": "Say how far you want to go."
+			},
+			"preferences": {
+				"title": "What matters",
+				"body": "Weigh green space, quiet streets and places worth passing."
+			},
+			"pick": {
+				"title": "Pick a route",
+				"body": "Compare the routes that fit, adjust the one you like, and save it for later."
+			}
+		}
+	},
 	"planner": {
 		"title": "Plan a route",
 		"placeholder": "The map goes here."
