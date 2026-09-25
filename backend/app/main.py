@@ -3,14 +3,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.db.pool import pool
+from app import auth, db, logbook, routing
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await pool.open()
+    await db.pool.open()
     yield
-    await pool.close()
+    await db.pool.close()
 
 
 # Docs and the OpenAPI spec are opt-in so production never exposes the API surface by accident.
@@ -23,6 +23,9 @@ app = FastAPI(
     redoc_url="/redoc" if docs_enabled else None,
     openapi_url="/openapi.json" if docs_enabled else None,
 )
+app.include_router(auth.router)
+app.include_router(logbook.router)
+app.include_router(routing.router)
 
 
 @app.get("/")
@@ -32,6 +35,6 @@ def root():
 
 @app.get("/health")
 async def health():
-    async with pool.connection() as conn:
+    async with db.pool.connection() as conn:
         await conn.execute("SELECT 1")
     return {"status": "ok"}
