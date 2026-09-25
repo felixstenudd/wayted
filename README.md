@@ -6,6 +6,9 @@ Copy `.env.example` to `.env` and fill in the values.
 POSTGRES_USER=wayted
 POSTGRES_PASSWORD=change-me
 POSTGRES_DB=wayted
+WAYTED_DOWNLOADER_PASSWORD=change-me
+WAYTED_MAPPER_PASSWORD=change-me
+WAYTED_API_PASSWORD=change-me
 HTTP_PORT=80
 DB_PORT=5432
 ```
