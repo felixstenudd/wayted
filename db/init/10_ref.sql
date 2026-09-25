@@ -1,0 +1,1 @@
+-- Lookup tables: attributes, activities. Rows are inserted in 90_ref_seed.sql.
