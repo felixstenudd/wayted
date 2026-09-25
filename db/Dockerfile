@@ -5,7 +5,6 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       postgresql-17-postgis-3 \
       postgresql-17-pgrouting \
-      osm2pgrouting \
  && rm -rf /var/lib/apt/lists/*
 
 COPY init/ /docker-entrypoint-initdb.d/

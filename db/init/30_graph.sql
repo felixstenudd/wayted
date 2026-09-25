@@ -1,0 +1,13 @@
+-- Routable network, written by wayted_mapper and read by pgRouting.
+
+-- Example table (not real):
+-- CREATE TABLE graph.example_edge (
+--     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+--     source_id     bigint NOT NULL,
+--     target_id     bigint NOT NULL,
+--     length_m      double precision NOT NULL CHECK (length_m >= 0),
+--     geom          geometry(LineString, 4326) NOT NULL,
+--     created_at    timestamptz NOT NULL DEFAULT now()
+-- );
+--
+-- CREATE INDEX example_edge_geom_idx ON graph.example_edge USING gist (geom);

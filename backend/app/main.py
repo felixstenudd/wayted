@@ -3,14 +3,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.db.pool import pool
+from app.db.pool import api_pool
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await pool.open()
+    await api_pool.open()
     yield
-    await pool.close()
+    await api_pool.close()
 
 
 # Docs and the OpenAPI spec are opt-in so production never exposes the API surface by accident.
@@ -32,6 +32,6 @@ def root():
 
 @app.get("/health")
 async def health():
-    async with pool.connection() as conn:
+    async with api_pool.connection() as conn:
         await conn.execute("SELECT 1")
     return {"status": "ok"}

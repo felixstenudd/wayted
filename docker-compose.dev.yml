@@ -8,6 +8,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -23,9 +26,11 @@ services:
     environment:
       PGHOST: db
       PGPORT: 5432
-      PGUSER: ${POSTGRES_USER}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB}
+      # Each part of the backend connects as its own role; see db/init/80_grants.sql.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
       API_DOCS_ENABLED: "true"
     volumes:
       - ./backend/app:/app/app
