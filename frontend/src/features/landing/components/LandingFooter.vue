@@ -16,10 +16,12 @@ const { t } = useI18n()
 			<Wordmark>{{ t('app.name') }}</Wordmark>
 			<nav :aria-label="t('landing.nav.footerLabel')" class="flex gap-6">
 				<Button as-child variant="link" size="sm">
-					<RouterLink to="/sign-in">{{ t('landing.signIn') }}</RouterLink>
+					<RouterLink :to="{ name: 'sign-in' }">{{ t('landing.signIn') }}</RouterLink>
 				</Button>
 				<Button as-child variant="link" size="sm">
-					<RouterLink to="/create-account">{{ t('landing.createAccount') }}</RouterLink>
+					<RouterLink :to="{ name: 'create-account' }">{{
+						t('landing.createAccount')
+					}}</RouterLink>
 				</Button>
 			</nav>
 		</div>

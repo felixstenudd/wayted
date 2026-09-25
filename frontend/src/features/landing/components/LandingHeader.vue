@@ -17,7 +17,7 @@ const { t } = useI18n()
 		</RouterLink>
 		<nav :aria-label="t('landing.nav.label')" class="flex items-center gap-2 sm:gap-3">
 			<Button as-child variant="ghost" size="sm">
-				<RouterLink to="/sign-in">{{ t('landing.signIn') }}</RouterLink>
+				<RouterLink :to="{ name: 'sign-in' }">{{ t('landing.signIn') }}</RouterLink>
 			</Button>
 			<Button as-child size="sm" class="max-sm:hidden">
 				<RouterLink :to="{ name: 'planner' }">{{ t('landing.startPlanning') }}</RouterLink>

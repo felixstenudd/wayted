@@ -39,6 +39,40 @@
 			}
 		}
 	},
+	"auth": {
+		"fields": {
+			"name": "Name",
+			"email": "Email",
+			"password": "Password",
+			"newPasswordHint": "At least {min} characters."
+		},
+		"password": {
+			"show": "Show password",
+			"hide": "Hide password"
+		},
+		"errors": {
+			"nameRequired": "Enter your name.",
+			"emailRequired": "Enter your email address.",
+			"emailInvalid": "Enter an email address like name{'@'}example.com.",
+			"passwordRequired": "Enter your password.",
+			"passwordTooShort": "Use at least {min} characters for your password."
+		},
+		"signIn": {
+			"title": "Sign in",
+			"submit": "Sign in",
+			"submitting": "Signing in…",
+			"noAccount": "New to wayted?",
+			"createAccount": "Create account"
+		},
+		"createAccount": {
+			"title": "Create account",
+			"lead": "Save your routes and come back to them later.",
+			"submit": "Create account",
+			"submitting": "Creating account…",
+			"haveAccount": "Already have an account?",
+			"signIn": "Sign in"
+		}
+	},
 	"planner": {
 		"title": "Plan a route",
 		"placeholder": "The map goes here."

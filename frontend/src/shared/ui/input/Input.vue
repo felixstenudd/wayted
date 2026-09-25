@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="Value extends string | number">
 import type { HTMLAttributes } from 'vue'
 
 import { cn } from '@/shared/utils/cn'
@@ -7,7 +7,7 @@ const props = defineProps<{
 	class?: HTMLAttributes['class']
 }>()
 
-const model = defineModel<string | number>({ default: '' })
+const model = defineModel<Value>({ required: true })
 </script>
 
 <template>
