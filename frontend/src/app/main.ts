@@ -1,3 +1,4 @@
+import '@fontsource-variable/schibsted-grotesk'
 import { createApp } from 'vue'
 
 import '@/assets/main.css'

@@ -1,3 +1,147 @@
 @import 'tailwindcss';
 
-/* Design tokens land here in the next sprint, after the design plan is agreed. */
+/*
+ * Raw token values live on :root so the dark theme can swap them without
+ * components needing dark: variants. @theme below maps them to utilities.
+ *
+ * overprint is reserved for the course (selected route, course symbols) and
+ * keyboard focus. Chrome never uses it.
+ */
+:root {
+	color-scheme: light;
+
+	--paper: oklch(100% 0 0);
+	--sunken: oklch(96.7% 0.002 247.8);
+	--ink: oklch(20.4% 0.007 258.4);
+	--graphite: oklch(48.7% 0.014 259.8);
+	--line: oklch(90.2% 0.006 255.5);
+	--line-strong: oklch(65.5% 0.013 259.8);
+	--overprint: oklch(49.6% 0.202 337.3);
+	--vegetation: oklch(51.5% 0.123 147.4);
+	--contour: oklch(49.2% 0.129 46.1);
+
+	--elevation-float:
+		0 1px 2px oklch(20.4% 0.007 258.4 / 0.08), 0 6px 20px oklch(20.4% 0.007 258.4 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		color-scheme: dark;
+
+		--paper: oklch(19% 0.005 248.1);
+		--sunken: oklch(23.4% 0.009 255.6);
+		--ink: oklch(94.6% 0.003 264.5);
+		--graphite: oklch(71.1% 0.013 259.8);
+		--line: oklch(31.6% 0.012 258.4);
+		--line-strong: oklch(52.6% 0.016 258.4);
+		--overprint: oklch(72.5% 0.194 336.3);
+		--vegetation: oklch(72.8% 0.142 147.8);
+		--contour: oklch(73.2% 0.134 55.2);
+
+		--elevation-float: 0 1px 2px oklch(0% 0 0 / 0.4), 0 8px 24px oklch(0% 0 0 / 0.45);
+	}
+}
+
+/*
+ * Tailwind's default colors, type sizes, radii and shadows are cleared so
+ * only our tokens exist as utilities; a raw text-neutral-600 or rounded-xl
+ * fails to generate instead of slipping through review.
+ */
+@theme inline {
+	--color-*: initial;
+	--color-paper: var(--paper);
+	--color-sunken: var(--sunken);
+	--color-ink: var(--ink);
+	--color-graphite: var(--graphite);
+	--color-line: var(--line);
+	--color-line-strong: var(--line-strong);
+	--color-overprint: var(--overprint);
+	--color-vegetation: var(--vegetation);
+	--color-contour: var(--contour);
+
+	--font-*: initial;
+	--font-sans: 'Schibsted Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+
+	--text-*: initial;
+	--text-caption: 0.75rem;
+	--text-caption--line-height: 1rem;
+	--text-caption--font-weight: 550;
+	--text-small: 0.8125rem;
+	--text-small--line-height: 1.125rem;
+	--text-small--font-weight: 450;
+	--text-body: 0.9375rem;
+	--text-body--line-height: 1.375rem;
+	--text-input: 1rem;
+	--text-input--line-height: 1.5rem;
+	--text-title: 1.0625rem;
+	--text-title--line-height: 1.5rem;
+	--text-title--font-weight: 650;
+	--text-heading: 1.375rem;
+	--text-heading--line-height: 1.75rem;
+	--text-heading--font-weight: 700;
+	--text-display: 2rem;
+	--text-display--line-height: 2.25rem;
+	--text-display--font-weight: 750;
+	--text-display--letter-spacing: -0.015em;
+	--text-hero: clamp(2.5rem, 1.5rem + 4vw, 4rem);
+	--text-hero--line-height: 1.02;
+	--text-hero--font-weight: 800;
+	--text-hero--letter-spacing: -0.025em;
+
+	--radius-*: initial;
+	--radius-sm: 0.25rem;
+	--radius-md: 0.5rem;
+	--radius-lg: 0.875rem;
+
+	--shadow-*: initial;
+	--shadow-float: var(--elevation-float);
+
+	--ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+	html {
+		background-color: var(--paper);
+		color: var(--ink);
+		font-size: 100%;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	body {
+		font-size: var(--text-body);
+		line-height: var(--text-body--line-height);
+	}
+
+	h1,
+	h2,
+	h3 {
+		text-wrap: balance;
+	}
+
+	::selection {
+		background-color: color-mix(in oklch, var(--overprint) 22%, transparent);
+		color: var(--ink);
+	}
+
+	input,
+	textarea {
+		caret-color: var(--overprint);
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--overprint);
+		outline-offset: 2px;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		::before,
+		::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+			scroll-behavior: auto !important;
+		}
+	}
+}
