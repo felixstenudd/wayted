@@ -2,6 +2,6 @@
 Creates an AsyncConnectionPool
 """
 
-from .pool import pool
+from .pool import api_pool
 
-__all__ = ["pool"]
+__all__ = ["api_pool"]
