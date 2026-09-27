@@ -37,11 +37,14 @@ class RectangleResult:
 
 class Downloader[P](Protocol):
     """
-    A source for one layer. fetch never touches the database and store never touches the
-    network, so no connection is held while waiting on the source.
+    A source for one or more layers fetched in the same request. Each layer is still its own
+    download: its tiles are marked separately in raw.fetched_tiles.
+
+    fetch never touches the database and store never touches the network, so no connection is
+    held while waiting on the source.
     """
 
-    layer: str  # ref.source_layers code
+    layers: tuple[str, ...]  # ref.source_layers codes, all at the same zoom
     max_tiles: int
     max_extra_tiles: int
 
