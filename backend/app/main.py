@@ -3,14 +3,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app import auth, db, logbook, routing
+from app import API_ROLE, API_ROLE_PASSWORD, auth, db, logbook, routing
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await db.api_pool.open()
-    yield
-    await db.api_pool.close()
+    await db.open_pool(API_ROLE, API_ROLE_PASSWORD)
+    try:
+        yield
+    finally:
+        db.close_pools()
 
 
 # Docs and the OpenAPI spec are opt-in so production never exposes the API surface by accident.
