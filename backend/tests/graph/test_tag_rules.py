@@ -47,6 +47,9 @@ async def access_for(
         ({"highway": "residential", "access": "private"}, None),
         ({"highway": "residential", "access": "no", "foot": "yes"}, (RUNNING, RUNNING)),
         ({"highway": "primary", "bicycle": "use_sidepath"}, (RUNNING, RUNNING)),
+        ({"highway": "proposed", "proposed": "cycleway", "bicycle": "designated"}, None),
+        ({"highway": "construction", "foot": "yes"}, None),
+        ({"highway": "disused", "access": "yes", "foot": "permissive"}, None),
     ],
 )
 async def test_tags_decide_who_may_go_which_way(

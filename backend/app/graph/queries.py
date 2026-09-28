@@ -93,6 +93,9 @@ CLASSIFY_WAYS = """
         FROM context w CROSS JOIN ref.activities act
         WHERE (w.tags ? 'highway' OR w.tags ->> 'route' = 'ferry')
           AND w.tags ->> 'area' IS DISTINCT FROM 'yes'
+          -- Roads that do not exist (yet); an access tag on them must not make them routable.
+          AND coalesce(w.tags ->> 'highway', '')
+              NOT IN ('proposed', 'construction', 'abandoned', 'razed', 'disused')
     ),
     access AS (
         SELECT
