@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .security import decode_token
+from app.auth.security import user_id_from_token
 
 _bearer = HTTPBearer(auto_error=False)
 AuthCreds = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]
@@ -18,20 +18,17 @@ def _unauthorized() -> HTTPException:
     )
 
 
-def current_user(creds: AuthCreds) -> UUID | None:
+def current_user(creds: AuthCreds) -> UUID:
     """Return the authenticated user's id, or respond 401."""
     if creds is None:
         raise _unauthorized()
-    claims = decode_token(creds.credentials)
-    if claims is None:
+    user_id = user_id_from_token(creds.credentials)
+    if user_id is None:
         raise _unauthorized()
-    try:
-        return UUID(claims["sub"])
-    except ValueError:
-        raise _unauthorized() from None
+    return user_id
 
 
-def current_user_optional(creds: AuthCreds) -> UUID:
+def current_user_optional(creds: AuthCreds) -> UUID | None:
     """
     Return the authenticated user's id, None if no token was sent,
     or respond 401 if the token is invalid.

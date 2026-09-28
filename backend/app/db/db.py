@@ -1,5 +1,4 @@
 import asyncio
-import os
 
 from psycopg.conninfo import make_conninfo
 from psycopg_pool import AsyncConnectionPool
@@ -26,9 +25,3 @@ def connection(role: str):
     if pool is None:
         raise RuntimeError(f"No pool open for {role}")
     return pool.connection()
-
-
-api_pool = AsyncConnectionPool(
-    make_conninfo(user="wayted_api", password=os.environ["WAYTED_API_PASSWORD"]),
-    open=False,
-)
