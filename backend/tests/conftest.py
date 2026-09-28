@@ -23,10 +23,17 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 @pytest.fixture
 async def admin_conn() -> AsyncIterator[AsyncConnection[TupleRow]]:
-    """Superuser connection for setup and assertions. Empties the raw tables first."""
+    """Superuser connection for setup and assertions. Empties the raw and graph tables first."""
     assert TEST_DATABASE_URL
     conn = await AsyncConnection.connect(TEST_DATABASE_URL, autocommit=True)
-    await conn.execute("TRUNCATE raw.fetched_tiles, raw.osm_nodes, raw.osm_ways, raw.osm_relations")
+    await conn.execute(
+        """
+        TRUNCATE raw.fetched_tiles, raw.osm_nodes, raw.osm_ways, raw.osm_relations,
+            graph.ways, graph.vertices, graph.edges,
+            graph.pending_ways, graph.pending_nodes, graph.pending_edges
+        RESTART IDENTITY
+        """
+    )
     yield conn
     await conn.close()
 
