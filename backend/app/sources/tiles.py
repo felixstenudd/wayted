@@ -7,7 +7,7 @@ from math import asinh, atan, ceil, degrees, floor, pi, radians, sinh, tan
 MAX_LATITUDE = 85.0511287798
 MAX_ZOOM = 22
 
-EDGE_TOLERANCE = 1e-9
+EDGE_TOLERANCE = 1e-12
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,10 +155,11 @@ def tiles_for_bounds(bounds: Bounds, z: int) -> set[Tile]:
     north = min(bounds.north, MAX_LATITUDE)
     south = max(bounds.south, -MAX_LATITUDE)
     n = 1 << z
-    x_min = floor(_x_position(bounds.west, z) + EDGE_TOLERANCE)
-    y_min = floor(_y_position(north, z) + EDGE_TOLERANCE)
-    x_max = ceil(_x_position(bounds.east, z) - EDGE_TOLERANCE) - 1
-    y_max = ceil(_y_position(south, z) - EDGE_TOLERANCE) - 1
+    tolerance = EDGE_TOLERANCE * n
+    x_min = floor(_x_position(bounds.west, z) + tolerance)
+    y_min = floor(_y_position(north, z) + tolerance)
+    x_max = ceil(_x_position(bounds.east, z) - tolerance) - 1
+    y_max = ceil(_y_position(south, z) - tolerance) - 1
     rect = TileRect(
         z=z,
         x_min=min(max(x_min, 0), n - 1),
