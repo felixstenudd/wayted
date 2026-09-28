@@ -72,18 +72,30 @@ def build_query(
     shallow_selectors return only the matched elements, without their nodes or members. A
     national cycle route relation would otherwise pull in every way along its whole length.
     """
+    south, west = _coordinate(bounds.south), _coordinate(bounds.west)
+    north, east = _coordinate(bounds.north), _coordinate(bounds.east)
     # Overpass orders bbox: south, west, north, east.
-    bbox = f"({bounds.south},{bounds.west},{bounds.north},{bounds.east})"
+    bbox = f"({south},{west},{north},{east})"
     header = f"[out:json][timeout:{timeout_s}];"
     union = "".join(f"{selector}{bbox};" for selector in selectors)
     if enclosing_selectors:
-        centre = f"{(bounds.south + bounds.north) / 2},{(bounds.west + bounds.east) / 2}"
+        lat = _coordinate((bounds.south + bounds.north) / 2)
+        lon = _coordinate((bounds.west + bounds.east) / 2)
+        centre = f"{lat},{lon}"
         header += f"is_in({centre})->.enclosing;"
         union += "".join(f"{selector}(pivot.enclosing);" for selector in enclosing_selectors)
     if not shallow_selectors:
         return f"{header}({union});(._;>;);out body;"
     shallow = "".join(f"{selector}{bbox};" for selector in shallow_selectors)
     return f"{header}({union});(._;>;)->.deep;({shallow})->.shallow;(.deep;.shallow;);out body;"
+
+
+def _coordinate(degrees: float) -> str:
+    """
+    Format a coordinate for a query in fixed notation.
+    """
+    text = f"{degrees:.9f}".rstrip("0")
+    return text + "0" if text.endswith(".") else text
 
 
 def new_client() -> httpx.AsyncClient:
