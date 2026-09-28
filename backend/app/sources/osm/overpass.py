@@ -53,15 +53,30 @@ class OsmData:
     relations: list[OsmRelation]
 
 
-def build_query(selectors: Sequence[str], bounds: Bounds, timeout_s: int = QUERY_TIMEOUT_S) -> str:
+def build_query(
+    selectors: Sequence[str],
+    bounds: Bounds,
+    timeout_s: int = QUERY_TIMEOUT_S,
+    enclosing_selectors: Sequence[str] = (),
+) -> str:
     """
     Return a query for everything matching the selectors inside bounds, plus every node and
     member way they use, so the result is complete OSM data with ids.
+
+    enclosing_selectors are also matched against areas containing the centre of bounds. A bbox
+    only finds areas whose outline lies in or crosses it, so an area covering all of bounds,
+    such as a large park, is otherwise missed.
     """
     # Overpass orders bbox: south, west, north, east.
     bbox = f"({bounds.south},{bounds.west},{bounds.north},{bounds.east})"
     union = "".join(f"{selector}{bbox};" for selector in selectors)
-    return f"[out:json][timeout:{timeout_s}];({union});(._;>;);out body;"
+    if not enclosing_selectors:
+        return f"[out:json][timeout:{timeout_s}];({union});(._;>;);out body;"
+    centre = f"{(bounds.south + bounds.north) / 2},{(bounds.west + bounds.east) / 2}"
+    union += "".join(f"{selector}(pivot.enclosing);" for selector in enclosing_selectors)
+    return (
+        f"[out:json][timeout:{timeout_s}];is_in({centre})->.enclosing;({union});(._;>;);out body;"
+    )
 
 
 def new_client() -> httpx.AsyncClient:

@@ -10,6 +10,9 @@ from dataclasses import dataclass
 class OsmLayer:
     code: str  # a ref.source_layers code
     selectors: tuple[str, ...]  # Overpass selectors, without a bbox
+    # Areas can cover a whole request rectangle without their outline touching it, so they are
+    # also looked up by the rectangle's centre.
+    is_area: bool = False
 
 
 ### Main Layer ###
@@ -19,4 +22,5 @@ ROADS = OsmLayer(code="roads", selectors=('way["highway"]',))
 PARKS = OsmLayer(
     code="parks",
     selectors=('way["leisure"="park"]', 'relation["leisure"="park"]["type"="multipolygon"]'),
+    is_area=True,
 )

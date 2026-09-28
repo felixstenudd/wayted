@@ -41,11 +41,15 @@ class OsmDownloader:
         self.client = client
         self.layers = tuple(layer.code for layer in layers)
         self.selectors = [selector for layer in layers for selector in layer.selectors]
+        self.enclosing_selectors = [
+            selector for layer in layers if layer.is_area for selector in layer.selectors
+        ]
         self.max_tiles = max_tiles
         self.max_extra_tiles = max_extra_tiles
 
     async def fetch(self, bounds: Bounds) -> OsmData:
-        return await run_query(self.client, build_query(self.selectors, bounds))
+        query = build_query(self.selectors, bounds, enclosing_selectors=self.enclosing_selectors)
+        return await run_query(self.client, query)
 
     async def store(self, conn: AsyncConnection[TupleRow], payload: OsmData) -> None:
         async with conn.cursor() as cur:

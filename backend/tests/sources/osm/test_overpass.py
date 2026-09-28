@@ -29,6 +29,15 @@ def test_build_query_joins_selectors_of_all_layers() -> None:
     assert "(way[a](2.0,1.0,4.0,3.0);relation[b](2.0,1.0,4.0,3.0););" in query
 
 
+def test_build_query_adds_areas_containing_the_centre() -> None:
+    bounds = Bounds(west=1.0, south=2.0, east=3.0, north=4.0)
+    query = build_query(["way[a]"], bounds, timeout_s=30, enclosing_selectors=["way[a]"])
+    assert query == (
+        "[out:json][timeout:30];is_in(3.0,2.0)->.enclosing;"
+        "(way[a](2.0,1.0,4.0,3.0);way[a](pivot.enclosing););(._;>;);out body;"
+    )
+
+
 async def test_run_query_parses_nodes_ways_and_relations() -> None:
     body = json.loads((FIXTURES / "overpass_roads_parks.json").read_text())
     async with client_returning(httpx.Response(200, json=body)) as client:
