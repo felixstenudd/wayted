@@ -57,18 +57,37 @@ CLASSIFY_WAYS = """
         SELECT
             w.id,
             act.code,
-            EXISTS (
-                SELECT 1 FROM ref.activity_highways h
-                WHERE h.activity = act.code AND h.highway = w.tags ->> 'highway'
-            ) AS allowed
+            CASE
+                WHEN coalesce(w.tags ->> act.access_key, w.tags ->> 'access')
+                    IN ('no', 'private', 'use_sidepath') THEN false
+                WHEN w.tags ->> act.access_key IN ('yes', 'designated', 'permissive') THEN true
+                ELSE EXISTS (
+                    SELECT 1 FROM ref.activity_highways h
+                    WHERE h.activity = act.code
+                      AND h.highway = coalesce(w.tags ->> 'highway', 'ferry')
+                )
+            END AS allowed,
+            CASE
+                WHEN w.tags ? act.oneway_key THEN w.tags ->> act.oneway_key
+                WHEN act.follows_oneway THEN coalesce(
+                    w.tags ->> 'oneway',
+                    CASE WHEN w.tags ->> 'junction' IN ('roundabout', 'circular') THEN 'yes' END
+                )
+            END AS oneway
         FROM context w CROSS JOIN ref.activities act
-        WHERE w.tags ? 'highway'
+        WHERE (w.tags ? 'highway' OR w.tags ->> 'route' = 'ferry')
+          AND w.tags ->> 'area' IS DISTINCT FROM 'yes'
     ),
     access AS (
         SELECT
             id,
-            coalesce(array_agg(code ORDER BY code) FILTER (WHERE allowed), '{}') AS forward,
-            coalesce(array_agg(code ORDER BY code) FILTER (WHERE allowed), '{}') AS backward
+            coalesce(array_agg(code ORDER BY code) FILTER (
+                WHERE allowed AND oneway IS DISTINCT FROM '-1' AND oneway IS DISTINCT FROM 'reverse'
+            ), '{}') AS forward,
+            coalesce(array_agg(code ORDER BY code) FILTER (
+                WHERE allowed AND oneway IS DISTINCT FROM 'yes' AND oneway IS DISTINCT FROM 'true'
+                  AND oneway IS DISTINCT FROM '1'
+            ), '{}') AS backward
         FROM rules
         GROUP BY id
     )
