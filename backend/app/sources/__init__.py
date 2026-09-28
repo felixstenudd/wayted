@@ -4,4 +4,19 @@ what has been fetched and when, so tiles are only fetched once and can
 be refreshed later.
 """
 
-__all__ = []  # defines public API for module
+from .downloader import Downloader, DownloadError, DownloadStatus, RectangleResult
+from .runner import download_tiles
+from .tiles import Bounds, Tile, TileRect, bounds_for_tiles, tiles_for_bounds
+
+__all__ = [
+    "Bounds",
+    "DownloadError",
+    "DownloadStatus",
+    "Downloader",
+    "RectangleResult",
+    "Tile",
+    "TileRect",
+    "bounds_for_tiles",
+    "download_tiles",
+    "tiles_for_bounds",
+]

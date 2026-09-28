@@ -1,8 +1,9 @@
 -- Every permission in one place. Runs after all tables exist, so "ALL TABLES"
 -- covers them; a schema change means a volume reset, which reruns this file.
 
--- wayted_downloader: fills raw.
-GRANT USAGE ON SCHEMA raw TO wayted_downloader;
+-- wayted_downloader: fills raw, reading which layers to fetch from ref.
+GRANT USAGE ON SCHEMA ref, raw TO wayted_downloader;
+GRANT SELECT ON ref.source_layers TO wayted_downloader;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA raw TO wayted_downloader;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA raw TO wayted_downloader;
 
