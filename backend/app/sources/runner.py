@@ -69,7 +69,7 @@ async def _download_rect[P](
         return RectangleResult(rect, e.status, e.message)
     except httpx.TimeoutException as e:
         return RectangleResult(rect, DownloadStatus.TIMEOUT, str(e) or type(e).__name__)
-    except httpx.TransportError as e:
+    except httpx.RequestError as e:
         return RectangleResult(rect, DownloadStatus.SOURCE_ERROR, str(e) or type(e).__name__)
     except psycopg.Error as e:
         return RectangleResult(rect, DownloadStatus.STORAGE_ERROR, str(e))

@@ -1,6 +1,7 @@
 """Building, sending and parsing Overpass API queries."""
 
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -108,7 +109,19 @@ def _raise_for_status(response: httpx.Response) -> None:
         raise DownloadError(DownloadStatus.RATE_LIMITED, "Overpass is rate limiting us (429).")
     if code == 504:
         raise DownloadError(DownloadStatus.TIMEOUT, "Overpass timed out (504).")
+    if 400 <= code < 500:
+        raise DownloadError(
+            DownloadStatus.INVALID_RESPONSE,
+            f"Overpass rejected the query ({code}): {_error_text(response)}",
+        )
     raise DownloadError(DownloadStatus.SOURCE_ERROR, f"Overpass answered {code}.")
+
+
+def _error_text(response: httpx.Response, max_chars: int = 200) -> str:
+    """Return the readable part of an Overpass error page, which is HTML with a licence note."""
+    text = " ".join(re.sub(r"<[^>]*>", "", response.text).split())
+    start = text.find("Error:")
+    return text[start if start >= 0 else 0 :][:max_chars]
 
 
 def _raise_for_remark(body: dict[str, Any]) -> None:
