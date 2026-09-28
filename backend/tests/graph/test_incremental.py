@@ -126,6 +126,38 @@ async def test_each_changed_edge_is_queued_once(admin_conn: Conn, mapper_pool: P
     assert await cur.fetchall() == [(edge_id,)]
 
 
+async def test_way_moved_off_a_shared_node_lets_the_neighbour_merge(
+    admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    await add_line(admin_conn, 1, [(1, 0, 0), (2, 1, 0), (3, 2, 0)], RESIDENTIAL)
+    await add_line(admin_conn, 2, [(2, 1, 0), (4, 1, 1)], RESIDENTIAL)
+    await map_pending(mapper_pool)
+
+    await add_node(admin_conn, 5, 0, 1)
+    await add_way(admin_conn, 2, [5, 4], RESIDENTIAL)
+    await map_pending(mapper_pool)
+
+    assert [e[:3] for e in await graph_edges(admin_conn)] == [(1, 1, 3), (2, 5, 4)]
+
+
+async def test_split_left_by_an_earlier_batch_is_merged_later(
+    admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    await add_line(admin_conn, 1, [(1, 0, 0), (2, 1, 0), (3, 2, 0)], RESIDENTIAL)
+    await add_line(admin_conn, 2, [(4, 1, 1), (5, 2, 1)], RESIDENTIAL)
+    await add_line(admin_conn, 3, [(2, 1, 0), (4, 1, 1)], RESIDENTIAL)
+    await map_pending(mapper_pool)
+
+    # Way 2 is claimed first and rebuilds its neighbour, way 3, which has meanwhile moved off
+    # node 2. Way 3's own claim in the next batch then no longer sees node 2.
+    await add_way(admin_conn, 2, [4, 5], {"highway": "residential", "name": "Ny gata"})
+    await add_node(admin_conn, 6, 0, 1)
+    await add_way(admin_conn, 3, [6, 4], RESIDENTIAL)
+    await map_pending(mapper_pool, batch_size=1)
+
+    assert [e[:3] for e in await graph_edges(admin_conn)] == [(1, 1, 3), (2, 4, 5), (3, 6, 4)]
+
+
 async def test_moved_end_node_moves_the_vertex(admin_conn: Conn, mapper_pool: Pool) -> None:
     await add_line(admin_conn, 1, [(1, 0, 0), (2, 1, 0)], RESIDENTIAL)
     await map_pending(mapper_pool)

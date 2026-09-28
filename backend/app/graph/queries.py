@@ -4,7 +4,7 @@ CREATE_WORK_TABLES = """
     CREATE TEMP TABLE claimed_ways (id bigint PRIMARY KEY) ON COMMIT DROP;
     CREATE TEMP TABLE moved_nodes (id bigint PRIMARY KEY) ON COMMIT DROP;
     CREATE TEMP TABLE affected_ways (id bigint PRIMARY KEY) ON COMMIT DROP;
-    CREATE TEMP TABLE dropped_edges (source bigint, target bigint) ON COMMIT DROP;
+    CREATE TEMP TABLE dropped_edges (way_id bigint, source bigint, target bigint) ON COMMIT DROP;
 """
 
 # Claims queue rows, not ids: a way queued again by a download that is still open keeps its
@@ -217,9 +217,19 @@ DELETE_STALE_EDGES = """
               WHERE (s.way_id, s.source, s.target, s.occurrence)
                   = (e.way_id, e.source, e.target, e.occurrence)
           )
-        RETURNING e.source, e.target
+        RETURNING e.way_id, e.source, e.target
     )
-    INSERT INTO dropped_edges SELECT source, target FROM deleted
+    INSERT INTO dropped_edges SELECT way_id, source, target FROM deleted
+"""
+
+# A neighbour rebuilt before its own change was claimed loses edges whose ends were never seeds,
+# so a way through such an end may keep a split nobody shares any more. Queue the ends for the
+# next batch.
+REQUEUE_DROPPED_ENDS = """
+    INSERT INTO graph.pending_nodes (node_id)
+    SELECT source FROM dropped_edges WHERE way_id NOT IN (SELECT id FROM claimed_ways)
+    UNION
+    SELECT target FROM dropped_edges WHERE way_id NOT IN (SELECT id FROM claimed_ways)
 """
 
 UPDATE_EDGES = """
