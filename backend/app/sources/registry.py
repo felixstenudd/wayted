@@ -22,8 +22,9 @@ async def mark_fetched(
     conn: AsyncConnection[TupleRow], layer: str, tiles: Collection[Tile]
 ) -> None:
     """Mark tiles as fetched now. Runs in the caller's transaction."""
+    ordered = sorted(tiles, key=lambda t: (t.z, t.x, t.y))
     async with conn.cursor() as cur:
         await cur.executemany(
             MARK_FETCHED,
-            [{"layer": layer, "z": t.z, "x": t.x, "y": t.y} for t in tiles],
+            [{"layer": layer, "z": t.z, "x": t.x, "y": t.y} for t in ordered],
         )
