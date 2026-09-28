@@ -38,6 +38,15 @@ def test_build_query_adds_areas_containing_the_centre() -> None:
     )
 
 
+def test_build_query_fetches_shallow_selectors_without_members() -> None:
+    bounds = Bounds(west=1.0, south=2.0, east=3.0, north=4.0)
+    query = build_query(["way[a]"], bounds, timeout_s=30, shallow_selectors=["relation[r]"])
+    assert query == (
+        "[out:json][timeout:30];(way[a](2.0,1.0,4.0,3.0););(._;>;)->.deep;"
+        "(relation[r](2.0,1.0,4.0,3.0);)->.shallow;(.deep;.shallow;);out body;"
+    )
+
+
 async def test_run_query_parses_nodes_ways_and_relations() -> None:
     body = json.loads((FIXTURES / "overpass_roads_parks.json").read_text())
     async with client_returning(httpx.Response(200, json=body)) as client:

@@ -41,7 +41,10 @@ async def test_all_layers_share_one_request() -> None:
 
     assert len(seen) == 1
     assert sent_query(seen[0]) == build_query(
-        ROADS.selectors + PARKS.selectors, BOUNDS, enclosing_selectors=PARKS.selectors
+        ROADS.selectors + PARKS.selectors,
+        BOUNDS,
+        enclosing_selectors=PARKS.selectors,
+        shallow_selectors=ROADS.shallow_selectors,
     )
 
 
@@ -50,8 +53,21 @@ async def test_layers_without_areas_skip_the_enclosing_lookup() -> None:
     async with client_answering({"elements": []}, seen) as client:
         await OsmDownloader(client, [ROADS]).fetch(BOUNDS)
 
-    assert sent_query(seen[0]) == build_query(ROADS.selectors, BOUNDS)
+    assert sent_query(seen[0]) == build_query(
+        ROADS.selectors, BOUNDS, shallow_selectors=ROADS.shallow_selectors
+    )
     assert "is_in" not in sent_query(seen[0])
+
+
+async def test_roads_include_ferries_and_route_relations_without_members() -> None:
+    seen: list[httpx.Request] = []
+    async with client_answering({"elements": []}, seen) as client:
+        await OsmDownloader(client, [ROADS]).fetch(BOUNDS)
+
+    query = sent_query(seen[0])
+    deep, shallow = query.split("->.deep;")
+    assert 'way["route"="ferry"]' in deep
+    assert 'relation["route"~"^(bicycle|foot|hiking|running|mtb)$"]' in shallow
 
 
 @pytest.mark.db

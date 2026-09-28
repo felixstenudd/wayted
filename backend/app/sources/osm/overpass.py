@@ -59,6 +59,7 @@ def build_query(
     bounds: Bounds,
     timeout_s: int = QUERY_TIMEOUT_S,
     enclosing_selectors: Sequence[str] = (),
+    shallow_selectors: Sequence[str] = (),
 ) -> str:
     """
     Return a query for everything matching the selectors inside bounds, plus every node and
@@ -67,17 +68,22 @@ def build_query(
     enclosing_selectors are also matched against areas containing the centre of bounds. A bbox
     only finds areas whose outline lies in or crosses it, so an area covering all of bounds,
     such as a large park, is otherwise missed.
+
+    shallow_selectors return only the matched elements, without their nodes or members. A
+    national cycle route relation would otherwise pull in every way along its whole length.
     """
     # Overpass orders bbox: south, west, north, east.
     bbox = f"({bounds.south},{bounds.west},{bounds.north},{bounds.east})"
+    header = f"[out:json][timeout:{timeout_s}];"
     union = "".join(f"{selector}{bbox};" for selector in selectors)
-    if not enclosing_selectors:
-        return f"[out:json][timeout:{timeout_s}];({union});(._;>;);out body;"
-    centre = f"{(bounds.south + bounds.north) / 2},{(bounds.west + bounds.east) / 2}"
-    union += "".join(f"{selector}(pivot.enclosing);" for selector in enclosing_selectors)
-    return (
-        f"[out:json][timeout:{timeout_s}];is_in({centre})->.enclosing;({union});(._;>;);out body;"
-    )
+    if enclosing_selectors:
+        centre = f"{(bounds.south + bounds.north) / 2},{(bounds.west + bounds.east) / 2}"
+        header += f"is_in({centre})->.enclosing;"
+        union += "".join(f"{selector}(pivot.enclosing);" for selector in enclosing_selectors)
+    if not shallow_selectors:
+        return f"{header}({union});(._;>;);out body;"
+    shallow = "".join(f"{selector}{bbox};" for selector in shallow_selectors)
+    return f"{header}({union});(._;>;)->.deep;({shallow})->.shallow;(.deep;.shallow;);out body;"
 
 
 def new_client() -> httpx.AsyncClient:
