@@ -16,7 +16,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         return
     skip = pytest.mark.skip(reason="set WAYTED_TEST_DATABASE_URL to run database tests")
     for item in items:
-        if "db" in item.keywords:
+        # keywords would also match a folder named db, so check for the marker itself.
+        if item.get_closest_marker("db"):
             item.add_marker(skip)
 
 
