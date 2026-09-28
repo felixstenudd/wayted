@@ -38,20 +38,31 @@ CREATE INDEX edges_source_idx ON graph.edges (source);
 CREATE INDEX edges_target_idx ON graph.edges (target);
 
 -- Work queues. The triggers below fill the first two from raw; the mapper fills the third for
--- the enricher.
-CREATE TABLE graph.pending_ways (way_id bigint PRIMARY KEY);
-CREATE TABLE graph.pending_nodes (node_id bigint PRIMARY KEY);
-CREATE TABLE graph.pending_edges (
-    edge_id bigint PRIMARY KEY REFERENCES graph.edges (id) ON DELETE CASCADE
+-- the enricher. They are append-only, so an id can be queued more than once: a row written by a
+-- download that is still open is invisible to a mapper batch, which cannot claim it too early.
+CREATE TABLE graph.pending_ways (
+    id     bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    way_id bigint NOT NULL
 );
+
+CREATE TABLE graph.pending_nodes (
+    id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    node_id bigint NOT NULL
+);
+
+CREATE TABLE graph.pending_edges (
+    id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    edge_id bigint NOT NULL REFERENCES graph.edges (id) ON DELETE CASCADE
+);
+
+CREATE INDEX pending_edges_edge_id_idx ON graph.pending_edges (edge_id);
 
 -- Queue rows commit together with the raw change, so the mapper cannot miss one. The
 -- downloader skips unchanged rows, so these fire only on real changes.
 CREATE FUNCTION graph.queue_way() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     INSERT INTO graph.pending_ways (way_id)
-    VALUES (CASE WHEN TG_OP = 'DELETE' THEN OLD.id ELSE NEW.id END)
-    ON CONFLICT DO NOTHING;
+    VALUES (CASE WHEN TG_OP = 'DELETE' THEN OLD.id ELSE NEW.id END);
     RETURN NULL;
 END
 $$;
@@ -63,7 +74,7 @@ CREATE TRIGGER osm_ways_queue
 -- A new node changes nothing until a way uses it, and that way is queued itself.
 CREATE FUNCTION graph.queue_node() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    INSERT INTO graph.pending_nodes (node_id) VALUES (NEW.id) ON CONFLICT DO NOTHING;
+    INSERT INTO graph.pending_nodes (node_id) VALUES (NEW.id);
     RETURN NULL;
 END
 $$;

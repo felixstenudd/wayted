@@ -7,26 +7,24 @@ CREATE_WORK_TABLES = """
     CREATE TEMP TABLE dropped_edges (source bigint, target bigint) ON COMMIT DROP;
 """
 
+# Claims queue rows, not ids: a way queued again by a download that is still open keeps its
+# newer row for the next batch.
 CLAIM_WAYS = """
     WITH claimed AS (
         DELETE FROM graph.pending_ways
-        WHERE way_id IN (
-            SELECT way_id FROM graph.pending_ways ORDER BY way_id LIMIT %(batch_size)s
-        )
+        WHERE id IN (SELECT id FROM graph.pending_ways ORDER BY id LIMIT %(batch_size)s)
         RETURNING way_id
     )
-    INSERT INTO claimed_ways SELECT way_id FROM claimed
+    INSERT INTO claimed_ways SELECT DISTINCT way_id FROM claimed
 """
 
 CLAIM_NODES = """
     WITH claimed AS (
         DELETE FROM graph.pending_nodes
-        WHERE node_id IN (
-            SELECT node_id FROM graph.pending_nodes ORDER BY node_id LIMIT %(batch_size)s
-        )
+        WHERE id IN (SELECT id FROM graph.pending_nodes ORDER BY id LIMIT %(batch_size)s)
         RETURNING node_id
     )
-    INSERT INTO moved_nodes SELECT node_id FROM claimed
+    INSERT INTO moved_nodes SELECT DISTINCT node_id FROM claimed
 """
 
 # The claimed ways, and every way sharing a node with them before or after the change, since
@@ -232,6 +230,18 @@ UPDATE_EDGES = """
     WHERE e.id = c.edge_id AND c.change IN ('moved', 'access')
 """
 
+# Runs before INSERT_EDGES, so a new edge of a retagged way is queued only once.
+QUEUE_CHANGED_EDGES = """
+    WITH retagged AS (
+        UPDATE graph.edges SET scores = '{}'
+        WHERE way_id IN (SELECT id FROM retagged_ways)
+        RETURNING id
+    )
+    INSERT INTO graph.pending_edges (edge_id)
+    SELECT id FROM retagged
+    UNION SELECT edge_id FROM segment_changes WHERE change = 'moved'
+"""
+
 # Ordered so a rebuild numbers new edges the same way every time.
 INSERT_EDGES = """
     WITH inserted AS (
@@ -242,19 +252,7 @@ INSERT_EDGES = """
         ORDER BY way_id, seg
         RETURNING id
     )
-    INSERT INTO graph.pending_edges SELECT id FROM inserted
-"""
-
-QUEUE_CHANGED_EDGES = """
-    WITH retagged AS (
-        UPDATE graph.edges SET scores = '{}'
-        WHERE way_id IN (SELECT id FROM retagged_ways)
-        RETURNING id
-    )
-    INSERT INTO graph.pending_edges
-    SELECT id FROM retagged
-    UNION SELECT edge_id FROM segment_changes WHERE change = 'moved'
-    ON CONFLICT DO NOTHING
+    INSERT INTO graph.pending_edges (edge_id) SELECT id FROM inserted
 """
 
 DELETE_UNROUTABLE_WAYS = """

@@ -62,7 +62,7 @@ async def test_batches_of_one_way_give_the_same_graph(admin_conn: Conn, mapper_p
     await admin_conn.execute(
         "TRUNCATE graph.ways, graph.vertices, graph.edges, graph.pending_edges"
     )
-    await admin_conn.execute("INSERT INTO graph.pending_ways SELECT id FROM raw.osm_ways")
+    await admin_conn.execute("INSERT INTO graph.pending_ways (way_id) SELECT id FROM raw.osm_ways")
 
     result = await map_pending(mapper_pool, batch_size=1)
 

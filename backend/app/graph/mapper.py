@@ -67,8 +67,8 @@ async def _map_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> BatchR
         await conn.execute(queries.UPSERT_VERTICES)
         edges_deleted = (await conn.execute(queries.DELETE_STALE_EDGES)).rowcount
         edges_updated = (await conn.execute(queries.UPDATE_EDGES)).rowcount
-        edges_inserted = (await conn.execute(queries.INSERT_EDGES)).rowcount
         await conn.execute(queries.QUEUE_CHANGED_EDGES)
+        edges_inserted = (await conn.execute(queries.INSERT_EDGES)).rowcount
         await conn.execute(queries.DELETE_UNROUTABLE_WAYS)
         await conn.execute(queries.DELETE_UNUSED_VERTICES)
     return BatchResult(

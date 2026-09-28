@@ -33,7 +33,7 @@ async def test_unchanged_reimport_keeps_edge_ids(admin_conn: Conn, mapper_pool: 
     await forget_scoring_work(admin_conn)
     before = await edge_ids(admin_conn)
 
-    await admin_conn.execute("INSERT INTO graph.pending_ways SELECT id FROM raw.osm_ways")
+    await admin_conn.execute("INSERT INTO graph.pending_ways (way_id) SELECT id FROM raw.osm_ways")
     result = await map_pending(mapper_pool)
 
     assert await edge_ids(admin_conn) == before
@@ -89,11 +89,41 @@ async def test_queued_way_missing_from_raw_changes_nothing(
     await map_pending(mapper_pool)
     before = await edge_ids(admin_conn)
 
-    await admin_conn.execute("INSERT INTO graph.pending_ways VALUES (999)")
+    await admin_conn.execute("INSERT INTO graph.pending_ways (way_id) VALUES (999)")
     result = await map_pending(mapper_pool)
 
     assert result.batches[0].ways_claimed == 1
     assert await edge_ids(admin_conn) == before
+
+
+async def test_change_committed_during_a_batch_is_mapped_next_run(
+    admin_conn: Conn, mapper_pool: Pool, downloader_pool: Pool
+) -> None:
+    await add_line(admin_conn, 1, [(1, 0, 0), (2, 1, 0)], RESIDENTIAL)
+
+    # A download changes the way while it is still queued, and commits while a batch maps it.
+    async with downloader_pool.connection() as conn, conn.transaction():
+        await add_node(conn, 3, 2, 0)
+        await add_way(conn, 1, [1, 2, 3], RESIDENTIAL)
+        await map_pending(mapper_pool)
+    await map_pending(mapper_pool)
+
+    assert [e[:3] for e in await graph_edges(admin_conn)] == [(1, 1, 3)]
+
+
+async def test_each_changed_edge_is_queued_once(admin_conn: Conn, mapper_pool: Pool) -> None:
+    await add_line(admin_conn, 1, [(1, 0, 0), (2, 1, 0)], RESIDENTIAL)
+    await map_pending(mapper_pool)
+    await forget_scoring_work(admin_conn)
+
+    # Retagged and extended: the old edge goes, a new one takes its place.
+    await add_node(admin_conn, 3, 2, 0)
+    await add_way(admin_conn, 1, [1, 2, 3], {"highway": "residential", "oneway": "yes"})
+    await map_pending(mapper_pool)
+
+    [edge_id] = (await edge_ids(admin_conn)).values()
+    cur = await admin_conn.execute("SELECT edge_id FROM graph.pending_edges")
+    assert await cur.fetchall() == [(edge_id,)]
 
 
 async def test_moved_end_node_moves_the_vertex(admin_conn: Conn, mapper_pool: Pool) -> None:
