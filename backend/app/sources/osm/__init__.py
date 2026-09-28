@@ -1,5 +1,5 @@
-"""Downloaders for OpenStreetMap data, fetched through the Overpass API."""
+"""Downloader for OpenStreetMap data, fetched through the Overpass API."""
 
-from .overpass import OsmMember, OsmRelation, OsmWay
+from .overpass import OsmData, OsmMember, OsmNode, OsmRelation, OsmWay, new_client
 
-__all__ = ["OsmMember", "OsmRelation", "OsmWay"]
+__all__ = ["OsmData", "OsmMember", "OsmNode", "OsmRelation", "OsmWay", "new_client"]

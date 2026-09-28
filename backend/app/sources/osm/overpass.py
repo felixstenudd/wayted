@@ -16,20 +16,27 @@ USER_AGENT = "wayted/0.1"
 QUERY_TIMEOUT_S = 90
 HTTP_TIMEOUT_S = QUERY_TIMEOUT_S + 15
 
-type Coords = list[tuple[float, float]]  # (lon, lat) pairs
+
+@dataclass(frozen=True, slots=True)
+class OsmNode:
+    id: int
+    tags: dict[str, str]
+    lon: float
+    lat: float
 
 
 @dataclass(frozen=True, slots=True)
 class OsmWay:
     id: int
     tags: dict[str, str]
-    coords: Coords
+    node_ids: list[int]
 
 
 @dataclass(frozen=True, slots=True)
 class OsmMember:
+    type: str  # "node", "way" or "relation"
+    ref: int
     role: str
-    coords: Coords
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,15 +46,22 @@ class OsmRelation:
     members: list[OsmMember]
 
 
-type OsmElement = OsmWay | OsmRelation
+@dataclass(frozen=True, slots=True)
+class OsmData:
+    nodes: list[OsmNode]
+    ways: list[OsmWay]
+    relations: list[OsmRelation]
 
 
 def build_query(selectors: Sequence[str], bounds: Bounds, timeout_s: int = QUERY_TIMEOUT_S) -> str:
-    """Return a query for everything matching the selectors inside bounds, with full geometry."""
+    """
+    Return a query for everything matching the selectors inside bounds, plus every node and
+    member way they use, so the result is complete OSM data with ids.
+    """
     # Overpass orders bbox: south, west, north, east.
     bbox = f"({bounds.south},{bounds.west},{bounds.north},{bounds.east})"
     union = "".join(f"{selector}{bbox};" for selector in selectors)
-    return f"[out:json][timeout:{timeout_s}];({union});out tags geom;"
+    return f"[out:json][timeout:{timeout_s}];({union});(._;>;);out body;"
 
 
 def new_client() -> httpx.AsyncClient:
@@ -57,14 +71,14 @@ def new_client() -> httpx.AsyncClient:
     )
 
 
-async def run_query(client: httpx.AsyncClient, query: str) -> list[OsmElement]:
-    """Send a query and return its ways and relations. Raises DownloadError on any failure."""
+async def run_query(client: httpx.AsyncClient, query: str) -> OsmData:
+    """Send a query and return its elements. Raises DownloadError on any failure."""
     response = await client.post(OVERPASS_URL, data={"data": query})
     _raise_for_status(response)
     try:
         body = response.json()
     except ValueError as e:
-        raise DownloadError(DownloadStatus.INVALID_RESPONSE, "Response is not JSON.") from e
+        raise DownloadError(DownloadStatus.SOURCE_ERROR, "Overpass answered with non-JSON.") from e
     if not isinstance(body, dict):
         raise DownloadError(DownloadStatus.INVALID_RESPONSE, "Response is not a JSON object.")
     _raise_for_remark(body)
@@ -91,30 +105,29 @@ def _raise_for_remark(body: dict[str, Any]) -> None:
     raise DownloadError(status, f"Overpass stopped early: {remark}")
 
 
-def _parse_elements(body: dict[str, Any]) -> list[OsmElement]:
+def _parse_elements(body: dict[str, Any]) -> OsmData:
     elements = body.get("elements")
     if not isinstance(elements, list):
         raise DownloadError(DownloadStatus.INVALID_RESPONSE, "Response has no element list.")
+    data = OsmData(nodes=[], ways=[], relations=[])
     try:
-        return [_parse_element(e) for e in elements if e.get("type") in ("way", "relation")]
+        for e in elements:
+            tags = {str(k): str(v) for k, v in e.get("tags", {}).items()}
+            if e["type"] == "node":
+                data.nodes.append(
+                    OsmNode(id=int(e["id"]), tags=tags, lon=float(e["lon"]), lat=float(e["lat"]))
+                )
+            elif e["type"] == "way":
+                node_ids = [int(n) for n in e["nodes"]]
+                data.ways.append(OsmWay(id=int(e["id"]), tags=tags, node_ids=node_ids))
+            elif e["type"] == "relation":
+                members = [
+                    OsmMember(type=str(m["type"]), ref=int(m["ref"]), role=str(m.get("role", "")))
+                    for m in e["members"]
+                ]
+                data.relations.append(OsmRelation(id=int(e["id"]), tags=tags, members=members))
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         raise DownloadError(
             DownloadStatus.INVALID_RESPONSE, f"Unexpected element shape: {e!r}"
         ) from e
-
-
-def _parse_element(element: dict[str, Any]) -> OsmElement:
-    tags = {str(k): str(v) for k, v in element.get("tags", {}).items()}
-    if element["type"] == "way":
-        return OsmWay(id=int(element["id"]), tags=tags, coords=_parse_coords(element["geometry"]))
-    members = [
-        OsmMember(role=str(m.get("role", "")), coords=_parse_coords(m["geometry"]))
-        for m in element["members"]
-        if m["type"] == "way" and m.get("geometry")
-    ]
-    return OsmRelation(id=int(element["id"]), tags=tags, members=members)
-
-
-def _parse_coords(geometry: list[dict[str, Any]]) -> Coords:
-    # Overpass puts null in place of points it could not resolve.
-    return [(float(p["lon"]), float(p["lat"])) for p in geometry if p is not None]
+    return data
