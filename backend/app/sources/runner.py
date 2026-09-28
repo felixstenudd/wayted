@@ -1,5 +1,6 @@
 """Runs a downloader over a set of tiles: plans requests, fetches, stores and marks tiles."""
 
+import asyncio
 from collections.abc import Collection
 
 import httpx
@@ -27,7 +28,9 @@ async def download_tiles[P](
     and does not stop the others.
     """
     await _check_zoom(downloader.layers, tiles, pool)
-    rects = plan_rectangles(tiles, downloader.max_extra_tiles, downloader.max_tiles)
+    rects = await asyncio.to_thread(
+        plan_rectangles, tiles, downloader.max_extra_tiles, downloader.max_tiles
+    )
     return [await _download_rect(downloader, rect, pool) for rect in rects]
 
 
