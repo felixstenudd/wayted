@@ -8,5 +8,5 @@ router = APIRouter(prefix="/routing", tags=["routing"])
 
 
 @router.get("/test")
-def test():
+def test() -> dict[str, str]:
     return {"message": "Hello from routing"}

@@ -1,4 +1,5 @@
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,7 +9,7 @@ from app.config import API_ROLE, API_ROLE_PASSWORD
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await db.open_pool(API_ROLE, API_ROLE_PASSWORD)
     try:
         yield
@@ -32,12 +33,12 @@ app.include_router(routing.router)
 
 
 @app.get("/")
-def root():
+def root() -> dict[str, str]:
     return {"message": "API is running"}
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, str]:
     async with db.connection(API_ROLE) as conn:
         await conn.execute("SELECT 1")
     return {"status": "ok"}

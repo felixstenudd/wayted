@@ -31,7 +31,7 @@ services:
       WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
       WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
       WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
     depends_on:
       db:
         condition: service_healthy

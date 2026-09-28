@@ -1,4 +1,5 @@
 import threading
+from typing import TypeAlias
 
 import httpx
 import pytest
@@ -14,7 +15,7 @@ from app.sources.tiles import Bounds, Tile, TileRect
 
 pytestmark = pytest.mark.db
 
-Pool = AsyncConnectionPool[AsyncConnection[TupleRow]]
+Pool: TypeAlias = AsyncConnectionPool[AsyncConnection[TupleRow]]  # noqa: UP040
 
 # Two 2x2 clusters with a 2-column gap between them: merging them costs 4 extra tiles.
 WEST = {Tile(x=x, y=y, z=14) for x in (8800, 8801) for y in (4700, 4701)}
@@ -66,7 +67,9 @@ async def way_ids(conn: AsyncConnection[TupleRow]) -> list[int]:
 async def test_merged_clusters_mark_gap_tiles_too(
     admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
 ) -> None:
-    results = await download_tiles(FakeDownloader(max_extra_tiles=4), WEST | EAST, downloader_pool)
+    results = await download_tiles(
+        FakeDownloader(max_extra_tiles=4), WEST | EAST, downloader_pool.connection
+    )
 
     rect = TileRect(z=14, x_min=8800, y_min=4700, x_max=8805, y_max=4701)
     assert [(r.rect, r.status, r.message) for r in results] == [(rect, DownloadStatus.OK, None)]
@@ -78,7 +81,7 @@ async def test_one_request_marks_every_layer(
     admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
 ) -> None:
     downloader = FakeDownloader(layers=("roads", "parks"))
-    results = await download_tiles(downloader, WEST, downloader_pool)
+    results = await download_tiles(downloader, WEST, downloader_pool.connection)
 
     assert [r.status for r in results] == [DownloadStatus.OK]
     assert downloader.calls == 1
@@ -92,7 +95,7 @@ async def test_failed_rectangle_does_not_affect_the_others(
     downloader = FakeDownloader(
         fetch_errors={1: DownloadError(DownloadStatus.RATE_LIMITED, "slow down")}
     )
-    results = await download_tiles(downloader, WEST | EAST, downloader_pool)
+    results = await download_tiles(downloader, WEST | EAST, downloader_pool.connection)
 
     assert [(r.status, r.message) for r in results] == [
         (DownloadStatus.RATE_LIMITED, "slow down"),
@@ -106,7 +109,7 @@ async def test_store_failure_rolls_back_data_and_tiles(
     admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
 ) -> None:
     downloader = FakeDownloader(layers=("roads", "parks"), fail_store=True)
-    results = await download_tiles(downloader, WEST, downloader_pool)
+    results = await download_tiles(downloader, WEST, downloader_pool.connection)
 
     assert [r.status for r in results] == [DownloadStatus.STORAGE_ERROR]
     assert await fetched_tiles(admin_conn, "roads") == set()
@@ -129,7 +132,9 @@ async def test_http_failures_become_statuses(
     error: Exception,
     status: DownloadStatus,
 ) -> None:
-    results = await download_tiles(FakeDownloader(fetch_errors={1: error}), WEST, downloader_pool)
+    results = await download_tiles(
+        FakeDownloader(fetch_errors={1: error}), WEST, downloader_pool.connection
+    )
 
     assert [(r.status, r.message) for r in results] == [(status, str(error))]
     assert await fetched_tiles(admin_conn) == set()
@@ -140,14 +145,14 @@ async def test_unexpected_errors_propagate(
 ) -> None:
     downloader = FakeDownloader(fetch_errors={1: RuntimeError("bug")})
     with pytest.raises(RuntimeError):
-        await download_tiles(downloader, WEST, downloader_pool)
+        await download_tiles(downloader, WEST, downloader_pool.connection)
 
 
 async def test_tiles_at_another_zoom_are_rejected(
     admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
 ) -> None:
     with pytest.raises(ValueError):
-        await download_tiles(FakeDownloader(), {Tile(x=0, y=0, z=13)}, downloader_pool)
+        await download_tiles(FakeDownloader(), {Tile(x=0, y=0, z=13)}, downloader_pool.connection)
 
 
 @pytest.mark.parametrize("layers", [(), ("roads", "nope")])
@@ -155,7 +160,7 @@ async def test_missing_or_unknown_layers_are_rejected(
     admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool, layers: tuple[str, ...]
 ) -> None:
     with pytest.raises(ValueError):
-        await download_tiles(FakeDownloader(layers=layers), WEST, downloader_pool)
+        await download_tiles(FakeDownloader(layers=layers), WEST, downloader_pool.connection)
 
 
 async def test_layers_at_different_zooms_are_rejected(
@@ -167,7 +172,7 @@ async def test_layers_at_different_zooms_are_rejected(
     try:
         with pytest.raises(ValueError):
             await download_tiles(
-                FakeDownloader(layers=("roads", "coarse_test")), WEST, downloader_pool
+                FakeDownloader(layers=("roads", "coarse_test")), WEST, downloader_pool.connection
             )
     finally:
         await admin_conn.execute("DELETE FROM ref.source_layers WHERE code = 'coarse_test'")
@@ -183,7 +188,7 @@ class EmptyAreaDownloader(FakeDownloader):
 async def test_area_without_features_is_still_marked(
     admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
 ) -> None:
-    results = await download_tiles(EmptyAreaDownloader(), WEST, downloader_pool)
+    results = await download_tiles(EmptyAreaDownloader(), WEST, downloader_pool.connection)
 
     assert [r.status for r in results] == [DownloadStatus.OK]
     assert await fetched_tiles(admin_conn) == WEST
@@ -201,6 +206,6 @@ async def test_planning_runs_off_the_event_loop(
         return plan_rectangles(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(runner, "plan_rectangles", recording_plan)
-    await download_tiles(FakeDownloader(), WEST, downloader_pool)
+    await download_tiles(FakeDownloader(), WEST, downloader_pool.connection)
 
     assert planned_on and planned_on[0] != threading.get_ident()
