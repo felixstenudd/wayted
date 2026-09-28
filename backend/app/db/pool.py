@@ -14,3 +14,8 @@ downloader_pool = AsyncConnectionPool(
     make_conninfo(user="wayted_downloader", password=os.environ["WAYTED_DOWNLOADER_PASSWORD"]),
     open=False,
 )
+
+mapper_pool = AsyncConnectionPool(
+    make_conninfo(user="wayted_mapper", password=os.environ["WAYTED_MAPPER_PASSWORD"]),
+    open=False,
+)
