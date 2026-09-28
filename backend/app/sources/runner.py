@@ -5,9 +5,8 @@ from collections.abc import Collection
 
 import httpx
 import psycopg
-from psycopg import AsyncConnection
-from psycopg.rows import TupleRow
-from psycopg_pool import AsyncConnectionPool
+
+from app.db import Connect
 
 from .downloader import Downloader, DownloadError, DownloadStatus, RectangleResult
 from .planning import plan_rectangles
@@ -18,7 +17,7 @@ from .tiles import Tile, TileRect
 async def download_tiles[P](
     downloader: Downloader[P],
     tiles: Collection[Tile],
-    pool: AsyncConnectionPool[AsyncConnection[TupleRow]],
+    connect: Connect,
 ) -> list[RectangleResult]:
     """
     Fetch and store the tiles, one request per planned rectangle.
@@ -27,21 +26,17 @@ async def download_tiles[P](
     including tiles that were only fetched to join clusters. A failed rectangle commits nothing
     and does not stop the others.
     """
-    await _check_zoom(downloader.layers, tiles, pool)
+    await _check_zoom(downloader.layers, tiles, connect)
     rects = await asyncio.to_thread(
         plan_rectangles, tiles, downloader.max_extra_tiles, downloader.max_tiles
     )
-    return [await _download_rect(downloader, rect, pool) for rect in rects]
+    return [await _download_rect(downloader, rect, connect) for rect in rects]
 
 
-async def _check_zoom(
-    layers: tuple[str, ...],
-    tiles: Collection[Tile],
-    pool: AsyncConnectionPool[AsyncConnection[TupleRow]],
-) -> None:
+async def _check_zoom(layers: tuple[str, ...], tiles: Collection[Tile], connect: Connect) -> None:
     if not layers:
         raise ValueError("A downloader must serve at least one layer.")
-    async with pool.connection() as conn:
+    async with connect() as conn:
         cur = await conn.execute(
             "SELECT code, zoom FROM ref.source_layers WHERE code = ANY(%s)", (list(layers),)
         )
@@ -58,13 +53,11 @@ async def _check_zoom(
 
 
 async def _download_rect[P](
-    downloader: Downloader[P],
-    rect: TileRect,
-    pool: AsyncConnectionPool[AsyncConnection[TupleRow]],
+    downloader: Downloader[P], rect: TileRect, connect: Connect
 ) -> RectangleResult:
     try:
         payload = await downloader.fetch(rect.bounds)
-        async with pool.connection() as conn, conn.transaction():
+        async with connect() as conn, conn.transaction():
             await downloader.store(conn, payload)
             for layer in downloader.layers:
                 await mark_fetched(conn, layer, rect.tiles())

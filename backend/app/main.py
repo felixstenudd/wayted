@@ -1,16 +1,20 @@
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app import auth, db, logbook, routing
+from app.config import API_ROLE, API_ROLE_PASSWORD
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    await db.api_pool.open()
-    yield
-    await db.api_pool.close()
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await db.open_pool(API_ROLE, API_ROLE_PASSWORD)
+    try:
+        yield
+    finally:
+        await db.close_pools()
 
 
 # Docs and the OpenAPI spec are opt-in so production never exposes the API surface by accident.
@@ -29,12 +33,12 @@ app.include_router(routing.router)
 
 
 @app.get("/")
-def root():
+def root() -> dict[str, str]:
     return {"message": "API is running"}
 
 
 @app.get("/health")
-async def health():
-    async with db.api_pool.connection() as conn:
+async def health() -> dict[str, str]:
+    async with db.connection(API_ROLE) as conn:
         await conn.execute("SELECT 1")
     return {"status": "ok"}
