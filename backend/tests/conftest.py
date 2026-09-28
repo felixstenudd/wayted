@@ -9,6 +9,7 @@ from psycopg_pool import AsyncConnectionPool
 
 TEST_DATABASE_URL = os.environ.get("WAYTED_TEST_DATABASE_URL")
 DOWNLOADER_PASSWORD = os.environ.get("WAYTED_TEST_DOWNLOADER_PASSWORD", "test")
+MAPPER_PASSWORD = os.environ.get("WAYTED_TEST_MAPPER_PASSWORD", "test")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -47,6 +48,19 @@ async def downloader_pool(
     conninfo = make_conninfo(
         TEST_DATABASE_URL, user="wayted_downloader", password=DOWNLOADER_PASSWORD
     )
+    pool = AsyncConnectionPool(conninfo, open=False)
+    await pool.open()
+    yield pool
+    await pool.close()
+
+
+@pytest.fixture
+async def mapper_pool(
+    admin_conn: AsyncConnection[TupleRow],
+) -> AsyncIterator[AsyncConnectionPool[AsyncConnection[TupleRow]]]:
+    """Pool logged in as wayted_mapper, so tests go through the real grants."""
+    assert TEST_DATABASE_URL
+    conninfo = make_conninfo(TEST_DATABASE_URL, user="wayted_mapper", password=MAPPER_PASSWORD)
     pool = AsyncConnectionPool(conninfo, open=False)
     await pool.open()
     yield pool
