@@ -1,3 +1,5 @@
+import random
+
 import pytest
 
 from app.sources.tiles import (
@@ -33,6 +35,24 @@ def test_every_zoom_round_trips_at_world_corners() -> None:
         n = 2**z
         for tile in {Tile(x=0, y=0, z=z), Tile(x=n - 1, y=n - 1, z=z)}:
             assert tiles_for_bounds(tile.bounds, z) == {tile}
+
+
+@pytest.mark.parametrize("z", range(0, 23))
+def test_random_tiles_round_trip_at_every_zoom(z: int) -> None:
+    rng = random.Random(z)
+    n = 1 << z
+    for _ in range(500):
+        tile = Tile(x=rng.randrange(n), y=rng.randrange(n), z=z)
+        assert tiles_for_bounds(tile.bounds, z) == {tile}
+
+
+def test_random_blocks_round_trip_at_the_highest_zoom() -> None:
+    rng = random.Random(22)
+    n = 1 << 22
+    for _ in range(200):
+        x, y = rng.randrange(n - 4), rng.randrange(n - 4)
+        tiles = block(x, y, x + rng.randrange(4), y + rng.randrange(4), z=22)
+        assert tiles_for_bounds(bounds_for_tiles(tiles), 22) == tiles
 
 
 def test_bounds_inside_one_tile_give_that_tile() -> None:

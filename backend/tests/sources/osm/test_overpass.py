@@ -23,6 +23,15 @@ def test_build_query_orders_bbox_south_west_north_east() -> None:
     )
 
 
+def test_build_query_writes_coordinates_without_exponents() -> None:
+    # Near 0° a z22 tile edge prints as 8.58306884765625e-05 by default.
+    bounds = Bounds(west=-0.00001, south=8.58306884765625e-05, east=0.0001, north=0.000171661)
+    query = build_query(["way[a]"], bounds, timeout_s=30, enclosing_selectors=["way[a]"])
+    assert "e-" not in query
+    assert "(0.000085831,-0.00001,0.000171661,0.0001)" in query
+    assert "is_in(0.000128746,0.000045)" in query
+
+
 def test_build_query_joins_selectors_of_all_layers() -> None:
     bounds = Bounds(west=1.0, south=2.0, east=3.0, north=4.0)
     query = build_query(["way[a]", "relation[b]"], bounds, timeout_s=30)
