@@ -1,4 +1,8 @@
+import heapq
 import random
+import time
+from collections.abc import Collection
+from itertools import count
 
 import pytest
 
@@ -92,3 +96,64 @@ def test_duplicate_tiles_are_planned_once() -> None:
     assert plan_rectangles([tile, tile], max_extra_tiles=0, max_tiles=64) == [
         TileRect.of_tile(tile)
     ]
+
+
+def test_rectangle_inside_a_merged_rectangle_is_absorbed() -> None:
+    # The two outer columns merge across the gap; the middle tile then lies inside the result.
+    tiles = block(0, 0, 0, 2) | block(2, 0, 2, 2) | {Tile(x=1, y=1, z=14)}
+    rects = plan_rectangles(tiles, max_extra_tiles=3, max_tiles=64)
+    assert rects == [TileRect(z=14, x_min=0, y_min=0, x_max=2, y_max=2)]
+
+
+def test_dense_area_plans_quickly() -> None:
+    tiles = block(0, 0, 69, 69)  # 4,900 tiles; comparing every pair took about a minute
+    started = time.perf_counter()
+    rects = plan_rectangles(tiles, max_extra_tiles=16, max_tiles=64)
+    assert time.perf_counter() - started < 1.0
+    assert covered(rects) == tiles
+
+
+def reference_plan(tiles: Collection[Tile], max_extra_tiles: int, max_tiles: int) -> list[TileRect]:
+    """The planner's merge rule applied by comparing every pair: slow, but obviously right."""
+    alive: dict[int, TileRect] = {}
+    ids = count()
+    heap: list[tuple[int, int, tuple[int, int, int, int], int, int]] = []
+
+    def key(r: TileRect) -> tuple[int, int, int, int]:
+        return (r.y_min, r.x_min, r.y_max, r.x_max)
+
+    def push_pairs(new_id: int) -> None:
+        for other_id, other in alive.items():
+            if other_id == new_id:
+                continue
+            union = alive[new_id].union(other)
+            cost = merge_cost(alive[new_id], other)
+            if cost <= max_extra_tiles and union.area <= max_tiles:
+                heapq.heappush(heap, (cost, union.area, key(union), new_id, other_id))
+
+    for tile in sorted(set(tiles), key=lambda t: (t.y, t.x)):
+        tile_id = next(ids)
+        alive[tile_id] = TileRect.of_tile(tile)
+        push_pairs(tile_id)
+    while heap:
+        _, _, _, a_id, b_id = heapq.heappop(heap)
+        if a_id in alive and b_id in alive:
+            merged_id = next(ids)
+            alive[merged_id] = alive.pop(a_id).union(alive.pop(b_id))
+            push_pairs(merged_id)
+    return sorted(alive.values(), key=key)
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_plan_matches_comparing_every_pair(seed: int) -> None:
+    rng = random.Random(seed)
+    span = rng.choice([4, 8, 12, 16])
+    if seed % 2:
+        tiles = {Tile(x=rng.randrange(span), y=rng.randrange(span), z=14) for _ in range(span * 4)}
+    else:
+        tiles = {
+            Tile(x=x, y=y, z=14) for x in range(span) for y in range(span) if rng.random() < 0.8
+        }
+    extra, cap = rng.choice([0, 1, 3, 16]), rng.choice([1, 4, 9, 16, 64])
+
+    assert plan_rectangles(tiles, extra, cap) == reference_plan(tiles, extra, cap)

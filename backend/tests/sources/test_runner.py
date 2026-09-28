@@ -1,10 +1,14 @@
+import threading
+
 import httpx
 import pytest
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 from psycopg_pool import AsyncConnectionPool
 
+from app.sources import runner
 from app.sources.downloader import DownloadError, DownloadStatus
+from app.sources.planning import plan_rectangles
 from app.sources.runner import download_tiles
 from app.sources.tiles import Bounds, Tile, TileRect
 
@@ -183,3 +187,20 @@ async def test_area_without_features_is_still_marked(
 
     assert [r.status for r in results] == [DownloadStatus.OK]
     assert await fetched_tiles(admin_conn) == WEST
+
+
+async def test_planning_runs_off_the_event_loop(
+    admin_conn: AsyncConnection[TupleRow],
+    downloader_pool: Pool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    planned_on: list[int] = []
+
+    def recording_plan(*args: object, **kwargs: object) -> list[TileRect]:
+        planned_on.append(threading.get_ident())
+        return plan_rectangles(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(runner, "plan_rectangles", recording_plan)
+    await download_tiles(FakeDownloader(), WEST, downloader_pool)
+
+    assert planned_on and planned_on[0] != threading.get_ident()
