@@ -23,3 +23,71 @@ CREATE TABLE app.refresh_tokens (
 
 CREATE INDEX refresh_tokens_user_id_idx ON app.refresh_tokens (user_id);
 CREATE INDEX refresh_tokens_expires_at_idx ON app.refresh_tokens (expires_at);
+
+-- non-auth
+
+CREATE TABLE app.route (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id bigint NOT NULL REFERENCES app.user(id),
+
+    name text,
+    activity_id bigint NOT NULL REFERENCES ref.activity(id),
+
+    route_type text NOT NULL CHECK (
+        route_type IN ('loop', 'out_and_back', 'point_to_point')
+    ),
+
+    distance_m double precision NOT NULL,
+    geom geometry(LineString, 4326) NOT NULL,
+
+    is_public boolean NOT NULL DEFAULT false,
+
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX route_user_idx ON app.route(user_id);
+CREATE INDEX route_public_idx ON app.route(is_public) WHERE is_public = true;
+CREATE INDEX route_geom_idx ON app.route USING gist (geom);
+
+
+CREATE TABLE app.route_save (
+    user_id bigint NOT NULL REFERENCES app.user(id) ON DELETE CASCADE,
+    route_id bigint NOT NULL REFERENCES app.route(id) ON DELETE CASCADE,
+
+    created_at timestamptz NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (user_id, route_id)
+);
+
+CREATE INDEX route_save_route_idx ON app.route_save(route_id);
+
+CREATE TABLE app.route_review (
+    user_id bigint NOT NULL REFERENCES app.user(id) ON DELETE CASCADE,
+    route_id bigint NOT NULL REFERENCES app.route(id) ON DELETE CASCADE,
+
+    rating smallint NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment text,
+
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (user_id, route_id)
+);
+
+CREATE INDEX route_review_route_idx ON app.route_review(route_id);
+
+CREATE TABLE app.segment_rating (
+    user_id bigint NOT NULL REFERENCES app.user(id) ON DELETE CASCADE,
+    segment_id bigint NOT NULL REFERENCES graph.segment(id),
+
+    rating smallint NOT NULL CHECK (rating BETWEEN 1 AND 5),
+
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (user_id, segment_id)
+);
+
+CREATE INDEX segment_rating_segment_idx
+    ON app.segment_rating(segment_id);
