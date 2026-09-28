@@ -75,7 +75,8 @@ async def test_run_query_sends_query_as_form_data() -> None:
         (httpx.Response(429, text="nope"), DownloadStatus.RATE_LIMITED),
         (httpx.Response(504, text="nope"), DownloadStatus.TIMEOUT),
         (httpx.Response(500, text="nope"), DownloadStatus.SOURCE_ERROR),
-        (httpx.Response(400, text="nope"), DownloadStatus.SOURCE_ERROR),
+        (httpx.Response(400, text="nope"), DownloadStatus.INVALID_RESPONSE),
+        (httpx.Response(404, text="nope"), DownloadStatus.INVALID_RESPONSE),
         (httpx.Response(200, text=""), DownloadStatus.SOURCE_ERROR),
         (httpx.Response(200, text="<html>busy</html>"), DownloadStatus.SOURCE_ERROR),
     ],
@@ -87,6 +88,20 @@ async def test_run_query_maps_failed_responses(
         with pytest.raises(DownloadError) as caught:
             await run_query(client, "q")
     assert caught.value.status == status
+
+
+async def test_rejected_query_reports_overpass_error_text() -> None:
+    body = (FIXTURES / "overpass_400.html").read_text()
+    async with client_returning(httpx.Response(400, text=body)) as client:
+        with pytest.raises(DownloadError) as caught:
+            await run_query(client, "q")
+
+    message = caught.value.message
+    assert caught.value.status == DownloadStatus.INVALID_RESPONSE
+    assert message.startswith("Overpass rejected the query (400): Error: line 1: parse error:")
+    assert "<" not in message
+    assert "ODbL" not in message
+    assert len(message) <= 250
 
 
 @pytest.mark.parametrize(

@@ -115,6 +115,8 @@ async def test_store_failure_rolls_back_data_and_tiles(
     [
         (httpx.ReadTimeout("read timed out"), DownloadStatus.TIMEOUT),
         (httpx.ConnectError("connection refused"), DownloadStatus.SOURCE_ERROR),
+        (httpx.DecodingError("broken gzip body"), DownloadStatus.SOURCE_ERROR),
+        (httpx.TooManyRedirects("redirect loop"), DownloadStatus.SOURCE_ERROR),
     ],
 )
 async def test_http_failures_become_statuses(
