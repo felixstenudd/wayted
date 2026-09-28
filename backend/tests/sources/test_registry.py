@@ -1,10 +1,12 @@
+import asyncio
+
 import pytest
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 from psycopg_pool import AsyncConnectionPool
 
 from app.sources.registry import mark_fetched
-from app.sources.tiles import Tile
+from app.sources.tiles import Tile, TileRect
 
 pytestmark = pytest.mark.db
 
@@ -48,3 +50,20 @@ async def test_mark_fetched_again_updates_instead_of_duplicating(
         "SELECT count(*), bool_and(fetched_at > now() - interval '1 hour') FROM raw.fetched_tiles"
     )
     assert await cur.fetchone() == (2, True)
+
+
+async def test_concurrent_marks_in_opposite_orders_do_not_deadlock(
+    admin_conn: AsyncConnection[TupleRow],
+    downloader_pool: AsyncConnectionPool[AsyncConnection[TupleRow]],
+) -> None:
+    tiles = sorted(
+        TileRect(z=14, x_min=8000, y_min=4000, x_max=8063, y_max=4063).tiles(),
+        key=lambda t: (t.x, t.y),
+    )
+
+    async def mark(order: list[Tile]) -> None:
+        async with downloader_pool.connection() as conn:
+            await mark_fetched(conn, "roads", order)
+
+    for _ in range(3):
+        await asyncio.gather(mark(tiles), mark(tiles[::-1]))

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -148,3 +149,46 @@ async def test_empty_payload_stores_nothing(
         " + (SELECT count(*) FROM raw.osm_relations)"
     )
     assert await cur.fetchone() == (0,)
+
+
+@pytest.mark.db
+async def test_storing_the_same_data_again_leaves_rows_untouched(
+    admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
+) -> None:
+    body = json.loads((FIXTURES / "overpass_roads_parks.json").read_text())
+
+    async def row_versions() -> list[tuple[str, int, str]]:
+        cur = await admin_conn.execute(
+            """
+            SELECT 'node', id, xmin::text FROM raw.osm_nodes
+            UNION ALL SELECT 'way', id, xmin::text FROM raw.osm_ways
+            UNION ALL SELECT 'relation', id, xmin::text FROM raw.osm_relations
+            ORDER BY 1, 2
+            """
+        )
+        return await cur.fetchall()
+
+    async with client_answering(body, []) as client:
+        downloader = OsmDownloader(client, [ROADS, PARKS])
+        data = await downloader.fetch(BOUNDS)
+        async with downloader_pool.connection() as conn:
+            await downloader.store(conn, data)
+        before = await row_versions()
+        async with downloader_pool.connection() as conn:
+            await downloader.store(conn, data)
+
+    assert await row_versions() == before
+
+
+@pytest.mark.db
+async def test_concurrent_stores_in_opposite_orders_do_not_deadlock(
+    admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
+) -> None:
+    nodes = [OsmNode(id=i, tags={}, lon=18.0, lat=59.0) for i in range(1, 2001)]
+
+    async def store(order: list[OsmNode]) -> None:
+        async with httpx.AsyncClient() as client, downloader_pool.connection() as conn:
+            await OsmDownloader(client, [ROADS]).store(conn, OsmData(order, [], []))
+
+    for _ in range(3):
+        await asyncio.gather(store(nodes), store(nodes[::-1]))
