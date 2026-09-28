@@ -9,3 +9,8 @@ api_pool = AsyncConnectionPool(
     make_conninfo(user="wayted_api", password=os.environ["WAYTED_API_PASSWORD"]),
     open=False,
 )
+
+downloader_pool = AsyncConnectionPool(
+    make_conninfo(user="wayted_downloader", password=os.environ["WAYTED_DOWNLOADER_PASSWORD"]),
+    open=False,
+)
