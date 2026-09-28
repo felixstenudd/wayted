@@ -6,12 +6,8 @@ dependencies = [
   "fastapi",
   "uvicorn[standard]",
   "psycopg[binary,pool]",
-<<<<<<< HEAD
   "pyjwt",
   "pwdlib[argon2]",
-=======
-  "httpx",
->>>>>>> origin/main
 ]
 
 [project.optional-dependencies]
