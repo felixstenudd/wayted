@@ -1,7 +1,9 @@
 """
-Builds the routable pgRouting graph from raw source data. Splits OSM ways
-into edges and computes attribute scores (greenness, noise, urbanness, sightseeing)
-for each one. Runs only in the worker.
+Builds the routable pgRouting graph from raw OSM data. Triggers on raw queue changed ways and
+nodes; the mapper rebuilds the affected edges and queues them for the enricher, which scores them.
+Runs only in the worker.
 """
 
-__all__ = []  # defines public API for module
+from .mapper import BatchResult, MapResult, map_pending
+
+__all__ = ["BatchResult", "MapResult", "map_pending"]
