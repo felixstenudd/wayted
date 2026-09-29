@@ -20,7 +20,7 @@ async def access_for(
     for node_id, x, y in [(1, 0, 0), (2, 1, 0), (3, 1, 1)]:
         await add_node(conn, node_id, x, y)
     await add_way(conn, 1, [1, 2, 3, 1] if closed else [1, 2, 3], tags)
-    await map_pending(pool)
+    await map_pending(pool.connection)
     cur = await conn.execute("SELECT forward, backward FROM graph.edges")
     rows = await cur.fetchall()
     assert len(rows) <= 1

@@ -20,7 +20,7 @@ EAST: Tile = [(20, [(3, 2, 0), (5, 3, 0), (6, 4, 0)]), (21, [(5, 3, 0), (7, 3, 1
 async def import_tile(conn: Conn, pool: Pool, tile: Tile) -> None:
     for way_id, points in tile:
         await add_line(conn, way_id, points, RESIDENTIAL)
-    await map_pending(pool)
+    await map_pending(pool.connection)
 
 
 async def graph_snapshot(conn: Conn) -> list[tuple[object, ...]]:
@@ -64,7 +64,7 @@ async def test_batches_of_one_way_give_the_same_graph(admin_conn: Conn, mapper_p
     )
     await admin_conn.execute("INSERT INTO graph.pending_ways (way_id) SELECT id FROM raw.osm_ways")
 
-    result = await map_pending(mapper_pool, batch_size=1)
+    result = await map_pending(mapper_pool.connection, batch_size=1)
 
     assert len(result.batches) == 4
     assert await graph_snapshot(admin_conn) == together
@@ -80,7 +80,7 @@ async def test_failed_batch_leaves_graph_and_queue_untouched(
     monkeypatch.setattr(queries, "UPDATE_EDGES", "SELECT 1 / 0")
 
     with pytest.raises(psycopg.errors.DivisionByZero):
-        await map_pending(mapper_pool)
+        await map_pending(mapper_pool.connection)
 
     assert await graph_snapshot(admin_conn) == before
     cur = await admin_conn.execute(
@@ -116,7 +116,7 @@ async def test_pgr_dijkstra_respects_one_way_per_activity(
 ) -> None:
     one_way = {"highway": "residential", "oneway": "yes"}
     await add_line(admin_conn, 1, [(1, 0, 0), (2, 1, 0)], one_way)
-    await map_pending(mapper_pool)
+    await map_pending(mapper_pool.connection)
     edges_sql = f"""
         SELECT id, source, target,
                CASE WHEN '{activity}' = ANY(forward) THEN length_m ELSE -1 END AS cost,
