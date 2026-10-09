@@ -1,5 +1,7 @@
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 
 import pytest
 from psycopg import AsyncConnection
@@ -244,7 +246,9 @@ async def test_wait_ends_when_a_tile_is_requested(
     admin_conn: Conn, api_pool: Pool, downloader_pool: Pool, listener: Conn
 ) -> None:
     await listen(listener)
-    waiting = asyncio.create_task(worker.wait_for_work(listener, downloader_pool.connection))
+    waiting = asyncio.create_task(
+        worker.wait_for_work(listener, downloader_pool.connection, RoadDownloader.layers)
+    )
     await asyncio.sleep(0.2)
     assert not waiting.done()
 
@@ -265,7 +269,9 @@ async def test_wait_ends_at_once_for_a_request_made_before_it(
         """
     )
 
-    await asyncio.wait_for(worker.wait_for_work(listener, downloader_pool.connection), timeout=5)
+    await asyncio.wait_for(
+        worker.wait_for_work(listener, downloader_pool.connection, RoadDownloader.layers), timeout=5
+    )
 
 
 async def test_wait_ends_when_a_retry_falls_due(
@@ -281,7 +287,9 @@ async def test_wait_ends_when_a_retry_falls_due(
     await listen(listener)
 
     started = time.monotonic()
-    await asyncio.wait_for(worker.wait_for_work(listener, downloader_pool.connection), timeout=5)
+    await asyncio.wait_for(
+        worker.wait_for_work(listener, downloader_pool.connection, RoadDownloader.layers), timeout=5
+    )
 
     assert time.monotonic() - started >= 0.3
 
@@ -292,4 +300,44 @@ async def test_wait_returns_at_once_when_a_tile_is_due(
     await request(api_pool, WEST)
     await listen(listener)
 
-    await asyncio.wait_for(worker.wait_for_work(listener, downloader_pool.connection), timeout=5)
+    await asyncio.wait_for(
+        worker.wait_for_work(listener, downloader_pool.connection, RoadDownloader.layers), timeout=5
+    )
+
+
+async def eventually(check: Callable[[], Awaitable[bool]], timeout_s: float = 10) -> None:
+    deadline = time.monotonic() + timeout_s
+    while not await check():
+        assert time.monotonic() < deadline, "condition was not met in time"
+        await asyncio.sleep(0.05)
+
+
+async def test_serve_resumes_interrupted_tiles_and_handles_later_requests(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool, mapper_pool: Pool, listener: Conn
+) -> None:
+    async def west_fetched() -> bool:
+        return await fetched(admin_conn, "roads") == WEST
+
+    async def all_fetched() -> bool:
+        return await fetched(admin_conn, "roads") == WEST | EAST
+
+    # Left running by a worker that died.
+    await request(api_pool, WEST)
+    await admin_conn.execute("UPDATE raw.pending_tiles SET status = 'running'")
+
+    serving = asyncio.create_task(
+        worker.serve(
+            [RoadDownloader()], downloader_pool.connection, mapper_pool.connection, listener
+        )
+    )
+    try:
+        await eventually(west_fetched)
+        await request(api_pool, EAST)
+        await eventually(all_fetched)
+    finally:
+        serving.cancel()
+        with suppress(asyncio.CancelledError):
+            await serving
+
+    assert await queued(admin_conn) == {}
+    assert await edge_count(admin_conn) == 2

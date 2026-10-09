@@ -1,3 +1,5 @@
+import asyncio
+
 import psycopg
 import pytest
 from psycopg import AsyncConnection
@@ -116,11 +118,12 @@ async def test_second_request_adds_nothing(admin_conn: Conn, api_pool: Pool) -> 
     assert await rows(admin_conn) == before
 
 
-async def test_running_tile_is_left_alone(admin_conn: Conn, api_pool: Pool) -> None:
+@pytest.mark.parametrize("refetch", [False, True])
+async def test_running_tile_is_left_alone(admin_conn: Conn, api_pool: Pool, refetch: bool) -> None:
     await request(api_pool)
     await admin_conn.execute("UPDATE raw.pending_tiles SET status = 'running', attempts = 2")
 
-    assert await request(api_pool) == 0
+    assert await request(api_pool, refetch=refetch) == 0
 
     assert {(status, attempts) for _, _, _, status, attempts in await rows(admin_conn)} == {
         ("running", 2)
@@ -149,6 +152,38 @@ async def test_failed_tile_is_queued_again(admin_conn: Conn, api_pool: Pool) -> 
         (ONE.x, ONE.y),
     )
     assert await cur.fetchall() == [("pending", 0, None, None, True)]
+
+
+async def test_failed_tile_that_is_still_fetched_is_queued_again(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    # Fetched but never mapped: the mapper failed on every attempt.
+    await request(api_pool, ONE.bounds)
+    async with downloader_pool.connection() as conn:
+        for layer in LAYERS:
+            await mark_fetched(conn, layer, {ONE})
+    await admin_conn.execute("UPDATE raw.pending_tiles SET status = 'failed', attempts = 10")
+
+    assert await request(api_pool, ONE.bounds) == 2
+
+    assert await rows(admin_conn) == [
+        ("parks", ONE.x, ONE.y, "pending", 0),
+        ("roads", ONE.x, ONE.y, "pending", 0),
+    ]
+
+
+async def test_request_does_not_block_the_worker_on_queued_tiles(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool)
+
+    async with api_pool.connection() as api_conn:
+        # Asked again, and the API transaction is still open.
+        assert await queue.request_area(api_conn, BOUNDS) == 0
+        async with downloader_pool.connection() as conn:
+            claimed = await asyncio.wait_for(queue.claim(conn, LAYERS, 64), timeout=3)
+
+    assert claimed == {"roads": TILES, "parks": TILES}
 
 
 async def test_api_role_reaches_the_queue_but_not_raw_data(api_pool: Pool) -> None:
@@ -246,11 +281,57 @@ async def test_settle_removes_a_stored_rectangle(
     admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
 ) -> None:
     await request(api_pool)
+    async with downloader_pool.connection() as conn:
+        for layer in LAYERS:
+            await mark_fetched(conn, layer, {ONE})
 
     await claim_and_settle(downloader_pool, RectangleResult(ONE_RECT, DownloadStatus.OK, None))
 
     assert await queued_tiles(admin_conn, "roads") == TILES - {ONE}
     assert await queued_tiles(admin_conn, "parks") == TILES - {ONE}
+
+
+async def test_settle_keeps_a_tile_requested_after_its_rectangle_was_stored(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    # The rectangle is stored, and a refetch of one of its tiles arrives before the cycle settles.
+    async with downloader_pool.connection() as conn:
+        for layer in LAYERS:
+            await mark_fetched(conn, layer, {ONE})
+    assert await request(api_pool, ONE.bounds, refetch=True) == 2
+
+    async with downloader_pool.connection() as conn, conn.transaction():
+        await queue.settle(conn, LAYERS, [RectangleResult(ONE_RECT, DownloadStatus.OK, None)])
+
+    assert await rows(admin_conn) == [
+        ("parks", ONE.x, ONE.y, "pending", 0),
+        ("roads", ONE.x, ONE.y, "pending", 0),
+    ]
+
+
+@pytest.mark.parametrize("stored_first", [True, False])
+async def test_settle_with_overlapping_rectangles(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool, stored_first: bool
+) -> None:
+    # RECT was stored, and a rectangle sharing its east column timed out.
+    east = TileRect(z=14, x_min=8801, y_min=4700, x_max=8802, y_max=4701)
+    await request(api_pool, bounds_for_tiles(TILES | east.tiles()))
+    async with downloader_pool.connection() as conn:
+        await queue.claim(conn, LAYERS, 64)
+        for layer in LAYERS:
+            await mark_fetched(conn, layer, TILES)
+    results = [
+        RectangleResult(RECT, DownloadStatus.OK, None),
+        RectangleResult(east, DownloadStatus.TIMEOUT, "slow"),
+    ]
+
+    async with downloader_pool.connection() as conn, conn.transaction():
+        await queue.settle(conn, LAYERS, results if stored_first else results[::-1])
+
+    assert await queued_tiles(admin_conn, "roads") == east.tiles() - TILES
+    assert {(status, attempts) for _, _, _, status, attempts in await rows(admin_conn)} == {
+        ("pending", 1)
+    }
 
 
 @pytest.mark.parametrize(
@@ -299,19 +380,35 @@ async def test_settle_waits_longer_after_each_attempt(
     assert set(await cur.fetchall()) == {("pending", 3, True)}
 
 
-async def test_settle_fails_the_fifth_attempt(
+async def test_settle_retries_the_ninth_attempt(
     admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
 ) -> None:
     await request(api_pool, ONE.bounds)
-    await admin_conn.execute("UPDATE raw.pending_tiles SET attempts = 4")
+    await admin_conn.execute("UPDATE raw.pending_tiles SET attempts = 8")
 
     await claim_and_settle(
         downloader_pool, RectangleResult(ONE_RECT, DownloadStatus.TIMEOUT, "slow")
     )
 
     assert await rows(admin_conn) == [
-        ("parks", ONE.x, ONE.y, "failed", 5),
-        ("roads", ONE.x, ONE.y, "failed", 5),
+        ("parks", ONE.x, ONE.y, "pending", 9),
+        ("roads", ONE.x, ONE.y, "pending", 9),
+    ]
+
+
+async def test_settle_fails_the_tenth_attempt(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool, ONE.bounds)
+    await admin_conn.execute("UPDATE raw.pending_tiles SET attempts = 9")
+
+    await claim_and_settle(
+        downloader_pool, RectangleResult(ONE_RECT, DownloadStatus.TIMEOUT, "slow")
+    )
+
+    assert await rows(admin_conn) == [
+        ("parks", ONE.x, ONE.y, "failed", 10),
+        ("roads", ONE.x, ONE.y, "failed", 10),
     ]
 
 
@@ -378,11 +475,11 @@ async def test_reset_running_returns_rows_to_the_queue(
 
 async def test_seconds_until_due(admin_conn: Conn, api_pool: Pool, downloader_pool: Pool) -> None:
     async with downloader_pool.connection() as conn:
-        assert await queue.seconds_until_due(conn) is None
+        assert await queue.seconds_until_due(conn, LAYERS) is None
 
     await request(api_pool)
     async with downloader_pool.connection() as conn:
-        assert await queue.seconds_until_due(conn) == 0.0
+        assert await queue.seconds_until_due(conn, LAYERS) == 0.0
 
     await admin_conn.execute(
         "UPDATE raw.pending_tiles SET next_attempt_at = now() + interval '1 minute'"
@@ -392,5 +489,17 @@ async def test_seconds_until_due(admin_conn: Conn, api_pool: Pool, downloader_po
         (ONE.x,),
     )
     async with downloader_pool.connection() as conn:
-        seconds = await queue.seconds_until_due(conn)
+        seconds = await queue.seconds_until_due(conn, LAYERS)
     assert seconds is not None and 50 < seconds <= 60
+
+
+async def test_seconds_until_due_ignores_layers_the_worker_does_not_fetch(
+    admin_conn: Conn, downloader_pool: Pool
+) -> None:
+    # Claim would never take this row, so waiting on it would spin.
+    await admin_conn.execute(
+        "INSERT INTO raw.pending_tiles (layer, z, x, y) VALUES ('green_areas', 14, 8800, 4700)"
+    )
+
+    async with downloader_pool.connection() as conn:
+        assert await queue.seconds_until_due(conn, LAYERS) is None
