@@ -1,20 +1,39 @@
 """HTTP endpoints of the dev API."""
 
-from fastapi import APIRouter
+from dataclasses import asdict
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.dependencies import Conn
 from app.dev.schemas import (
+    AreaRequestIn,
+    AreaRequestOut,
+    BoundsOut,
+    EdgeOut,
     Feature,
     FeatureCollection,
     FetchedTileOut,
+    GraphOut,
+    LineString,
+    Point,
     Polygon,
     QueuedTileOut,
+    VertexOut,
 )
-from app.sources.queue import queued_tiles
+from app.graph.area import AreaTooLarge, graph_in_bounds
+from app.sources.queue import queued_tiles, request_area
 from app.sources.registry import fetched_tiles
-from app.sources.tiles import Tile
+from app.sources.tiles import Bounds, Tile, bounds_for_circle
+
+MAX_EDGES = 25_000
+# Error code for unprocessable query
+UNPROCESSABLE = 422
 
 router = APIRouter()
+
+Lon = Annotated[float, Query(ge=-180, le=180)]
+Lat = Annotated[float, Query(ge=-90, le=90)]
 
 
 def _outline(tile: Tile) -> Polygon:
@@ -73,3 +92,50 @@ async def list_queued_tiles(db_conn: Conn) -> FeatureCollection[Polygon, QueuedT
             for q in await queued_tiles(db_conn)
         ]
     )
+
+
+@router.get("/graph")
+async def graph(db_conn: Conn, west: Lon, south: Lat, east: Lon, north: Lat) -> GraphOut:
+    """The edges that intersect the box, and the vertices at their ends."""
+    bounds = Bounds(west=west, south=south, east=east, north=north)
+    try:
+        area = await graph_in_bounds(db_conn, bounds, MAX_EDGES)
+    except AreaTooLarge as e:
+        raise HTTPException(UNPROCESSABLE, f"{e} Zoom in and try again.") from None
+    except ValueError as e:
+        raise HTTPException(UNPROCESSABLE, str(e)) from None
+    return GraphOut(
+        edges=FeatureCollection(
+            features=[
+                Feature(
+                    geometry=LineString(**edge.geometry),
+                    properties=EdgeOut(
+                        id=edge.id,
+                        way_id=edge.way_id,
+                        source=edge.source,
+                        target=edge.target,
+                        length_m=edge.length_m,
+                        forward=edge.forward,
+                        backward=edge.backward,
+                        scores=edge.scores,
+                        tags=edge.tags,
+                    ),
+                )
+                for edge in area.edges
+            ]
+        ),
+        vertices=FeatureCollection(
+            features=[
+                Feature(geometry=Point(**vertex.geometry), properties=VertexOut(id=vertex.id))
+                for vertex in area.vertices
+            ]
+        ),
+    )
+
+
+@router.post("/requests", status_code=status.HTTP_202_ACCEPTED)
+async def request_circle(body: AreaRequestIn, db_conn: Conn) -> AreaRequestOut:
+    """Queue the tiles around a circle for the worker. Returns how many rows this call queued."""
+    bounds = bounds_for_circle(body.lat, body.lon, body.radius_m)
+    queued = await request_area(db_conn, bounds, body.refetch)
+    return AreaRequestOut(queued=queued, bounds=BoundsOut(**asdict(bounds)))
