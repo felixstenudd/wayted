@@ -2,10 +2,16 @@
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
+import { useAuthStore } from '@/features/auth'
 import { Button } from '@/shared/ui/button'
 import { Wordmark } from '@/shared/ui/wordmark'
 
 const { t } = useI18n()
+const auth = useAuthStore()
+
+function signOut(): void {
+	auth.signOut().catch((error: unknown) => console.error('Sign out failed', error))
+}
 </script>
 
 <template>
@@ -16,7 +22,10 @@ const { t } = useI18n()
 			<Wordmark>{{ t('app.name') }}</Wordmark>
 		</RouterLink>
 		<nav :aria-label="t('landing.nav.label')" class="flex items-center gap-2 sm:gap-3">
-			<Button as-child variant="ghost" size="sm">
+			<Button v-if="auth.isSignedIn" variant="ghost" size="sm" @click="signOut">
+				{{ t('landing.signOut') }}
+			</Button>
+			<Button v-else as-child variant="ghost" size="sm">
 				<RouterLink :to="{ name: 'sign-in' }">{{ t('landing.signIn') }}</RouterLink>
 			</Button>
 			<Button as-child size="sm" class="max-sm:hidden">

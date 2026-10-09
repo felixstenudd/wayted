@@ -8,6 +8,7 @@
 			"footerLabel": "Account"
 		},
 		"signIn": "Sign in",
+		"signOut": "Sign out",
 		"createAccount": "Create account",
 		"startPlanning": "Start planning",
 		"hero": {
@@ -57,7 +58,11 @@
 			"emailRequired": "Enter your email address.",
 			"emailInvalid": "Enter an email address like name{'@'}example.com.",
 			"passwordRequired": "Enter your password.",
-			"passwordTooShort": "Use at least {min} characters for your password."
+			"passwordTooShort": "Use at least {min} characters for your password.",
+			"invalidCredentials": "That email and password don't match. Check them and try again.",
+			"emailTaken": "There is already an account with this email. Sign in instead.",
+			"invalidInput": "Check your details and try again.",
+			"unexpected": "Something went wrong on our side. Try again in a moment."
 		},
 		"signIn": {
 			"title": "Sign in",
