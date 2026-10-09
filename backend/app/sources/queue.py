@@ -5,6 +5,9 @@ request_area; the worker claims the rows and settles them once the tiles are in 
 
 from collections import defaultdict
 from collections.abc import Collection, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal
 
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
@@ -15,6 +18,8 @@ from .tiles import Bounds, Tile, tiles_for_bounds
 
 # Only queue layers that has a downloader implemented
 LAYER_CODES = tuple(layer.code for layer in LAYERS)
+
+type Status = Literal["pending", "running", "failed"]
 
 MAX_ATTEMPTS = 10
 MAPPER_ERROR = "mapper_error"
@@ -106,6 +111,26 @@ SECONDS_UNTIL_DUE = """
     FROM raw.pending_tiles
     WHERE status = 'pending' AND layer = ANY(%(layers)s)
 """
+
+QUEUED_TILES = """
+    SELECT layer, z, x, y, requested_at, status, attempts, next_attempt_at,
+           last_status, last_message
+    FROM raw.pending_tiles
+    ORDER BY requested_at, layer, z, y, x
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class QueuedTile:
+    layer: str
+    tile: Tile
+    requested_at: datetime
+    status: Status
+    attempts: int
+    next_attempt_at: datetime
+    # how the last attempt failed; None before the first failure
+    last_status: str | None
+    last_message: str | None
 
 
 async def request_area(
@@ -202,3 +227,12 @@ async def seconds_until_due(
     assert row is not None
     seconds: float | None = row[0]
     return None if seconds is None else max(seconds, 0.0)
+
+
+async def queued_tiles(conn: AsyncConnection[TupleRow]) -> list[QueuedTile]:
+    """Every queued tile, oldest request first."""
+    cur = await conn.execute(QUEUED_TILES)
+    return [
+        QueuedTile(layer, Tile(x=x, y=y, z=z), *state)
+        for layer, z, x, y, *state in await cur.fetchall()
+    ]
