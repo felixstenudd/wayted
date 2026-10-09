@@ -16,7 +16,7 @@ from .tiles import Bounds, Tile, tiles_for_bounds
 # Only queue layers that has a downloader implemented
 LAYER_CODES = tuple(layer.code for layer in LAYERS)
 
-MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = 10
 MAPPER_ERROR = "mapper_error"
 # INVALID_RESPONSE is left out: the same query would be rejected again.
 RETRYABLE = frozenset(
@@ -30,8 +30,20 @@ RETRYABLE = frozenset(
 
 LAYER_ZOOMS = "SELECT code, zoom FROM ref.source_layers WHERE code = ANY(%s)"
 
+# A failed tile is queued again whether or not it is fetched: it may be in raw but not the graph.
+RESET_FAILED = """
+    UPDATE raw.pending_tiles AS queued
+    SET status = 'pending', attempts = 0, requested_at = now(), next_attempt_at = now(),
+        last_status = NULL, last_message = NULL
+    FROM unnest(%(xs)s::int[], %(ys)s::int[]) AS tile (x, y)
+    WHERE (queued.layer, queued.z, queued.x, queued.y) = (%(layer)s, %(z)s, tile.x, tile.y)
+      AND queued.status = 'failed'
+"""
+
+# DO NOTHING, not DO UPDATE: that would lock every row already queued until the caller commits,
+# and the worker claims and settles those rows.
 QUEUE_TILES = """
-    INSERT INTO raw.pending_tiles AS queued (layer, z, x, y)
+    INSERT INTO raw.pending_tiles (layer, z, x, y)
     SELECT %(layer)s, %(z)s, tile.x, tile.y
     FROM unnest(%(xs)s::int[], %(ys)s::int[]) AS tile (x, y)
     WHERE %(refetch)s OR NOT EXISTS (
@@ -40,10 +52,7 @@ QUEUE_TILES = """
             = (%(layer)s, %(z)s, tile.x, tile.y)
           AND fetched.expires_at > now()
     )
-    ON CONFLICT (layer, z, x, y) DO UPDATE
-    SET status = 'pending', attempts = 0, requested_at = now(), next_attempt_at = now(),
-        last_status = NULL, last_message = NULL
-    WHERE queued.status = 'failed'
+    ON CONFLICT (layer, z, x, y) DO NOTHING
 """
 
 # Claims whole tiles: a downloader fetches every layer of a tile in one request.
@@ -65,22 +74,29 @@ CLAIM = """
 """
 
 IN_RECTANGLE = """
-    layer = ANY(%(layers)s) AND z = %(z)s
-    AND x BETWEEN %(x_min)s AND %(x_max)s AND y BETWEEN %(y_min)s AND %(y_max)s
+    queued.layer = ANY(%(layers)s) AND queued.z = %(z)s
+    AND queued.x BETWEEN %(x_min)s AND %(x_max)s AND queued.y BETWEEN %(y_min)s AND %(y_max)s
 """
 
 # Every queued tile in the rectangle was fetched, also those that were not claimed.
-DELETE_FETCHED = f"DELETE FROM raw.pending_tiles WHERE {IN_RECTANGLE}"
+DELETE_FETCHED = f"""
+    DELETE FROM raw.pending_tiles AS queued
+    USING raw.fetched_tiles AS fetched
+    WHERE (fetched.layer, fetched.z, fetched.x, fetched.y)
+        = (queued.layer, queued.z, queued.x, queued.y)
+      AND queued.requested_at <= fetched.fetched_at
+      AND {IN_RECTANGLE}
+"""
 
 RETRY_OR_FAIL = f"""
-    UPDATE raw.pending_tiles
+    UPDATE raw.pending_tiles AS queued
     SET attempts = attempts + 1,
         status = CASE WHEN %(retry)s AND attempts + 1 < %(max_attempts)s
                       THEN 'pending' ELSE 'failed' END,
         next_attempt_at = now() + (attempts + 1) * interval '1 minute',
         last_status = %(status)s,
         last_message = %(message)s
-    WHERE status = 'running' AND {IN_RECTANGLE}
+    WHERE queued.status = 'running' AND {IN_RECTANGLE}
 """
 
 RESET_RUNNING = "UPDATE raw.pending_tiles SET status = 'pending' WHERE status = 'running'"
@@ -88,7 +104,7 @@ RESET_RUNNING = "UPDATE raw.pending_tiles SET status = 'pending' WHERE status = 
 SECONDS_UNTIL_DUE = """
     SELECT EXTRACT(epoch FROM min(next_attempt_at) - now())::float8
     FROM raw.pending_tiles
-    WHERE status = 'pending'
+    WHERE status = 'pending' AND layer = ANY(%(layers)s)
 """
 
 
@@ -106,17 +122,15 @@ async def request_area(
     queued = 0
     for layer, zoom in sorted(await cur.fetchall()):
         tiles = sorted(tiles_for_bounds(bounds, zoom), key=lambda t: (t.y, t.x))
-        cur = await conn.execute(
-            QUEUE_TILES,
-            {
-                "layer": layer,
-                "z": zoom,
-                "xs": [t.x for t in tiles],
-                "ys": [t.y for t in tiles],
-                "refetch": refetch,
-            },
-        )
-        queued += cur.rowcount
+        params = {
+            "layer": layer,
+            "z": zoom,
+            "xs": [t.x for t in tiles],
+            "ys": [t.y for t in tiles],
+            "refetch": refetch,
+        }
+        queued += (await conn.execute(RESET_FAILED, params)).rowcount
+        queued += (await conn.execute(QUEUE_TILES, params)).rowcount
     return queued
 
 
@@ -176,9 +190,14 @@ async def reset_running(conn: AsyncConnection[TupleRow]) -> int:
     return (await conn.execute(RESET_RUNNING)).rowcount
 
 
-async def seconds_until_due(conn: AsyncConnection[TupleRow]) -> float | None:
-    """Seconds until the next pending tile may be claimed; None when nothing is pending."""
-    cur = await conn.execute(SECONDS_UNTIL_DUE)
+async def seconds_until_due(
+    conn: AsyncConnection[TupleRow], layers: Collection[str]
+) -> float | None:
+    """
+    Seconds until the next pending tile may be claimed; None when nothing is pending. Counts
+    the same layers as claim, or a row claim never takes would end every wait at once.
+    """
+    cur = await conn.execute(SECONDS_UNTIL_DUE, {"layers": list(layers)})
     row = await cur.fetchone()
     assert row is not None
     seconds: float | None = row[0]

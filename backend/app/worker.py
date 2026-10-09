@@ -5,7 +5,7 @@ graph building for them.
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -77,7 +77,9 @@ async def run_once(
     )
 
 
-async def wait_for_work(listener: AsyncConnection[TupleRow], connect: Connect) -> None:
+async def wait_for_work(
+    listener: AsyncConnection[TupleRow], connect: Connect, layers: Collection[str]
+) -> None:
     """
     Return when a tile is requested or a retry falls due.
 
@@ -85,7 +87,7 @@ async def wait_for_work(listener: AsyncConnection[TupleRow], connect: Connect) -
     since the last wait is still buffered on it and ends this wait at once.
     """
     async with connect() as conn:
-        timeout = await queue.seconds_until_due(conn)
+        timeout = await queue.seconds_until_due(conn, layers)
     if timeout == 0:
         return
     async for _ in listener.notifies(timeout=timeout, stop_after=1):
@@ -106,6 +108,27 @@ def _log_cycle(result: CycleResult) -> None:
         sum(b.edges_updated for b in batches),
         sum(b.edges_deleted for b in batches),
     )
+
+
+async def serve(
+    downloaders: Sequence[Downloader[Any]],
+    connect_downloader: Connect,
+    connect_mapper: Connect,
+    listener: AsyncConnection[TupleRow],
+) -> None:
+    """Run cycles until cancelled. listener is an autocommit connection used for nothing else."""
+    layers = [layer for downloader in downloaders for layer in downloader.layers]
+    async with connect_downloader() as conn:
+        reset = await queue.reset_running(conn)
+    # Listen before the first claim, so a request made from here on is never missed.
+    await listener.execute(f"LISTEN {NOTIFY_CHANNEL}")
+    log.info("worker started, %d interrupted rows back in the queue", reset)
+    while True:
+        result = await run_once(downloaders, connect_downloader, connect_mapper)
+        if result is None:
+            await wait_for_work(listener, connect_downloader, layers)
+        else:
+            _log_cycle(result)
 
 
 async def main() -> None:
@@ -130,17 +153,7 @@ async def main() -> None:
             await AsyncConnection.connect(conninfo, autocommit=True) as listener,
         ):
             downloaders = [OsmDownloader(client, LAYERS)]
-            async with connect_downloader() as conn:
-                reset = await queue.reset_running(conn)
-            # Listen before the first claim, so a request made from here on is never missed.
-            await listener.execute(f"LISTEN {NOTIFY_CHANNEL}")
-            log.info("worker started, %d interrupted rows back in the queue", reset)
-            while True:
-                result = await run_once(downloaders, connect_downloader, connect_mapper)
-                if result is None:
-                    await wait_for_work(listener, connect_downloader)
-                else:
-                    _log_cycle(result)
+            await serve(downloaders, connect_downloader, connect_mapper, listener)
     finally:
         await db.close_pools()
 
