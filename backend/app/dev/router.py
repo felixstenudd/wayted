@@ -11,6 +11,7 @@ from app.dev.schemas import (
     AreaRequestOut,
     BoundsOut,
     EdgeOut,
+    ErrorOut,
     Feature,
     FeatureCollection,
     FetchedTileOut,
@@ -27,8 +28,6 @@ from app.sources.registry import fetched_tiles
 from app.sources.tiles import Bounds, Tile, bounds_for_circle
 
 MAX_EDGES = 25_000
-# Error code for unprocessable query
-UNPROCESSABLE = 422
 
 router = APIRouter()
 
@@ -94,16 +93,16 @@ async def list_queued_tiles(db_conn: Conn) -> FeatureCollection[Polygon, QueuedT
     )
 
 
-@router.get("/graph")
+@router.get("/graph", responses={status.HTTP_400_BAD_REQUEST: {"model": ErrorOut}})
 async def graph(db_conn: Conn, west: Lon, south: Lat, east: Lon, north: Lat) -> GraphOut:
     """The edges that intersect the box, and the vertices at their ends."""
     bounds = Bounds(west=west, south=south, east=east, north=north)
     try:
         area = await graph_in_bounds(db_conn, bounds, MAX_EDGES)
     except AreaTooLarge as e:
-        raise HTTPException(UNPROCESSABLE, f"{e} Zoom in and try again.") from None
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{e} Zoom in and try again.") from None
     except ValueError as e:
-        raise HTTPException(UNPROCESSABLE, str(e)) from None
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
     return GraphOut(
         edges=FeatureCollection(
             features=[
@@ -137,5 +136,7 @@ async def graph(db_conn: Conn, west: Lon, south: Lat, east: Lon, north: Lat) -> 
 async def request_circle(body: AreaRequestIn, db_conn: Conn) -> AreaRequestOut:
     """Queue the tiles around a circle for the worker. Returns how many rows this call queued."""
     bounds = bounds_for_circle(body.lat, body.lon, body.radius_m)
-    queued = await request_area(db_conn, bounds, body.refetch)
+    # Commit before answering: the connection itself is released after the response is sent.
+    async with db_conn.transaction():
+        queued = await request_area(db_conn, bounds, body.refetch)
     return AreaRequestOut(queued=queued, bounds=BoundsOut(**asdict(bounds)))

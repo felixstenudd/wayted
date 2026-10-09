@@ -99,3 +99,7 @@ class AreaRequestIn(BaseModel):
 class AreaRequestOut(BaseModel):
     queued: int
     bounds: BoundsOut
+
+
+class ErrorOut(BaseModel):
+    detail: str
