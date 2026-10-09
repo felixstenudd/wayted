@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 import pytest
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
@@ -231,3 +234,62 @@ async def test_cycle_claims_at_most_the_limit(
 
     assert result is not None and result.tiles_claimed == 3
     assert len(await queued(admin_conn)) == 1
+
+
+async def listen(listener: Conn) -> None:
+    await listener.execute(f"LISTEN {worker.NOTIFY_CHANNEL}")
+
+
+async def test_wait_ends_when_a_tile_is_requested(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool, listener: Conn
+) -> None:
+    await listen(listener)
+    waiting = asyncio.create_task(worker.wait_for_work(listener, downloader_pool.connection))
+    await asyncio.sleep(0.2)
+    assert not waiting.done()
+
+    await request(api_pool, WEST)
+
+    await asyncio.wait_for(waiting, timeout=5)
+
+
+async def test_wait_ends_at_once_for_a_request_made_before_it(
+    admin_conn: Conn, downloader_pool: Pool, listener: Conn
+) -> None:
+    await listen(listener)
+    # Not due for an hour, so only the buffered notification can end the wait.
+    await admin_conn.execute(
+        """
+        INSERT INTO raw.pending_tiles (layer, z, x, y, next_attempt_at)
+        VALUES ('roads', 14, 8800, 4700, now() + interval '1 hour')
+        """
+    )
+
+    await asyncio.wait_for(worker.wait_for_work(listener, downloader_pool.connection), timeout=5)
+
+
+async def test_wait_ends_when_a_retry_falls_due(
+    admin_conn: Conn, downloader_pool: Pool, listener: Conn
+) -> None:
+    # Queued before LISTEN, so no notification reaches the listener.
+    await admin_conn.execute(
+        """
+        INSERT INTO raw.pending_tiles (layer, z, x, y, next_attempt_at)
+        VALUES ('roads', 14, 8800, 4700, now() + interval '0.5 seconds')
+        """
+    )
+    await listen(listener)
+
+    started = time.monotonic()
+    await asyncio.wait_for(worker.wait_for_work(listener, downloader_pool.connection), timeout=5)
+
+    assert time.monotonic() - started >= 0.3
+
+
+async def test_wait_returns_at_once_when_a_tile_is_due(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool, listener: Conn
+) -> None:
+    await request(api_pool, WEST)
+    await listen(listener)
+
+    await asyncio.wait_for(worker.wait_for_work(listener, downloader_pool.connection), timeout=5)

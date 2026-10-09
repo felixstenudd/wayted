@@ -374,3 +374,23 @@ async def test_reset_running_returns_rows_to_the_queue(
         assert await queue.reset_running(conn) == 2
 
     assert {status for _, _, _, status, _ in await rows(admin_conn)} == {"pending"}
+
+
+async def test_seconds_until_due(admin_conn: Conn, api_pool: Pool, downloader_pool: Pool) -> None:
+    async with downloader_pool.connection() as conn:
+        assert await queue.seconds_until_due(conn) is None
+
+    await request(api_pool)
+    async with downloader_pool.connection() as conn:
+        assert await queue.seconds_until_due(conn) == 0.0
+
+    await admin_conn.execute(
+        "UPDATE raw.pending_tiles SET next_attempt_at = now() + interval '1 minute'"
+    )
+    await admin_conn.execute(
+        "UPDATE raw.pending_tiles SET status = 'failed', next_attempt_at = now() WHERE x = %s",
+        (ONE.x,),
+    )
+    async with downloader_pool.connection() as conn:
+        seconds = await queue.seconds_until_due(conn)
+    assert seconds is not None and 50 < seconds <= 60
