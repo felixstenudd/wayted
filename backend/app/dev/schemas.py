@@ -1,13 +1,26 @@
 """Request and response bodies of the dev API. Everything drawn on the map is GeoJSON."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.sources.queue import Status
+from app.sources.tiles import MAX_LATITUDE
+
+MAX_RADIUS_M = 40_000
 
 type Position = tuple[float, float]
+
+
+class Point(BaseModel):
+    type: Literal["Point"]
+    coordinates: Position
+
+
+class LineString(BaseModel):
+    type: Literal["LineString"]
+    coordinates: list[Position]
 
 
 class Polygon(BaseModel):
@@ -46,3 +59,43 @@ class QueuedTileOut(BaseModel):
     next_attempt_at: datetime
     last_status: str | None
     last_message: str | None
+
+
+class EdgeOut(BaseModel):
+    id: int
+    way_id: int
+    source: int
+    target: int
+    length_m: float
+    forward: list[str]
+    backward: list[str]
+    scores: dict[str, Any]
+    tags: dict[str, str]
+
+
+class VertexOut(BaseModel):
+    id: int
+
+
+class GraphOut(BaseModel):
+    edges: FeatureCollection[LineString, EdgeOut]
+    vertices: FeatureCollection[Point, VertexOut]
+
+
+class BoundsOut(BaseModel):
+    west: float
+    south: float
+    east: float
+    north: float
+
+
+class AreaRequestIn(BaseModel):
+    lat: float = Field(ge=-MAX_LATITUDE, le=MAX_LATITUDE)
+    lon: float = Field(ge=-180, le=180)
+    radius_m: float = Field(gt=0, le=MAX_RADIUS_M)
+    refetch: bool = False
+
+
+class AreaRequestOut(BaseModel):
+    queued: int
+    bounds: BoundsOut
