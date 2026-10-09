@@ -39,6 +39,28 @@ services:
       db:
         condition: service_healthy
 
+  # Internal dev tools, no login.
+  dev-api:
+    build:
+      context: ./backend
+      target: dev
+    command: ["uvicorn", "app.dev.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports: ["8001:8000"]
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      # app/config.py reads every variable at import, so the dev API needs them all.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+
   # Fetches and maps the tiles queued in raw.pending_tiles. Nothing reloads it: restart the
   # service after changing backend code.
   worker:

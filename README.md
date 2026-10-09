@@ -28,6 +28,7 @@ docker compose -f docker-compose.dev.yml up --build
 - Backend (uvicorn `--reload`): http://localhost:8000, docs at http://localhost:8000/docs
 - Postgres: `localhost:${DB_PORT:-5432}`
 - Worker: fetches and maps the tiles queued in `raw.pending_tiles`. It does not reload; run `docker compose -f docker-compose.dev.yml restart worker` after changing backend code.
+- Dev API (internal tools, no login): http://localhost:8001, docs at http://localhost:8001/docs. Lists fetched and queued tiles, returns the graph of an area, and queues the area inside a circle for the worker.
 
 Source code is bind-mounted, so edits apply without rebuilding. After changing `frontend/package.json` or `backend/pyproject.toml`, rebuild and renew the `node_modules` volume:
 
@@ -46,5 +47,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 nginx serves the built frontend on `HTTP_PORT` (default 80) and proxies `/api` to the backend. The backend and database are not exposed on the host.
 
 A `worker` container fetches and maps queued tiles; it needs outbound access to the Overpass API.
+
+A `dev-api` container serves the internal tools. It has no login, so it is published on `127.0.0.1:8001` only: use it from the server, or through `ssh -L 8001:localhost:8001 <server>`. Never forward the public nginx to it.
 
 API docs (`/docs`, `/redoc`, `/openapi.json`) are only served when `API_DOCS_ENABLED=true`, which the dev compose file sets and production does not.
