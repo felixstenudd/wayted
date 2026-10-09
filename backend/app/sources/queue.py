@@ -85,6 +85,12 @@ RETRY_OR_FAIL = f"""
 
 RESET_RUNNING = "UPDATE raw.pending_tiles SET status = 'pending' WHERE status = 'running'"
 
+SECONDS_UNTIL_DUE = """
+    SELECT EXTRACT(epoch FROM min(next_attempt_at) - now())::float8
+    FROM raw.pending_tiles
+    WHERE status = 'pending'
+"""
+
 
 async def request_area(
     conn: AsyncConnection[TupleRow], bounds: Bounds, refetch: bool = False
@@ -168,3 +174,12 @@ async def settle(
 async def reset_running(conn: AsyncConnection[TupleRow]) -> int:
     """Return rows left running by a worker that died to the queue. Only one worker runs."""
     return (await conn.execute(RESET_RUNNING)).rowcount
+
+
+async def seconds_until_due(conn: AsyncConnection[TupleRow]) -> float | None:
+    """Seconds until the next pending tile may be claimed; None when nothing is pending."""
+    cur = await conn.execute(SECONDS_UNTIL_DUE)
+    row = await cur.fetchone()
+    assert row is not None
+    seconds: float | None = row[0]
+    return None if seconds is None else max(seconds, 0.0)
