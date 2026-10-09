@@ -39,6 +39,28 @@ services:
       db:
         condition: service_healthy
 
+  # Fetches and maps the tiles queued in raw.pending_tiles. Nothing reloads it: restart the
+  # service after changing backend code.
+  worker:
+    build:
+      context: ./backend
+      target: dev
+    command: ["python", "-m", "app.worker"]
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      # app/config.py reads every variable at import, so the worker needs the API's too.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend
