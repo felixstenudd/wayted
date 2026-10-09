@@ -5,6 +5,7 @@ from psycopg.rows import TupleRow
 from psycopg_pool import AsyncConnectionPool
 
 from app.sources import queue
+from app.sources.downloader import DownloadStatus, RectangleResult
 from app.sources.registry import mark_fetched
 from app.sources.tiles import Bounds, Tile, TileRect, bounds_for_tiles
 
@@ -15,10 +16,12 @@ type Pool = AsyncConnectionPool[Conn]
 # (layer, x, y, status, attempts)
 type Row = tuple[str, int, int, str, int]
 
+LAYERS = ("roads", "parks")
 RECT = TileRect(z=14, x_min=8800, y_min=4700, x_max=8801, y_max=4701)
 TILES = RECT.tiles()
 BOUNDS = bounds_for_tiles(TILES)
 ONE = Tile(x=8800, y=4700, z=14)
+ONE_RECT = TileRect.of_tile(ONE)
 
 
 async def request(pool: Pool, bounds: Bounds = BOUNDS, refetch: bool = False) -> int:
@@ -169,3 +172,205 @@ async def test_only_a_request_notifies_the_worker(
 
     assert woken == ["pending_tiles"]
     assert woken_again == []
+
+
+async def test_claim_marks_due_tiles_as_running(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool)
+
+    async with downloader_pool.connection() as conn:
+        claimed = await queue.claim(conn, LAYERS, 64)
+
+    assert claimed == {"roads": TILES, "parks": TILES}
+    assert {status for _, _, _, status, _ in await rows(admin_conn)} == {"running"}
+
+
+async def test_claim_takes_the_oldest_request_first_up_to_the_limit(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    later = Tile(x=8900, y=4700, z=14)
+    await request(api_pool, later.bounds)
+    await admin_conn.execute("UPDATE raw.pending_tiles SET requested_at = now()")
+    await request(api_pool)
+    await admin_conn.execute(
+        "UPDATE raw.pending_tiles SET requested_at = now() - interval '1 hour' WHERE x <> %s",
+        (later.x,),
+    )
+
+    async with downloader_pool.connection() as conn:
+        first = await queue.claim(conn, LAYERS, 4)
+        second = await queue.claim(conn, LAYERS, 4)
+
+    # The limit counts tiles: both layers of a tile are claimed together.
+    assert first == {"roads": TILES, "parks": TILES}
+    assert second == {"roads": {later}, "parks": {later}}
+
+
+async def test_claim_leaves_tiles_that_are_not_due(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool)
+    await admin_conn.execute(
+        "UPDATE raw.pending_tiles SET next_attempt_at = now() + interval '1 minute'"
+    )
+
+    async with downloader_pool.connection() as conn:
+        assert await queue.claim(conn, LAYERS, 64) == {}
+
+
+async def test_claim_ignores_layers_it_was_not_asked_for(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool)
+
+    async with downloader_pool.connection() as conn:
+        assert await queue.claim(conn, ("roads",), 64) == {"roads": TILES}
+
+    assert {(layer, status) for layer, _, _, status, _ in await rows(admin_conn)} == {
+        ("roads", "running"),
+        ("parks", "pending"),
+    }
+
+
+async def claim_and_settle(
+    pool: Pool, result: RectangleResult, mapper_error: str | None = None
+) -> None:
+    async with pool.connection() as conn:
+        await queue.claim(conn, LAYERS, 64)
+    async with pool.connection() as conn, conn.transaction():
+        await queue.settle(conn, LAYERS, [result], mapper_error)
+
+
+async def test_settle_removes_a_stored_rectangle(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool)
+
+    await claim_and_settle(downloader_pool, RectangleResult(ONE_RECT, DownloadStatus.OK, None))
+
+    assert await queued_tiles(admin_conn, "roads") == TILES - {ONE}
+    assert await queued_tiles(admin_conn, "parks") == TILES - {ONE}
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        DownloadStatus.RATE_LIMITED,
+        DownloadStatus.TIMEOUT,
+        DownloadStatus.SOURCE_ERROR,
+        DownloadStatus.STORAGE_ERROR,
+    ],
+)
+async def test_settle_retries_a_failure_that_can_pass(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool, status: DownloadStatus
+) -> None:
+    await request(api_pool, ONE.bounds)
+
+    await claim_and_settle(downloader_pool, RectangleResult(ONE_RECT, status, "try later"))
+
+    cur = await admin_conn.execute(
+        """
+        SELECT status, attempts, last_status, last_message,
+            next_attempt_at - now() BETWEEN interval '50 seconds' AND interval '1 minute'
+        FROM raw.pending_tiles
+        """
+    )
+    assert set(await cur.fetchall()) == {("pending", 1, status.value, "try later", True)}
+
+
+async def test_settle_waits_longer_after_each_attempt(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool, ONE.bounds)
+    await admin_conn.execute("UPDATE raw.pending_tiles SET attempts = 2")
+
+    await claim_and_settle(
+        downloader_pool, RectangleResult(ONE_RECT, DownloadStatus.TIMEOUT, "slow")
+    )
+
+    cur = await admin_conn.execute(
+        """
+        SELECT status, attempts,
+            next_attempt_at - now() BETWEEN interval '170 seconds' AND interval '3 minutes'
+        FROM raw.pending_tiles
+        """
+    )
+    assert set(await cur.fetchall()) == {("pending", 3, True)}
+
+
+async def test_settle_fails_the_fifth_attempt(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool, ONE.bounds)
+    await admin_conn.execute("UPDATE raw.pending_tiles SET attempts = 4")
+
+    await claim_and_settle(
+        downloader_pool, RectangleResult(ONE_RECT, DownloadStatus.TIMEOUT, "slow")
+    )
+
+    assert await rows(admin_conn) == [
+        ("parks", ONE.x, ONE.y, "failed", 5),
+        ("roads", ONE.x, ONE.y, "failed", 5),
+    ]
+
+
+async def test_settle_fails_a_rejected_request_at_once(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool, ONE.bounds)
+
+    await claim_and_settle(
+        downloader_pool, RectangleResult(ONE_RECT, DownloadStatus.INVALID_RESPONSE, "bad query")
+    )
+
+    cur = await admin_conn.execute(
+        "SELECT status, attempts, last_status, last_message FROM raw.pending_tiles"
+    )
+    assert set(await cur.fetchall()) == {("failed", 1, "invalid_response", "bad query")}
+
+
+async def test_settle_retries_a_stored_rectangle_when_the_mapper_failed(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool, ONE.bounds)
+
+    await claim_and_settle(
+        downloader_pool, RectangleResult(ONE_RECT, DownloadStatus.OK, None), "division by zero"
+    )
+
+    cur = await admin_conn.execute(
+        "SELECT status, attempts, last_status, last_message FROM raw.pending_tiles"
+    )
+    assert set(await cur.fetchall()) == {("pending", 1, "mapper_error", "division by zero")}
+
+
+async def test_settle_leaves_a_failed_rectangles_unclaimed_tiles(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool)
+    async with downloader_pool.connection() as conn:
+        await queue.claim(conn, LAYERS, 1)
+
+    async with downloader_pool.connection() as conn, conn.transaction():
+        await queue.settle(conn, LAYERS, [RectangleResult(RECT, DownloadStatus.TIMEOUT, "slow")])
+
+    assert {(status, attempts) for _, _, _, status, attempts in await rows(admin_conn)} == {
+        ("pending", 0),
+        ("pending", 1),
+    }
+    cur = await admin_conn.execute("SELECT count(*) FROM raw.pending_tiles WHERE attempts = 1")
+    assert await cur.fetchone() == (2,)
+
+
+async def test_reset_running_returns_rows_to_the_queue(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool
+) -> None:
+    await request(api_pool)
+    async with downloader_pool.connection() as conn:
+        await queue.claim(conn, LAYERS, 1)
+
+    async with downloader_pool.connection() as conn:
+        assert await queue.reset_running(conn) == 2
+
+    assert {status for _, _, _, status, _ in await rows(admin_conn)} == {"pending"}
