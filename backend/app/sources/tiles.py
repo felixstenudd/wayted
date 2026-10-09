@@ -2,10 +2,12 @@
 
 from collections.abc import Collection
 from dataclasses import dataclass
-from math import asinh, atan, ceil, degrees, floor, pi, radians, sinh, tan
+from math import asin, asinh, atan, ceil, cos, degrees, floor, pi, radians, sin, sinh, tan
 
 MAX_LATITUDE = 85.0511287798
 MAX_ZOOM = 22
+# Mean radius; the earth is treated as a sphere.
+EARTH_RADIUS_M = 6_371_008.8
 
 EDGE_TOLERANCE = 1e-12
 
@@ -185,4 +187,30 @@ def bounds_for_tiles(tiles: Collection[Tile]) -> Bounds:
         south=min(b.south for b in bounds),
         east=max(b.east for b in bounds),
         north=max(b.north for b in bounds),
+    )
+
+
+def bounds_for_circle(lat: float, lon: float, radius_m: float) -> Bounds:
+    """
+    Return the smallest bounds containing a circle on the ground. Bounds cannot cross the
+    antimeridian, so a circle that does is cut there.
+    """
+    _check_coordinate(lat, lon)
+    if radius_m <= 0:
+        raise ValueError("Radius must be positive.")
+    reach = radius_m / EARTH_RADIUS_M
+    lat_reach = degrees(reach)
+    # The circle is widest nearer the pole than its centre, so this is more than reach / cos(lat).
+    widest = sin(reach) / cos(radians(lat))
+    if reach >= pi / 2 or widest >= 1:
+        # The circle holds a pole, so it covers every longitude.
+        west, east = -180.0, 180.0
+    else:
+        lon_reach = degrees(asin(widest))
+        west, east = max(lon - lon_reach, -180.0), min(lon + lon_reach, 180.0)
+    return Bounds(
+        west=west,
+        south=max(lat - lat_reach, -MAX_LATITUDE),
+        east=east,
+        north=min(lat + lat_reach, MAX_LATITUDE),
     )
