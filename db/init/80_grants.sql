@@ -6,6 +6,9 @@ GRANT USAGE ON SCHEMA ref, raw TO wayted_downloader;
 GRANT SELECT ON ref.source_layers TO wayted_downloader;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA raw TO wayted_downloader;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA raw TO wayted_downloader;
+-- The triggers on raw queue changes for the mapper as the downloader.
+GRANT USAGE ON SCHEMA graph TO wayted_downloader;
+GRANT INSERT ON graph.pending_ways, graph.pending_nodes TO wayted_downloader;
 
 -- wayted_mapper: reads ref and raw, builds graph.
 GRANT USAGE ON SCHEMA ref, raw, graph TO wayted_mapper;

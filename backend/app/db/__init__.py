@@ -1,7 +1,7 @@
 """
-Creates an AsyncConnectionPool
+Creates an AsyncConnectionPool per database role
 """
 
-from .pool import api_pool
+from .db import Connect, close_pools, connection, open_pool
 
-__all__ = ["api_pool"]
+__all__ = ["Connect", "close_pools", "connection", "open_pool"]
