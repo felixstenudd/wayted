@@ -3,7 +3,9 @@ import pytest
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 from psycopg_pool import AsyncConnectionPool
+from starlette.types import Message, Receive, Scope, Send
 
+from app.dev.main import app
 from app.graph import map_pending
 from app.sources import queue
 from app.sources.registry import mark_fetched
@@ -149,7 +151,7 @@ async def test_graph_with_too_many_edges_says_to_zoom_in(
 
     response = await client.get("/graph", params=GRID)
 
-    assert response.status_code == 422
+    assert response.status_code == 400
     assert response.json() == {"detail": "The area holds more than 2 edges. Zoom in and try again."}
 
 
@@ -165,7 +167,7 @@ async def test_graph_refuses_an_inside_out_box(
 ) -> None:
     response = await client.get("/graph", params={**GRID, **changed})
 
-    assert (response.status_code, response.json()) == (422, {"detail": message})
+    assert (response.status_code, response.json()) == (400, {"detail": message})
 
 
 @pytest.mark.parametrize(
@@ -183,6 +185,15 @@ async def test_graph_refuses_a_missing_or_impossible_side(
     response = await client.get("/graph", params=params)
 
     assert response.status_code == 422
+
+
+def test_graph_documents_its_one_sentence_errors() -> None:
+    spec = app.openapi()
+
+    refused = spec["paths"]["/graph"]["get"]["responses"]["400"]
+    schema = refused["content"]["application/json"]["schema"]
+    assert schema == {"$ref": "#/components/schemas/ErrorOut"}
+    assert spec["components"]["schemas"]["ErrorOut"]["properties"]["detail"]["type"] == "string"
 
 
 async def test_request_queues_the_tiles_around_the_circle(
@@ -204,6 +215,29 @@ async def test_request_queues_the_tiles_around_the_circle(
     assert per_layer["roads"] == per_layer["parks"]
     assert per_layer["roads"][1]
     assert body["queued"] == 2 * per_layer["roads"][0]
+
+
+async def test_request_is_committed_before_the_answer_is_sent(
+    client: httpx.AsyncClient, admin_conn: Conn
+) -> None:
+    visible: list[int] = []
+
+    async def counting(scope: Scope, receive: Receive, send: Send) -> None:
+        async def send_counted(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                cur = await admin_conn.execute("SELECT count(*) FROM raw.pending_tiles")
+                row = await cur.fetchone()
+                assert row is not None
+                visible.append(row[0])
+            await send(message)
+
+        await app(scope, receive, send_counted)
+
+    transport = httpx.ASGITransport(app=counting)
+    async with httpx.AsyncClient(transport=transport, base_url="http://dev") as http:
+        response = await http.post("/requests", json={**STOCKHOLM, "radius_m": 1})
+
+    assert visible == [response.json()["queued"]] == [2]
 
 
 async def test_request_for_tiles_already_waiting_queues_nothing(client: httpx.AsyncClient) -> None:
