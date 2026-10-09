@@ -503,3 +503,46 @@ async def test_seconds_until_due_ignores_layers_the_worker_does_not_fetch(
 
     async with downloader_pool.connection() as conn:
         assert await queue.seconds_until_due(conn, LAYERS) is None
+
+
+async def test_queued_tiles_carry_their_state(admin_conn: Conn, api_pool: Pool) -> None:
+    west, east = ONE, Tile(x=ONE.x + 1, y=ONE.y, z=14)
+    await request(api_pool, bounds_for_tiles({west, east}))
+    await admin_conn.execute(
+        """
+        UPDATE raw.pending_tiles
+        SET status = 'failed', attempts = 10, last_status = 'timeout', last_message = 'too slow',
+            requested_at = requested_at - interval '1 hour'
+        WHERE layer = 'roads' AND x = %s
+        """,
+        (east.x,),
+    )
+
+    async with api_pool.connection() as conn:
+        listed = await queue.queued_tiles(conn)
+
+    assert [(q.layer, q.tile) for q in listed] == [
+        ("roads", east),
+        ("parks", west),
+        ("parks", east),
+        ("roads", west),
+    ]
+    failed, waiting = listed[0], listed[1]
+    assert (failed.status, failed.attempts, failed.last_status, failed.last_message) == (
+        "failed",
+        10,
+        "timeout",
+        "too slow",
+    )
+    assert (waiting.status, waiting.attempts, waiting.last_status, waiting.last_message) == (
+        "pending",
+        0,
+        None,
+        None,
+    )
+    assert failed.requested_at < waiting.requested_at <= waiting.next_attempt_at
+
+
+async def test_queued_tiles_of_an_empty_queue(admin_conn: Conn, api_pool: Pool) -> None:
+    async with api_pool.connection() as conn:
+        assert await queue.queued_tiles(conn) == []
