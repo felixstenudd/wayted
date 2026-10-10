@@ -1,0 +1,4 @@
+@import '../assets/main.css';
+
+/* Tailwind scans from the Vite root, which is this folder. */
+@source '..';

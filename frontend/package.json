@@ -5,7 +5,9 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
+		"dev:panel": "vite --config vite.dev-panel.config.ts",
 		"build": "vue-tsc --build && vite build",
+		"build:panel": "vue-tsc --build && vite build --config vite.dev-panel.config.ts",
 		"preview": "vite preview",
 		"typecheck": "vue-tsc --build",
 		"lint": "eslint . --cache --max-warnings 0",
