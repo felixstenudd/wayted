@@ -3,6 +3,7 @@ export { default as MapView } from './components/MapView.vue'
 export { useMapClick, type ClickedFeature } from './composables/useMapClick'
 export { useMapSource, type SourceLayer } from './composables/useMapSource'
 export { useMapFilter, useMapPaint } from './composables/useMapStyle'
+export { useMapView } from './composables/useMapView'
 export { provideMap } from './context'
 export {
 	boundsPolygon,

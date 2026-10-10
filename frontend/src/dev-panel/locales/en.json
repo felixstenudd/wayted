@@ -24,5 +24,16 @@
 		"expired": "No tiles have expired. | 1 tile has expired and is drawn dashed. | {count} tiles have expired and are drawn dashed.",
 		"tile": "Tile {key}",
 		"tileLayer": "{layer}: fetched {fetched}, expires {expires}"
+	},
+	"queue": {
+		"title": "Queue",
+		"loading": "Loading the queue…",
+		"empty": "Nothing is queued.",
+		"pending": "Waiting (dotted outline)",
+		"running": "Being fetched (thin outline)",
+		"failed": "Failed (thick outline)",
+		"failedTile": "{layer} {key}, {count} attempts",
+		"noReason": "No reason recorded.",
+		"show": "Show on map"
 	}
 }
