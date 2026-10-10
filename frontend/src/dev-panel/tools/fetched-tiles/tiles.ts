@@ -54,17 +54,18 @@ export function tilesAt(tiles: FetchedTiles, key: string): FetchedTile[] {
 		.sort((a, b) => a.layer.localeCompare(b.layer))
 }
 
-/** Tiles of the checked layers fetched until a time: all of them, the valid or the expired. */
+/**
+ * Tiles of the checked layers fetched until a time (null: until now, whatever the server's
+ * clock says): all of them, the valid or the expired.
+ */
 export function tileFilter(
 	layers: string[],
-	untilMs: number,
+	untilMs: number | null,
 	nowMs: number,
 	expiry: 'any' | 'valid' | 'expired',
 ): FilterSpecification {
-	const shown: ExpressionSpecification[] = [
-		['in', ['get', 'layer'], ['literal', layers]],
-		['<=', ['get', 'fetchedAtMs'], untilMs],
-	]
+	const shown: ExpressionSpecification[] = [['in', ['get', 'layer'], ['literal', layers]]]
+	if (untilMs !== null) shown.push(['<=', ['get', 'fetchedAtMs'], untilMs])
 	if (expiry === 'valid') shown.push(['>', ['get', 'expiresAtMs'], nowMs])
 	if (expiry === 'expired') shown.push(['<=', ['get', 'expiresAtMs'], nowMs])
 	return ['all', ...shown]

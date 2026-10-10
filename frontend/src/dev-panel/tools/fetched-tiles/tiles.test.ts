@@ -106,6 +106,13 @@ describe('tileFilter', () => {
 		expect(tileFilter(['roads'], 500, 900, 'any')).toEqual(['all', ...shown])
 	})
 
+	it('has no time limit at "now", so a clock that is ahead hides nothing', () => {
+		expect(tileFilter(['roads'], null, 900, 'any')).toEqual([
+			'all',
+			['in', ['get', 'layer'], ['literal', ['roads']]],
+		])
+	})
+
 	it('can keep only the valid or only the expired tiles', () => {
 		expect(tileFilter(['roads'], 500, 900, 'valid')).toEqual([
 			'all',

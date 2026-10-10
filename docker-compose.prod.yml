@@ -63,7 +63,7 @@ services:
       context: ./frontend
       target: dev-panel-prod
       args:
-        VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:?VITE_MAP_STYLE_URL is required}
+        VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-https://tiles.openfreemap.org/styles/positron}
     restart: unless-stopped
     ports: ["${DEV_PANEL_BIND:-127.0.0.1}:8002:80"]
     depends_on:

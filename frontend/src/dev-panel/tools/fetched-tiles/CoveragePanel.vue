@@ -90,7 +90,7 @@ useMapSource('coverage', () => (tiles.value ? toMapTiles(tiles.value) : EMPTY), 
 	},
 ])
 const shown = (expiry: Parameters<typeof tileFilter>[3]) => () =>
-	tileFilter(checked.value, untilMs.value, nowMs.value, expiry)
+	tileFilter(checked.value, selectedMs.value, nowMs.value, expiry)
 useMapFilter('coverage-fill', shown('any'))
 useMapFilter('coverage-valid', shown('valid'))
 useMapFilter('coverage-expired', shown('expired'))

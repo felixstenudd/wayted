@@ -32,7 +32,7 @@
 		"pending": "Waiting (dotted outline)",
 		"running": "Being fetched (thin outline)",
 		"failed": "Failed (thick outline)",
-		"failedTile": "{layer} {key}, {count} attempts",
+		"failedTile": "{layer} {key}, 1 attempt | {layer} {key}, {count} attempts",
 		"noReason": "No reason recorded.",
 		"moreFailed": "and 1 more failed tile | and {count} more failed tiles",
 		"show": "Show on map"

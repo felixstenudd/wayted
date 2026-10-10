@@ -2,7 +2,7 @@ import type { MapMouseEvent } from 'maplibre-gl'
 import { onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue'
 
 import { onMap, useMapContext } from '../context'
-import { distanceM, type Circle } from '../geometry'
+import { distanceM, type Circle, type LonLat } from '../geometry'
 
 /**
  * While active, pressing sets the centre of a circle and dragging sets its radius, up to
@@ -14,23 +14,21 @@ export function useCircleDraw(
 ): { circle: Ref<Circle | null> } {
 	const { map, isReady } = useMapContext()
 	const circle = ref<Circle | null>(null)
-	let isPressing = false
+	// where the primary button went down; the circle only changes once the pointer moves
+	let pressedAt: LonLat | null = null
 
 	const press = (event: MapMouseEvent) => {
-		if (!toValue(isActive)) return
-		isPressing = true
-		circle.value = { center: { lon: event.lngLat.lng, lat: event.lngLat.lat }, radiusM: 0 }
+		if (!toValue(isActive) || event.originalEvent.button !== 0) return
+		pressedAt = { lon: event.lngLat.lng, lat: event.lngLat.lat }
 	}
 	const drag = (event: MapMouseEvent) => {
-		if (!isPressing || !circle.value) return
+		if (!pressedAt) return
 		const to = { lon: event.lngLat.lng, lat: event.lngLat.lat }
-		const radiusM = Math.min(distanceM(circle.value.center, to), maxRadiusM)
-		circle.value = { center: circle.value.center, radiusM }
+		const radiusM = Math.min(distanceM(pressedAt, to), maxRadiusM)
+		if (radiusM > 0) circle.value = { center: pressedAt, radiusM }
 	}
 	const release = () => {
-		if (!isPressing) return
-		isPressing = false
-		if (circle.value?.radiusM === 0) circle.value = null
+		pressedAt = null
 	}
 
 	onMap(
@@ -57,7 +55,7 @@ export function useCircleDraw(
 			if (active) map.value.dragPan.disable()
 			else map.value.dragPan.enable()
 			map.value.getCanvas().style.cursor = active ? 'crosshair' : ''
-			if (!active) isPressing = false
+			if (!active) pressedAt = null
 		},
 		{ immediate: true },
 	)

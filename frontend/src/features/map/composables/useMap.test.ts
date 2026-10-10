@@ -11,9 +11,11 @@ const { FakeMap, maps } = vi.hoisted(() => {
 	const maps: FakeMap[] = []
 	class FakeMap {
 		style: unknown
+		keyboard = { disableRotation: vi.fn() }
+		touchZoomRotate = { disableRotation: vi.fn() }
 		private listeners = new Map<string, Listener[]>()
 
-		constructor(options: { style: unknown }) {
+		constructor(readonly options: Record<string, unknown>) {
 			this.style = options.style
 			maps.push(this)
 		}
@@ -101,6 +103,14 @@ describe('useMap', () => {
 
 		expect(context.isReady.value).toBe(true)
 		expect(context.hasBaseMapFailed.value).toBe(false)
+	})
+
+	it('keeps north up: no rotating or tilting, by mouse, touch or keyboard', () => {
+		const { map } = mountMap()
+
+		expect(map.options).toMatchObject({ dragRotate: false, touchPitch: false })
+		expect(map.keyboard.disableRotation).toHaveBeenCalled()
+		expect(map.touchZoomRotate.disableRotation).toHaveBeenCalled()
 	})
 
 	it('says so and draws on an empty map when no style URL is set', () => {

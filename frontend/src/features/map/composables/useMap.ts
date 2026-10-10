@@ -43,7 +43,12 @@ export function useMap(
 			hash: options.keepViewInUrl ?? false,
 			// One world, so a view never spans the antimeridian twice.
 			renderWorldCopies: false,
+			// North stays up: there is no compass to turn the map back.
+			dragRotate: false,
+			touchPitch: false,
 		})
+		map.keyboard.disableRotation()
+		map.touchZoomRotate.disableRotation()
 		map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
 		map.addControl(new ScaleControl(), 'bottom-right')
 
