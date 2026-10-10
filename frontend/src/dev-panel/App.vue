@@ -7,6 +7,7 @@ import ApiStatus from './components/ApiStatus.vue'
 import CoveragePanel from './tools/fetched-tiles/CoveragePanel.vue'
 import GraphPanel from './tools/graph/GraphPanel.vue'
 import QueuePanel from './tools/queue/QueuePanel.vue'
+import RequestPanel from './tools/request/RequestPanel.vue'
 
 // Central Stockholm, where the pipeline is tried out. The URL takes over once the map has moved.
 const START = { center: { lon: 18.0686, lat: 59.3293 }, zoom: 13 }
@@ -27,6 +28,7 @@ provideMap()
 			<CoveragePanel />
 			<QueuePanel />
 			<GraphPanel />
+			<RequestPanel />
 		</aside>
 		<main>
 			<MapView :center="START.center" :zoom="START.zoom" keep-view-in-url />

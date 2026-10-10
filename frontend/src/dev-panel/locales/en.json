@@ -63,5 +63,19 @@
 			"noScores": "Not scored yet.",
 			"tags": "Tags"
 		}
+	},
+	"request": {
+		"title": "Request area",
+		"draw": "Draw circle",
+		"stopDrawing": "Stop drawing",
+		"howToDraw": "Press on the map for the centre and drag to set the radius.",
+		"noCircle": "Draw a circle to choose the area to fetch.",
+		"radius": "Radius {km} km",
+		"atLimit": "{km} km is the largest radius that can be requested.",
+		"refetch": "Fetch again",
+		"submit": "Request area",
+		"requesting": "Requesting…",
+		"queued": "1 tile queued. | {count} tiles queued.",
+		"nothingQueued": "Nothing queued: every tile here is already fetched or waiting."
 	}
 }
