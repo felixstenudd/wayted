@@ -1,5 +1,11 @@
 {
 	"panel": {
 		"title": "wayted dev panel"
+	},
+	"api": {
+		"checking": "Checking the dev API…",
+		"connected": "Dev API connected.",
+		"unavailable": "The dev API does not answer. Start it and reload this page.",
+		"rejected": "The dev API rejected the request: {detail}"
 	}
 }
