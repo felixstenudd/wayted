@@ -215,6 +215,10 @@ async def test_request_queues_the_tiles_around_the_circle(
     assert per_layer["roads"] == per_layer["parks"]
     assert per_layer["roads"][1]
     assert body["queued"] == 2 * per_layer["roads"][0]
+    assert body["queued_by_layer"] == {
+        "parks": per_layer["parks"][0],
+        "roads": per_layer["roads"][0],
+    }
 
 
 async def test_request_is_committed_before_the_answer_is_sent(
@@ -260,6 +264,8 @@ async def test_refetch_queues_tiles_that_are_fetched(
     refetch = await client.post("/requests", json={**STOCKHOLM, "radius_m": 1, "refetch": True})
 
     assert (plain.json()["queued"], refetch.json()["queued"]) == (0, 2)
+    assert plain.json()["queued_by_layer"] == {"parks": 0, "roads": 0}
+    assert refetch.json()["queued_by_layer"] == {"parks": 1, "roads": 1}
 
 
 async def test_request_at_the_radius_limit_is_accepted(client: httpx.AsyncClient) -> None:

@@ -135,16 +135,16 @@ class QueuedTile:
 
 async def request_area(
     conn: AsyncConnection[TupleRow], bounds: Bounds, refetch: bool = False
-) -> int:
+) -> dict[str, int]:
     """
     Queue the tiles covering bounds that are not fetched, for every layer. Returns the number of
-    rows queued. Runs in the caller's transaction.
+    rows queued per layer. Runs in the caller's transaction.
 
     A tile already waiting or being fetched is left alone, a failed one is queued again. With
     refetch set to true, tiles that are fetched and not expired are queued too.
     """
     cur = await conn.execute(LAYER_ZOOMS, (list(LAYER_CODES),))
-    queued = 0
+    queued: dict[str, int] = {}
     for layer, zoom in sorted(await cur.fetchall()):
         tiles = sorted(tiles_for_bounds(bounds, zoom), key=lambda t: (t.y, t.x))
         params = {
@@ -154,8 +154,8 @@ async def request_area(
             "ys": [t.y for t in tiles],
             "refetch": refetch,
         }
-        queued += (await conn.execute(RESET_FAILED, params)).rowcount
-        queued += (await conn.execute(QUEUE_TILES, params)).rowcount
+        reset = (await conn.execute(RESET_FAILED, params)).rowcount
+        queued[layer] = reset + (await conn.execute(QUEUE_TILES, params)).rowcount
     return queued
 
 

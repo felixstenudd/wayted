@@ -139,4 +139,8 @@ async def request_circle(body: AreaRequestIn, db_conn: Conn) -> AreaRequestOut:
     # Commit before answering: the connection itself is released after the response is sent.
     async with db_conn.transaction():
         queued = await request_area(db_conn, bounds, body.refetch)
-    return AreaRequestOut(queued=queued, bounds=BoundsOut(**asdict(bounds)))
+    return AreaRequestOut(
+        queued=sum(queued.values()),
+        queued_by_layer=queued,
+        bounds=BoundsOut(**asdict(bounds)),
+    )

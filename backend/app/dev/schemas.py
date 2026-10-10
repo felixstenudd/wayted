@@ -98,6 +98,7 @@ class AreaRequestIn(BaseModel):
 
 class AreaRequestOut(BaseModel):
     queued: int
+    queued_by_layer: dict[str, int]
     bounds: BoundsOut
 
 

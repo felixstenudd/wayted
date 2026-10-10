@@ -28,7 +28,7 @@ ONE_RECT = TileRect.of_tile(ONE)
 
 async def request(pool: Pool, bounds: Bounds = BOUNDS, refetch: bool = False) -> int:
     async with pool.connection() as conn:
-        return await queue.request_area(conn, bounds, refetch)
+        return sum((await queue.request_area(conn, bounds, refetch)).values())
 
 
 async def rows(conn: Conn) -> list[Row]:
@@ -77,6 +77,20 @@ async def test_fetched_tiles_are_skipped(
 
     assert await queued_tiles(admin_conn, "roads") == TILES - {ONE}
     assert await queued_tiles(admin_conn, "parks") == TILES
+
+
+async def test_request_counts_the_rows_queued_per_layer(
+    api_pool: Pool, downloader_pool: Pool
+) -> None:
+    async with downloader_pool.connection() as conn:
+        await mark_fetched(conn, "roads", {ONE})
+        await mark_fetched(conn, "parks", TILES)
+
+    async with api_pool.connection() as conn:
+        queued = await queue.request_area(conn, BOUNDS)
+
+    # A layer with nothing to queue is still listed.
+    assert queued == {"parks": 0, "roads": 3}
 
 
 async def test_expired_tiles_are_queued(
@@ -179,7 +193,7 @@ async def test_request_does_not_block_the_worker_on_queued_tiles(
 
     async with api_pool.connection() as api_conn:
         # Asked again, and the API transaction is still open.
-        assert await queue.request_area(api_conn, BOUNDS) == 0
+        assert await queue.request_area(api_conn, BOUNDS) == {"parks": 0, "roads": 0}
         async with downloader_pool.connection() as conn:
             claimed = await asyncio.wait_for(queue.claim(conn, LAYERS, 64), timeout=3)
 
