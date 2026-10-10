@@ -34,18 +34,22 @@ export function countByStatus(queued: QueuedTiles): Record<QueueStatus, number> 
 	return counts
 }
 
-export function failedTiles(queued: QueuedTiles): FailedTile[] {
-	return queued.features
-		.filter((tile) => tile.properties.status === 'failed')
-		.map(({ geometry, properties }) => ({
-			id: queueId(properties),
-			key: tileKey(properties),
-			layer: properties.layer,
-			attempts: properties.attempts,
-			lastStatus: properties.last_status,
-			lastMessage: properties.last_message,
-			bounds: ringBounds(geometry.coordinates[0] ?? []),
-		}))
+/** The first failed tiles, and how many more there are. */
+export function failedTiles(
+	queued: QueuedTiles,
+	limit: number,
+): { shown: FailedTile[]; hiddenCount: number } {
+	const failed = queued.features.filter((tile) => tile.properties.status === 'failed')
+	const shown = failed.slice(0, limit).map(({ geometry, properties }) => ({
+		id: queueId(properties),
+		key: tileKey(properties),
+		layer: properties.layer,
+		attempts: properties.attempts,
+		lastStatus: properties.last_status,
+		lastMessage: properties.last_message,
+		bounds: ringBounds(geometry.coordinates[0] ?? []),
+	}))
+	return { shown, hiddenCount: failed.length - shown.length }
 }
 
 const queueId = (tile: { layer: string; z: number; x: number; y: number }) =>

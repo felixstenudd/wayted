@@ -34,6 +34,7 @@
 		"failed": "Failed (thick outline)",
 		"failedTile": "{layer} {key}, {count} attempts",
 		"noReason": "No reason recorded.",
+		"moreFailed": "and 1 more failed tile | and {count} more failed tiles",
 		"show": "Show on map"
 	},
 	"graph": {

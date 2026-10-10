@@ -10,12 +10,17 @@ import ToolSection from '../../components/ToolSection.vue'
 import { useQueuedTiles } from './api'
 import { countByStatus, failedTiles, toMapTiles } from './queue'
 
+// About one screen of the sidebar; a source outage can fail thousands of tiles.
+const MAX_FAILED_SHOWN = 10
+
 const { t } = useI18n()
 const { data: queued, error, isPending } = useQueuedTiles()
 const { showBounds } = useMapView()
 
 const counts = computed(() => (queued.value ? countByStatus(queued.value) : null))
-const failed = computed(() => (queued.value ? failedTiles(queued.value) : []))
+const failed = computed(() =>
+	queued.value ? failedTiles(queued.value, MAX_FAILED_SHOWN) : { shown: [], hiddenCount: 0 },
+)
 const isEmpty = computed(() => queued.value?.features.length === 0)
 
 // The three statuses differ in line pattern and width, not only in colour.
@@ -60,8 +65,8 @@ useMapSource('queue', () => (queued.value ? toMapTiles(queued.value) : EMPTY), [
 			<dd class="text-right tabular-nums">{{ counts.failed }}</dd>
 		</dl>
 
-		<ul v-if="failed.length > 0" class="flex flex-col gap-3">
-			<li v-for="tile in failed" :key="tile.id" class="flex flex-col gap-1 text-small">
+		<ul v-if="failed.shown.length > 0" class="flex flex-col gap-3">
+			<li v-for="tile in failed.shown" :key="tile.id" class="flex flex-col gap-1 text-small">
 				<p class="font-semibold">
 					{{
 						t('queue.failedTile', {
@@ -84,5 +89,8 @@ useMapSource('queue', () => (queued.value ? toMapTiles(queued.value) : EMPTY), [
 				</Button>
 			</li>
 		</ul>
+		<p v-if="failed.hiddenCount > 0" class="text-small text-graphite">
+			{{ t('queue.moreFailed', { count: failed.hiddenCount }) }}
+		</p>
 	</ToolSection>
 </template>

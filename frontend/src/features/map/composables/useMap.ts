@@ -1,4 +1,10 @@
-import { Map as MapLibreMap, NavigationControl, ScaleControl, setWorkerUrl } from 'maplibre-gl'
+import {
+	Map as MapLibreMap,
+	NavigationControl,
+	ScaleControl,
+	setWorkerUrl,
+	type StyleSpecification,
+} from 'maplibre-gl'
 // Bundled by Vite: MapLibre cannot find its own worker file once it is in a bundle.
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { onBeforeUnmount, onMounted, type Ref } from 'vue'
@@ -7,6 +13,9 @@ import { useMapContext } from '../context'
 import type { LonLat } from '../geometry'
 
 setWorkerUrl(workerUrl)
+
+// Loads like any style, so overlays can be drawn without a base map.
+const EMPTY_STYLE: StyleSpecification = { version: 8, sources: {}, layers: [] }
 
 export interface MapViewOptions {
 	center: LonLat
@@ -24,9 +33,11 @@ export function useMap(
 
 	onMounted(() => {
 		if (!container.value) return
+		const styleUrl = import.meta.env.VITE_MAP_STYLE_URL
+		if (!styleUrl) context.hasBaseMapFailed.value = true
 		const map = new MapLibreMap({
 			container: container.value,
-			style: import.meta.env.VITE_MAP_STYLE_URL,
+			style: styleUrl || EMPTY_STYLE,
 			center: [options.center.lon, options.center.lat],
 			zoom: options.zoom,
 			hash: options.keepViewInUrl ?? false,
@@ -36,14 +47,19 @@ export function useMap(
 		map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
 		map.addControl(new ScaleControl(), 'bottom-right')
 
-		map.once('load', () => {
+		// The style, not the tiles: the tools should not wait for a slow tile server.
+		map.on('style.load', () => {
 			context.isReady.value = true
 		})
-		map.on('error', () => {
-			if (context.isReady.value || context.hasBaseMapFailed.value) return
-			context.hasBaseMapFailed.value = true
-			// An empty style still loads, so overlays can be drawn without the base map.
-			map.setStyle({ version: 8, sources: {}, layers: [] })
+		map.on('error', (event) => {
+			const hasStyleFailed = !context.isReady.value && !context.hasBaseMapFailed.value
+			if (hasStyleFailed) {
+				context.hasBaseMapFailed.value = true
+				map.setStyle(EMPTY_STYLE)
+				return
+			}
+			// MapLibre stays silent once someone listens for its errors.
+			console.error(event.error)
 		})
 		context.map.value = map
 	})

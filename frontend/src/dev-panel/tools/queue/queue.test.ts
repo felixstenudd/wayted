@@ -63,17 +63,37 @@ describe('countByStatus', () => {
 
 describe('failedTiles', () => {
 	it('lists the failed tiles with what went wrong and where they are', () => {
-		expect(failedTiles(queued)).toEqual([
-			{
-				id: 'roads/14/3/4821',
-				key: '14/3/4821',
-				layer: 'roads',
-				attempts: 10,
-				lastStatus: 'timeout',
-				lastMessage: 'The source did not answer.',
-				bounds: { west: 18, south: 59, east: 18.1, north: 59.1 },
-			},
-		])
+		expect(failedTiles(queued, 10)).toEqual({
+			shown: [
+				{
+					id: 'roads/14/3/4821',
+					key: '14/3/4821',
+					layer: 'roads',
+					attempts: 10,
+					lastStatus: 'timeout',
+					lastMessage: 'The source did not answer.',
+					bounds: { west: 18, south: 59, east: 18.1, north: 59.1 },
+				},
+			],
+			hiddenCount: 0,
+		})
+	})
+
+	it('shows the first ones and counts the rest', () => {
+		const many: QueuedTiles = {
+			type: 'FeatureCollection',
+			features: [
+				tile('roads', 1, 'failed', 'a'),
+				tile('roads', 2, 'pending'),
+				tile('roads', 3, 'failed', 'b'),
+				tile('roads', 4, 'failed', 'c'),
+			],
+		}
+
+		const { shown, hiddenCount } = failedTiles(many, 2)
+
+		expect(shown.map((failed) => failed.key)).toEqual(['14/1/4821', '14/3/4821'])
+		expect(hiddenCount).toBe(1)
 	})
 })
 
