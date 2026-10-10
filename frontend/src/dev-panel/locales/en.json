@@ -7,5 +7,8 @@
 		"connected": "Dev API connected.",
 		"unavailable": "The dev API does not answer. Start it and reload this page.",
 		"rejected": "The dev API rejected the request: {detail}"
+	},
+	"map": {
+		"baseMapFailed": "The base map did not load. Check VITE_MAP_STYLE_URL."
 	}
 }

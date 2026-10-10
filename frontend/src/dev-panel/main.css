@@ -2,3 +2,18 @@
 
 /* Tailwind scans from the Vite root, which is this folder. */
 @source '..';
+
+/* The base map is light in both themes, so what is drawn on it keeps the light values. */
+:root {
+	--map-fetched: oklch(51.5% 0.123 147.4);
+	--map-expired: oklch(49.2% 0.129 46.1);
+	--map-waiting: oklch(48.7% 0.014 259.8);
+	--map-running: oklch(20.4% 0.007 258.4);
+	--map-failed: oklch(49.2% 0.129 46.1);
+	--map-edge: oklch(20.4% 0.007 258.4);
+	--map-vertex: oklch(48.7% 0.014 259.8);
+	--map-selected: oklch(49.2% 0.129 46.1);
+	--map-score-low: oklch(65.5% 0.013 259.8);
+	--map-score-high: oklch(51.5% 0.123 147.4);
+	--map-outline: oklch(20.4% 0.007 258.4);
+}
