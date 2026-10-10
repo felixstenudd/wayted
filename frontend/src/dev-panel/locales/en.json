@@ -35,5 +35,33 @@
 		"failedTile": "{layer} {key}, {count} attempts",
 		"noReason": "No reason recorded.",
 		"show": "Show on map"
+	},
+	"graph": {
+		"title": "Graph",
+		"load": "Load edges in this view",
+		"loading": "Loading edges…",
+		"notLoaded": "Load the edges of the current view.",
+		"empty": "No edges in this view. It may not be fetched yet.",
+		"counts": "{edges} edges, {vertices} vertices",
+		"colorBy": "Colour edges by",
+		"noScores": "No scores yet",
+		"oneColor": "One colour",
+		"lowest": "lowest {value}",
+		"highest": "highest {value}",
+		"selectEdge": "Select an edge on the map to see its tags and scores.",
+		"edge": {
+			"title": "Edge {id}",
+			"way": "Way",
+			"from": "From vertex",
+			"to": "To vertex",
+			"length": "Length",
+			"lengthM": "{length} m",
+			"forward": "Forward",
+			"backward": "Backward",
+			"nobody": "nobody",
+			"scores": "Scores",
+			"noScores": "Not scored yet.",
+			"tags": "Tags"
+		}
 	}
 }
