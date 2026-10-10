@@ -10,5 +10,12 @@
 	},
 	"map": {
 		"baseMapFailed": "The base map did not load. Check VITE_MAP_STYLE_URL."
+	},
+	"coverage": {
+		"title": "Coverage",
+		"loading": "Loading fetched tiles…",
+		"empty": "No tiles fetched yet. Request an area below.",
+		"layers": "Layers",
+		"reload": "Reload"
 	}
 }

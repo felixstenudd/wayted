@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { MapView, provideMap } from '@/features/map'
 
 import ApiStatus from './components/ApiStatus.vue'
+import CoveragePanel from './tools/fetched-tiles/CoveragePanel.vue'
 
 // Central Stockholm, where the pipeline is tried out. The URL takes over once the map has moved.
 const START = { center: { lon: 18.0686, lat: 59.3293 }, zoom: 13 }
@@ -21,6 +22,7 @@ provideMap()
 				<ApiStatus />
 			</header>
 			<!-- The order is the drawing order: later tools are drawn above earlier ones. -->
+			<CoveragePanel />
 		</aside>
 		<main>
 			<MapView :center="START.center" :zoom="START.zoom" keep-view-in-url />

@@ -1,4 +1,7 @@
+export { tokenColor } from './colors'
 export { default as MapView } from './components/MapView.vue'
+export { useMapSource, type SourceLayer } from './composables/useMapSource'
+export { useMapFilter, useMapPaint } from './composables/useMapStyle'
 export { provideMap } from './context'
 export {
 	boundsPolygon,
