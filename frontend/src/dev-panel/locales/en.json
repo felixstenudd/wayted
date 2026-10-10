@@ -16,6 +16,13 @@
 		"loading": "Loading fetched tiles…",
 		"empty": "No tiles fetched yet. Request an area below.",
 		"layers": "Layers",
-		"reload": "Reload"
+		"until": "Show tiles fetched until",
+		"now": "Now",
+		"play": "Play",
+		"pause": "Pause",
+		"reload": "Reload",
+		"expired": "No tiles have expired. | 1 tile has expired and is drawn dashed. | {count} tiles have expired and are drawn dashed.",
+		"tile": "Tile {key}",
+		"tileLayer": "{layer}: fetched {fetched}, expires {expires}"
 	}
 }
