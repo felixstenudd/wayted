@@ -123,6 +123,10 @@ export interface components {
         AreaRequestOut: {
             /** Queued */
             queued: number;
+            /** Queued By Layer */
+            queued_by_layer: {
+                [key: string]: number;
+            };
             bounds: components["schemas"]["BoundsOut"];
         };
         /** BoundsOut */

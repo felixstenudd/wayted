@@ -14,7 +14,7 @@ import { Button } from '@/shared/ui/button'
 
 import ProblemMessage from '../../components/ProblemMessage.vue'
 import ToolSection from '../../components/ToolSection.vue'
-import { formatKm } from '../../format'
+import { formatKm, formatLayerCounts } from '../../format'
 import { useRequestArea } from './api'
 
 // The dev API's limit on radius_m.
@@ -36,13 +36,30 @@ function toggleDrawing() {
 function request() {
 	if (!circle.value) return
 	isDrawing.value = false
-	mutate({
-		lat: circle.value.center.lat,
-		lon: circle.value.center.lon,
-		radius_m: circle.value.radiusM,
-		refetch: refetch.value,
-	})
+	mutate(
+		{
+			lat: circle.value.center.lat,
+			lon: circle.value.center.lon,
+			radius_m: circle.value.radiusM,
+			refetch: refetch.value,
+		},
+		{
+			// The dashed box of the answer takes the circle's place.
+			onSuccess: () => {
+				circle.value = null
+			},
+		},
+	)
 }
+
+const answer = computed(() => {
+	if (!result.value) return null
+	if (result.value.queued === 0) return t('request.nothingQueued')
+	return t('request.queued', {
+		count: result.value.queued,
+		layers: formatLayerCounts(result.value.queued_by_layer),
+	})
+})
 
 const outline = tokenColor('--map-outline')
 useMapSource('request-circle', () => (circle.value ? circlePolygon(circle.value) : EMPTY), [
@@ -95,12 +112,9 @@ useMapSource('request-bounds', () => (result.value ? boundsPolygon(result.value.
 		</template>
 
 		<ProblemMessage v-if="error" :error="error" />
-		<p v-if="result" role="status">
-			{{
-				result.queued > 0
-					? t('request.queued', { count: result.queued })
-					: t('request.nothingQueued')
-			}}
-		</p>
+		<template v-if="answer">
+			<p role="status">{{ answer }}</p>
+			<p class="text-small text-graphite">{{ t('request.box') }}</p>
+		</template>
 	</ToolSection>
 </template>

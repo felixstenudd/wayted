@@ -9,3 +9,11 @@ export function formatTime(time: string | number): string {
 export function formatKm(distanceM: number): string {
 	return (distanceM / 1000).toFixed(1)
 }
+
+/** "9 parks, 9 roads" from a count per layer. */
+export function formatLayerCounts(countByLayer: Record<string, number>): string {
+	return Object.entries(countByLayer)
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([layer, count]) => `${count} ${layer}`)
+		.join(', ')
+}

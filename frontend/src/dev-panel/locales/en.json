@@ -42,7 +42,7 @@
 		"loading": "Loading edges…",
 		"notLoaded": "Load the edges of the current view.",
 		"empty": "No edges in this view. It may not be fetched yet.",
-		"counts": "{edges} edges, {vertices} vertices",
+		"counts": "{edges} edges, {vertices} vertices in the dashed box",
 		"colorBy": "Colour edges by",
 		"noScores": "No scores yet",
 		"oneColor": "One colour",
@@ -75,7 +75,8 @@
 		"refetch": "Fetch again",
 		"submit": "Request area",
 		"requesting": "Requesting…",
-		"queued": "1 tile queued. | {count} tiles queued.",
+		"queued": "1 tile queued: {layers}. | {count} tiles queued: {layers}.",
+		"box": "The dashed box is the area that was requested.",
 		"nothingQueued": "Nothing queued: every tile here is already fetched or waiting."
 	}
 }

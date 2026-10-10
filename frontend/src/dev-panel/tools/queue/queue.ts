@@ -38,7 +38,7 @@ export function failedTiles(queued: QueuedTiles): FailedTile[] {
 	return queued.features
 		.filter((tile) => tile.properties.status === 'failed')
 		.map(({ geometry, properties }) => ({
-			id: `${properties.layer}/${tileKey(properties)}`,
+			id: queueId(properties),
 			key: tileKey(properties),
 			layer: properties.layer,
 			attempts: properties.attempts,
@@ -46,4 +46,13 @@ export function failedTiles(queued: QueuedTiles): FailedTile[] {
 			lastMessage: properties.last_message,
 			bounds: ringBounds(geometry.coordinates[0] ?? []),
 		}))
+}
+
+const queueId = (tile: { layer: string; z: number; x: number; y: number }) =>
+	`${tile.layer}/${tileKey(tile)}`
+
+/** True when a tile that was queued is not any more: the worker has finished it. */
+export function hasFinishedTiles(before: QueuedTiles, after: QueuedTiles): boolean {
+	const stillQueued = new Set(after.features.map((tile) => queueId(tile.properties)))
+	return before.features.some((tile) => !stillQueued.has(queueId(tile.properties)))
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { QueuedTiles, QueueStatus } from '../../dev-api/types'
-import { countByStatus, failedTiles, toMapTiles } from './queue'
+import { countByStatus, failedTiles, hasFinishedTiles, toMapTiles } from './queue'
 
 const ring = [
 	[18, 59],
@@ -74,5 +74,30 @@ describe('failedTiles', () => {
 				bounds: { west: 18, south: 59, east: 18.1, north: 59.1 },
 			},
 		])
+	})
+})
+
+describe('hasFinishedTiles', () => {
+	const only = (...tiles: QueuedTiles['features']): QueuedTiles => ({
+		type: 'FeatureCollection',
+		features: tiles,
+	})
+
+	it('is true when a tile has left the queue', () => {
+		const after = only(tile('roads', 1, 'pending'), tile('roads', 2, 'running'))
+		expect(hasFinishedTiles(queued, after)).toBe(true)
+	})
+
+	it('tells the layers of one square apart', () => {
+		const before = only(tile('roads', 1, 'running'), tile('parks', 1, 'running'))
+		expect(hasFinishedTiles(before, only(tile('parks', 1, 'running')))).toBe(true)
+	})
+
+	it('is false when tiles only changed status or were added', () => {
+		const after = only(
+			...queued.features.map((t) => tile(t.properties.layer, t.properties.x, 'running')),
+			tile('roads', 9, 'pending'),
+		)
+		expect(hasFinishedTiles(queued, after)).toBe(false)
 	})
 })
