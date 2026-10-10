@@ -61,6 +61,23 @@ services:
       db:
         condition: service_healthy
 
+  # The dev panel, a second app in ./frontend.
+  dev-panel:
+    build:
+      context: ./frontend
+      target: dev
+    command: ["npm", "run", "dev:panel", "--", "--host", "0.0.0.0"]
+    ports: ["127.0.0.1:5174:5174"]
+    environment:
+      DEV_API_PROXY_TARGET: http://dev-api:8000
+      VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL}
+    volumes:
+      - ./frontend:/app
+      # Keeps the container's Linux node_modules separate from the host's.
+      - /app/node_modules
+    depends_on:
+      - dev-api
+
   # Fetches and maps the tiles queued in raw.pending_tiles. Nothing reloads it: restart the
   # service after changing backend code.
   worker:

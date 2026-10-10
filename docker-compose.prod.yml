@@ -57,6 +57,18 @@ services:
       db:
         condition: service_healthy
 
+  # The dev panel: internal, no login. On the server's loopback unless DEV_PANEL_BIND is set.
+  dev-panel:
+    build:
+      context: ./frontend
+      target: dev-panel-prod
+      args:
+        VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:?VITE_MAP_STYLE_URL is required}
+    restart: unless-stopped
+    ports: ["${DEV_PANEL_BIND:-127.0.0.1}:8002:80"]
+    depends_on:
+      - dev-api
+
   # Fetches and maps the tiles queued in raw.pending_tiles.
   worker:
     build:
