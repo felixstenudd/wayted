@@ -1,0 +1,83 @@
+{
+	"panel": {
+		"title": "wayted dev panel"
+	},
+	"api": {
+		"checking": "Checking the dev API…",
+		"connected": "Dev API connected.",
+		"unavailable": "The dev API does not answer. Start it and reload this page.",
+		"rejected": "The dev API rejected the request: {detail}"
+	},
+	"map": {
+		"baseMapFailed": "The base map did not load. Check VITE_MAP_STYLE_URL."
+	},
+	"coverage": {
+		"title": "Coverage",
+		"loading": "Loading fetched tiles…",
+		"empty": "No tiles fetched yet. Request an area below.",
+		"layers": "Layers",
+		"until": "Show tiles fetched until",
+		"now": "Now",
+		"play": "Play",
+		"pause": "Pause",
+		"reload": "Reload",
+		"expired": "No tiles have expired. | 1 tile has expired and is drawn dashed. | {count} tiles have expired and are drawn dashed.",
+		"tile": "Tile {key}",
+		"tileLayer": "{layer}: fetched {fetched}, expires {expires}"
+	},
+	"queue": {
+		"title": "Queue",
+		"loading": "Loading the queue…",
+		"empty": "Nothing is queued.",
+		"pending": "Waiting (dotted outline)",
+		"running": "Being fetched (thin outline)",
+		"failed": "Failed (thick outline)",
+		"failedTile": "{layer} {key}, 1 attempt | {layer} {key}, {count} attempts",
+		"noReason": "No reason recorded.",
+		"moreFailed": "and 1 more failed tile | and {count} more failed tiles",
+		"show": "Show on map"
+	},
+	"graph": {
+		"title": "Graph",
+		"load": "Load edges in this view",
+		"loading": "Loading edges…",
+		"notLoaded": "Load the edges of the current view.",
+		"empty": "No edges in this view. It may not be fetched yet.",
+		"counts": "{edges} edges, {vertices} vertices in the dashed box",
+		"colorBy": "Colour edges by",
+		"noScores": "No scores yet",
+		"oneColor": "One colour",
+		"lowest": "lowest {value}",
+		"highest": "highest {value}",
+		"selectEdge": "Select an edge on the map to see its tags and scores.",
+		"edge": {
+			"title": "Edge {id}",
+			"way": "Way",
+			"from": "From vertex",
+			"to": "To vertex",
+			"length": "Length",
+			"lengthM": "{length} m",
+			"forward": "Forward",
+			"backward": "Backward",
+			"nobody": "nobody",
+			"scores": "Scores",
+			"noScores": "Not scored yet.",
+			"tags": "Tags"
+		}
+	},
+	"request": {
+		"title": "Request area",
+		"draw": "Draw circle",
+		"stopDrawing": "Stop drawing",
+		"howToDraw": "Press on the map for the centre and drag to set the radius.",
+		"noCircle": "Draw a circle to choose the area to fetch.",
+		"radius": "Radius {km} km",
+		"atLimit": "{km} km is the largest radius that can be requested.",
+		"refetch": "Fetch again",
+		"submit": "Request area",
+		"requesting": "Requesting…",
+		"queued": "1 tile queued: {layers}. | {count} tiles queued: {layers}.",
+		"box": "The dashed box is the area that was requested.",
+		"nothingQueued": "Nothing queued: every tile here is already fetched or waiting."
+	}
+}
