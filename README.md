@@ -58,3 +58,9 @@ A `dev-api` container serves the internal tools. It has no login, so it is publi
 A `dev-panel` container serves the dev panel on `127.0.0.1:8002` and forwards its `/api` to `dev-api`. It has no login either: use it through `ssh -L 8002:localhost:8002 <server>`, or set `DEV_PANEL_BIND` to an address on an internal network. `VITE_MAP_STYLE_URL` is read when the image is built.
 
 API docs (`/docs`, `/redoc`, `/openapi.json`) are only served when `API_DOCS_ENABLED=true`, which the dev compose file sets and production does not.
+
+## Authentication
+
+Signing in returns a short-lived access token (15 min) in the JSON body, and sets a long-lived refresh token (30 days) as an `httpOnly`, `SameSite=Strict` cookie. The frontend keeps the access token in memory only; on page load and whenever it expires, it calls `/api/auth/refresh` and the browser sends the cookie by itself. Each refresh replaces the cookie, and reusing an old one ends the session everywhere.
+
+The cookie is marked `Secure` (https only) unless `COOKIE_SECURE=false`, which only the dev compose file sets. Production must therefore be served over https, or browsers will drop the cookie and nobody stays signed in after a reload.
