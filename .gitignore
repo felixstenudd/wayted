@@ -16,3 +16,5 @@ build/
 # Editor
 .vscode/
 .idea/
+
+frontend/dist-dev-panel/
