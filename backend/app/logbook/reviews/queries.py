@@ -1,8 +1,3 @@
-"""SQL queries for app.route_review and app.segment_rating.
-
-Queries use psycopg-style ``%s`` placeholders.
-"""
-
 UPSERT_ROUTE_REVIEW = """
 INSERT INTO app.route_review (user_id, route_id, rating, comment)
 VALUES (%s, %s, %s, %s)

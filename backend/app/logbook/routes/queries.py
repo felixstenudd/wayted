@@ -1,8 +1,9 @@
-"""SQL queries for app.route and app.route_save.
-
-Queries use psycopg-style ``%s`` placeholders. For geometry inputs, pass a
-WKT LineString to CREATE_ROUTE / UPDATE_ROUTE_GEOMETRY. Coordinates in
-ST_MakePoint are longitude first, then latitude.
+"""
+Geometry inputs:
+- Pass a WKT LineString in geom_wkt.
+- Input coordinates must use SRID 4326 (longitude, latitude).
+- ST_GeomFromText converts WKT to PostGIS geometry.
+- ST_AsText returns the geometry as WKT under the geom_wkt alias.
 """
 
 CREATE_ROUTE = """
@@ -24,28 +25,64 @@ VALUES (
     ST_GeomFromText(%s, 4326),
     %s
 )
-RETURNING id, user_id, name, activity_id, route_type, distance_m,
-          ST_AsText(geom) AS geom_wkt, is_public, created_at, updated_at;
+RETURNING
+    id,
+    user_id,
+    name,
+    activity_id,
+    route_type,
+    distance_m,
+    ST_AsText(geom) AS geom_wkt,
+    is_public,
+    created_at,
+    updated_at;
 """
 
 GET_ROUTE_BY_ID = """
-SELECT id, user_id, name, activity_id, route_type, distance_m,
-       ST_AsText(geom) AS geom_wkt, is_public, created_at, updated_at
+SELECT
+    id,
+    user_id,
+    name,
+    activity_id,
+    route_type,
+    distance_m,
+    ST_AsText(geom) AS geom_wkt,
+    is_public,
+    created_at,
+    updated_at
 FROM app.route
 WHERE id = %s;
 """
 
 GET_ACCESSIBLE_ROUTE_BY_ID = """
-SELECT id, user_id, name, activity_id, route_type, distance_m,
-       ST_AsText(geom) AS geom_wkt, is_public, created_at, updated_at
+SELECT
+    id,
+    user_id,
+    name,
+    activity_id,
+    route_type,
+    distance_m,
+    ST_AsText(geom) AS geom_wkt,
+    is_public,
+    created_at,
+    updated_at
 FROM app.route
 WHERE id = %s
   AND (is_public = TRUE OR user_id = %s);
 """
 
 LIST_USER_ROUTES = """
-SELECT id, user_id, name, activity_id, route_type, distance_m,
-       ST_AsText(geom) AS geom_wkt, is_public, created_at, updated_at
+SELECT
+    id,
+    user_id,
+    name,
+    activity_id,
+    route_type,
+    distance_m,
+    ST_AsText(geom) AS geom_wkt,
+    is_public,
+    created_at,
+    updated_at
 FROM app.route
 WHERE user_id = %s
 ORDER BY created_at DESC
@@ -53,8 +90,17 @@ LIMIT %s OFFSET %s;
 """
 
 LIST_PUBLIC_ROUTES = """
-SELECT id, user_id, name, activity_id, route_type, distance_m,
-       ST_AsText(geom) AS geom_wkt, is_public, created_at, updated_at
+SELECT
+    id,
+    user_id,
+    name,
+    activity_id,
+    route_type,
+    distance_m,
+    ST_AsText(geom) AS geom_wkt,
+    is_public,
+    created_at,
+    updated_at
 FROM app.route
 WHERE is_public = TRUE
 ORDER BY created_at DESC
@@ -62,8 +108,17 @@ LIMIT %s OFFSET %s;
 """
 
 LIST_PUBLIC_ROUTES_BY_ACTIVITY = """
-SELECT id, user_id, name, activity_id, route_type, distance_m,
-       ST_AsText(geom) AS geom_wkt, is_public, created_at, updated_at
+SELECT
+    id,
+    user_id,
+    name,
+    activity_id,
+    route_type,
+    distance_m,
+    ST_AsText(geom) AS geom_wkt,
+    is_public,
+    created_at,
+    updated_at
 FROM app.route
 WHERE is_public = TRUE
   AND activity_id = %s
@@ -72,25 +127,42 @@ LIMIT %s OFFSET %s;
 """
 
 SEARCH_PUBLIC_ROUTES_NEAR_POINT = """
-SELECT id, user_id, name, activity_id, route_type, distance_m,
-       ST_AsText(geom) AS geom_wkt, is_public, created_at, updated_at
-FROM app.route
-WHERE is_public = TRUE
+WITH search_point AS (
+    SELECT ST_SetSRID(
+        ST_MakePoint(%s, %s),
+        4326
+    )::geography AS geog
+)
+SELECT
+    r.id,
+    r.user_id,
+    r.name,
+    r.activity_id,
+    r.route_type,
+    r.distance_m,
+    ST_AsText(r.geom) AS geom_wkt,
+    r.is_public,
+    r.created_at,
+    r.updated_at
+FROM app.route AS r
+CROSS JOIN search_point AS p
+WHERE r.is_public = TRUE
   AND ST_DWithin(
-      geom::geography,
-      ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography,
+      r.geom::geography,
+      p.geog,
       %s
   )
 ORDER BY ST_Distance(
-    geom::geography,
-    ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography
-  )
+    r.geom::geography,
+    p.geog
+)
 LIMIT %s OFFSET %s;
 """
 
 UPDATE_ROUTE = """
 UPDATE app.route
-SET name = %s,
+SET
+    name = %s,
     activity_id = %s,
     route_type = %s::app.route_type,
     distance_m = %s,
@@ -98,18 +170,32 @@ SET name = %s,
     updated_at = NOW()
 WHERE id = %s
   AND user_id = %s
-RETURNING id, user_id, name, activity_id, route_type, distance_m,
-          ST_AsText(geom) AS geom_wkt, is_public, created_at, updated_at;
+RETURNING
+    id,
+    user_id,
+    name,
+    activity_id,
+    route_type,
+    distance_m,
+    ST_AsText(geom) AS geom_wkt,
+    is_public,
+    created_at,
+    updated_at;
 """
 
 UPDATE_ROUTE_GEOMETRY = """
 UPDATE app.route
-SET geom = ST_GeomFromText(%s, 4326),
+SET
+    geom = ST_GeomFromText(%s, 4326),
     distance_m = %s,
     updated_at = NOW()
 WHERE id = %s
   AND user_id = %s
-RETURNING id, ST_AsText(geom) AS geom_wkt, distance_m, updated_at;
+RETURNING
+    id,
+    ST_AsText(geom) AS geom_wkt,
+    distance_m,
+    updated_at;
 """
 
 DELETE_ROUTE = """
@@ -120,8 +206,14 @@ RETURNING id;
 """
 
 SAVE_ROUTE = """
-INSERT INTO app.route_save (user_id, route_id)
-VALUES (%s, %s)
+INSERT INTO app.route_save (
+    user_id,
+    route_id
+)
+SELECT %s, r.id
+FROM app.route AS r
+WHERE r.id = %s
+  AND (r.is_public = TRUE OR r.user_id = %s)
 ON CONFLICT (user_id, route_id) DO NOTHING
 RETURNING user_id, route_id, created_at;
 """
@@ -134,12 +226,21 @@ RETURNING user_id, route_id;
 """
 
 LIST_SAVED_ROUTES = """
-SELECT r.id, r.user_id, r.name, r.activity_id, r.route_type,
-       r.distance_m, ST_AsText(r.geom) AS geom_wkt,
-       r.is_public, r.created_at, r.updated_at,
-       rs.created_at AS saved_at
+SELECT
+    r.id,
+    r.user_id,
+    r.name,
+    r.activity_id,
+    r.route_type,
+    r.distance_m,
+    ST_AsText(r.geom) AS geom_wkt,
+    r.is_public,
+    r.created_at,
+    r.updated_at,
+    rs.created_at AS saved_at
 FROM app.route_save AS rs
-JOIN app.route AS r ON r.id = rs.route_id
+JOIN app.route AS r
+    ON r.id = rs.route_id
 WHERE rs.user_id = %s
 ORDER BY rs.created_at DESC
 LIMIT %s OFFSET %s;
