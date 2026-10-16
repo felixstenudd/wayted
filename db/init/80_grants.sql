@@ -21,3 +21,7 @@ GRANT USAGE ON SCHEMA ref, graph, app TO wayted_api;
 GRANT SELECT ON ALL TABLES IN SCHEMA ref, graph TO wayted_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO wayted_api;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA app TO wayted_api;
+
+GRANT USAGE ON SCHEMA raw TO wayted_api;
+GRANT SELECT ON raw.fetched_tiles TO wayted_api;
+GRANT SELECT, INSERT, UPDATE ON raw.pending_tiles TO wayted_api;

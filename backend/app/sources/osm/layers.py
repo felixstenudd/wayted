@@ -32,3 +32,6 @@ PARKS = OsmLayer(
     selectors=('way["leisure"="park"]', 'relation["leisure"="park"]["type"="multipolygon"]'),
     is_area=True,
 )
+
+# Every layer available (that has a downloader)
+LAYERS = (ROADS, PARKS)

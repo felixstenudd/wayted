@@ -8,6 +8,7 @@ __pycache__/
 # Node
 node_modules/
 dist/
+dist-dev-panel/
 build/
 
 # Env

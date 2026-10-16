@@ -1,5 +1,7 @@
 dist
-coverage
+/coverage
 node_modules
 package-lock.json
 .eslintcache
+dist-dev-panel
+src/dev-panel/dev-api/schema.d.ts
