@@ -10,6 +10,7 @@ from psycopg_pool import AsyncConnectionPool
 TEST_DATABASE_URL = os.environ.get("WAYTED_TEST_DATABASE_URL")
 DOWNLOADER_PASSWORD = os.environ.get("WAYTED_TEST_DOWNLOADER_PASSWORD", "test")
 MAPPER_PASSWORD = os.environ.get("WAYTED_TEST_MAPPER_PASSWORD", "test")
+ENRICHER_PASSWORD = os.environ.get("WAYTED_TEST_ENRICHER_PASSWORD", "test")
 API_PASSWORD = os.environ.get("WAYTED_TEST_API_PASSWORD", "test")
 
 
@@ -25,7 +26,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 @pytest.fixture
 async def admin_conn() -> AsyncIterator[AsyncConnection[TupleRow]]:
-    """Superuser connection for setup and assertions. Empties the raw and graph tables first."""
+    """Superuser connection for setup and assertions. Empties raw, graph and enrich first."""
     assert TEST_DATABASE_URL
     conn = await AsyncConnection.connect(TEST_DATABASE_URL, autocommit=True)
     await conn.execute(
@@ -33,7 +34,9 @@ async def admin_conn() -> AsyncIterator[AsyncConnection[TupleRow]]:
         TRUNCATE raw.fetched_tiles, raw.pending_tiles,
             raw.osm_nodes, raw.osm_ways, raw.osm_relations,
             graph.ways, graph.vertices, graph.edges,
-            graph.pending_ways, graph.pending_nodes, graph.pending_edges
+            graph.pending_ways, graph.pending_nodes, graph.pending_edges,
+            enrich.areas, enrich.feature_ways,
+            enrich.pending_ways, enrich.pending_relations, enrich.pending_nodes
         RESTART IDENTITY
         """
     )
@@ -63,6 +66,19 @@ async def mapper_pool(
     """Pool logged in as wayted_mapper, so tests go through the real grants."""
     assert TEST_DATABASE_URL
     conninfo = make_conninfo(TEST_DATABASE_URL, user="wayted_mapper", password=MAPPER_PASSWORD)
+    pool = AsyncConnectionPool(conninfo, open=False)
+    await pool.open()
+    yield pool
+    await pool.close()
+
+
+@pytest.fixture
+async def enricher_pool(
+    admin_conn: AsyncConnection[TupleRow],
+) -> AsyncIterator[AsyncConnectionPool[AsyncConnection[TupleRow]]]:
+    """Pool logged in as wayted_enricher, so tests go through the real grants."""
+    assert TEST_DATABASE_URL
+    conninfo = make_conninfo(TEST_DATABASE_URL, user="wayted_enricher", password=ENRICHER_PASSWORD)
     pool = AsyncConnectionPool(conninfo, open=False)
     await pool.open()
     yield pool
