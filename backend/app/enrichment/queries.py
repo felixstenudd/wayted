@@ -60,3 +60,37 @@ FORGET_FEATURE_WAYS = """
     DELETE FROM enrich.feature_ways f USING feature_candidates c
     WHERE (f.osm_type, f.osm_id) = (c.osm_type, c.osm_id)
 """
+
+# Edges whose score a changed feature may have changed: those within reach_m of its old or new
+# geometry. The box around the edge is at least reach_m wide, so a few more are queued than
+# needed, which only costs a rescore.
+QUEUE_NEAR_CHANGED = """
+    INSERT INTO graph.pending_edges (edge_id)
+    SELECT DISTINCT e.id
+    FROM changed_features c
+    JOIN graph.edges e ON e.geom && enrich.expand_m(c.geom, %(reach_m)s)
+    WHERE c.layer = %(layer)s AND ST_Intersects(c.geom, enrich.expand_m(e.geom, %(reach_m)s))
+"""
+
+CLAIM_EDGES = """
+    WITH claimed AS (
+        DELETE FROM graph.pending_edges
+        WHERE id IN (SELECT id FROM graph.pending_edges ORDER BY id LIMIT %(batch_size)s)
+        RETURNING edge_id
+    )
+    INSERT INTO claimed_edges SELECT DISTINCT edge_id FROM claimed
+"""
+
+HAS_PENDING_EDGES = "SELECT EXISTS (SELECT 1 FROM graph.pending_edges)"
+
+# An attribute's query goes between the two, as the subquery s.
+MERGE_SCORES_HEAD = """
+    UPDATE graph.edges e
+    SET scores = e.scores || jsonb_build_object(%(key)s::text, s.value)
+    FROM (
+"""
+
+MERGE_SCORES_TAIL = """
+    ) s
+    WHERE e.id = s.edge_id
+"""

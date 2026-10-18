@@ -8,7 +8,7 @@ from psycopg.rows import TupleRow
 from app.db import Connect, pipeline_lock
 
 from . import queries
-from .definitions import LAYERS
+from .definitions import ATTRIBUTES, LAYERS
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +50,10 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
         relations_claimed = (await conn.execute(queries.CLAIM_RELATIONS, params)).rowcount
         nodes_claimed = (await conn.execute(queries.CLAIM_NODES, params)).rowcount
         if ways_claimed == 0 and relations_claimed == 0 and nodes_claimed == 0:
-            return None
+            cur = await conn.execute(queries.HAS_PENDING_EDGES)
+            row = await cur.fetchone()
+            if row is None or not row[0]:
+                return None
         await conn.execute("ANALYZE claimed_ways, claimed_relations, moved_nodes")
         await conn.execute(queries.FIND_CANDIDATES)
         await conn.execute("ANALYZE feature_candidates")
@@ -61,6 +64,19 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
             built += result.built
             deleted += result.deleted
             skipped += result.skipped
+        edges_queued = 0
+        for layer in LAYERS:
+            reaches = [a.reach_m for a in ATTRIBUTES if layer in a.layers]
+            if reaches:
+                queue_params = {"layer": layer.code, "reach_m": max(reaches)}
+                edges_queued += (
+                    await conn.execute(queries.QUEUE_NEAR_CHANGED, queue_params)
+                ).rowcount
+        # Sees the edges queued just above, so most are scored in this batch.
+        edges_scored = (await conn.execute(queries.CLAIM_EDGES, params)).rowcount
+        await conn.execute("ANALYZE claimed_edges")
+        for attribute in ATTRIBUTES:
+            await attribute.score(conn)
     return BatchResult(
         ways_claimed=ways_claimed,
         relations_claimed=relations_claimed,
@@ -68,6 +84,6 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
         features_built=built,
         features_deleted=deleted,
         features_skipped=skipped,
-        edges_queued=0,
-        edges_scored=0,
+        edges_queued=edges_queued,
+        edges_scored=edges_scored,
     )
