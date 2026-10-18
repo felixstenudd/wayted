@@ -53,6 +53,41 @@ async def test_outline_split_over_two_member_ways(
     assert await feature_ways(admin_conn) == {("relation", 30, 20), ("relation", 30, 21)}
 
 
+async def test_self_crossing_park_way_becomes_an_area(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    # The outline crosses itself at (10, 10), leaving a small loop at that corner.
+    for node_id, x, y in [(1, 0, 0), (2, 10, 0), (3, 10, 11), (4, 11, 10), (5, 0, 10)]:
+        await add_node(admin_conn, node_id, x, y)
+    await add_way(admin_conn, 101, [1, 2, 3, 4, 5, 1], PARK)
+
+    result = await run(mapper_pool, enricher_pool)
+
+    def ring(corners: list[tuple[int, int]]) -> str:
+        return ", ".join(f"{ORIGIN_LON + x * STEP} {ORIGIN_LAT + y * STEP}" for x, y in corners)
+
+    square = ring([(0, 0), (10, 0), (10, 10), (0, 10), (0, 0)])
+    loop = ring([(10, 10), (10, 11), (11, 10), (10, 10)])
+    assert await area_is(admin_conn, "way", 101, f"MULTIPOLYGON((({square})), (({loop})))")
+    assert sum(b.features_skipped for b in result.batches) == 0
+
+
+async def test_member_way_listed_twice_still_builds(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    for node_id, x, y in [(1, 0, 0), (2, 10, 0), (3, 10, 10), (4, 0, 10)]:
+        await add_node(admin_conn, node_id, x, y)
+    await add_way(admin_conn, 20, [1, 2, 3], {})
+    await add_way(admin_conn, 21, [3, 4, 1], {})
+    await add_relation(
+        admin_conn, 30, [(20, "outer"), (20, "outer"), (21, "outer")], MULTIPOLYGON_PARK
+    )
+
+    await run(mapper_pool, enricher_pool)
+
+    assert await area_is(admin_conn, "relation", 30, grid_wkt((0, 0, 10, 10)))
+
+
 async def test_missing_member_way_is_skipped_until_it_arrives(
     admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
 ) -> None:

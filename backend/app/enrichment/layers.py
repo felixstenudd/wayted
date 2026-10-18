@@ -9,7 +9,8 @@ from psycopg.types.json import Jsonb
 
 # Matching candidates, with their member ways in order and a polygon, or NULL when a member
 # way or node is missing, the ways form no closed ring, or nothing is left after repair.
-# ST_BuildArea nests rings by geometry, so outer and inner roles are not read.
+# ST_BuildArea nests rings by geometry, so outer and inner roles are not read. Self-crossing
+# or duplicate lines give it nothing; only then are they noded, which can lose a touching hole.
 BUILD_AREAS = """
     CREATE TEMP TABLE built_areas ON COMMIT DROP AS
     WITH matched AS (
@@ -43,7 +44,10 @@ BUILD_AREAS = """
     shapes AS (
         SELECT osm_type, osm_id,
                CASE WHEN bool_and(line IS NOT NULL) THEN
-                   ST_CollectionExtract(ST_MakeValid(ST_BuildArea(ST_Collect(line))), 3)
+                   ST_CollectionExtract(ST_MakeValid(coalesce(
+                       ST_BuildArea(ST_Collect(line)),
+                       ST_BuildArea(ST_Node(ST_Collect(line)))
+                   )), 3)
                END AS geom
         FROM lines
         GROUP BY osm_type, osm_id
