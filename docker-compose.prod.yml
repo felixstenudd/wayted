@@ -93,6 +93,27 @@ services:
       db:
         condition: service_healthy
 
+  # Scores the edges the worker maps.
+  enricher:
+    build:
+      context: ./backend
+      target: prod
+    command: ["python", "-m", "app.enrichment.worker"]
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      # app/config.py reads every variable at import, so the enricher needs them all.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    depends_on:
+      db:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend
