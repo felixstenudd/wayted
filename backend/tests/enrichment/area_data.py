@@ -84,3 +84,9 @@ async def feature_ways(conn: Conn) -> set[tuple[str, int, int]]:
     """Every row of enrich.feature_ways."""
     cur = await conn.execute("SELECT osm_type, osm_id, way_id FROM enrich.feature_ways")
     return {(osm_type, osm_id, way_id) for osm_type, osm_id, way_id in await cur.fetchall()}
+
+
+async def scores(conn: Conn) -> dict[int, dict[str, float]]:
+    """Each way's edge scores by way id; every test road is one edge."""
+    cur = await conn.execute("SELECT way_id, scores FROM graph.edges")
+    return {way_id: edge_scores for way_id, edge_scores in await cur.fetchall()}
