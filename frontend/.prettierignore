@@ -5,3 +5,4 @@ package-lock.json
 .eslintcache
 dist-dev-panel
 src/dev-panel/dev-api/schema.d.ts
+src/shared/api/schema.d.ts
