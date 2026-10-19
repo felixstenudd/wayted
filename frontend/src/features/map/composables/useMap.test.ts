@@ -125,6 +125,24 @@ describe('useMap', () => {
 		])
 	})
 
+	it('folds shown compact credits into their button five seconds after loading', () => {
+		vi.useFakeTimers()
+		try {
+			const { map } = mountMap()
+			const credits = document.createElement('details')
+			credits.className = 'maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show'
+			host?.element.append(credits)
+
+			map.fire('load')
+			vi.advanceTimersByTime(4999)
+			expect(credits.classList.contains('maplibregl-compact-show')).toBe(true)
+			vi.advanceTimersByTime(1)
+			expect(credits.classList.contains('maplibregl-compact-show')).toBe(false)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	it('says so and draws on an empty map when no style URL is set', () => {
 		vi.stubEnv('VITE_MAP_STYLE_URL', '')
 

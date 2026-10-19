@@ -21,21 +21,14 @@ provideMap()
 </script>
 
 <template>
+	<!-- In tab order: account, then the planner, then the map. The map is drawn underneath. -->
 	<main class="relative h-dvh overflow-hidden">
-		<MapView
-			:center="START.center"
-			:zoom="START.zoom"
-			keep-view-in-url
-			zoom-buttons-position="bottom-right"
-			:controls-bottom-px="hasRoomForPanel ? 0 : sheetHeightPx"
-		/>
-		<PointMarkers />
-		<div class="absolute top-4 right-4">
+		<div class="absolute top-4 right-4 z-10">
 			<AccountMenu />
 		</div>
 		<div
 			v-if="hasRoomForPanel"
-			class="pointer-events-none absolute inset-y-4 left-4 flex w-90 flex-col"
+			class="pointer-events-none absolute inset-y-4 left-4 z-10 flex w-90 flex-col"
 		>
 			<aside
 				:aria-label="t('planner.title')"
@@ -58,5 +51,13 @@ provideMap()
 			</template>
 			<PlannerPanel layout="sheet" />
 		</BottomSheet>
+		<MapView
+			:center="START.center"
+			:zoom="START.zoom"
+			keep-view-in-url
+			zoom-buttons-position="bottom-right"
+			:controls-bottom-px="hasRoomForPanel ? 0 : sheetHeightPx"
+		/>
+		<PointMarkers />
 	</main>
 </template>

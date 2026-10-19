@@ -44,4 +44,61 @@ useMap(container, props)
 :deep(.maplibregl-ctrl-bottom-right) {
 	bottom: min(var(--controls-bottom), 50%);
 }
+
+/*
+ * MapLibre's buttons redrawn in our tokens. Their icons are images in a fixed
+ * grey, so they become masks filled with ink and follow the theme. The scale bar
+ * and credits keep MapLibre's look: they belong to the map, which stays light in
+ * both themes.
+ */
+:deep(.maplibregl-map) {
+	font-family: inherit;
+}
+
+:deep(.maplibregl-ctrl-group) {
+	overflow: hidden;
+	border-radius: 9999px;
+	background: var(--paper);
+	box-shadow: var(--elevation-float);
+}
+
+:deep(.maplibregl-ctrl-group button) {
+	width: 2.5rem;
+	height: 2.5rem;
+	transition: background-color 150ms var(--ease-out, ease-out);
+}
+
+:deep(.maplibregl-ctrl-group button + button) {
+	border-top: 1px solid var(--line);
+}
+
+:deep(.maplibregl-ctrl button:not(:disabled):hover) {
+	background-color: var(--sunken);
+}
+
+/* The group clips anything outside it, so the focus ring is drawn inside. */
+:deep(.maplibregl-ctrl button:focus:focus-visible) {
+	box-shadow: none;
+	outline-offset: -3px;
+}
+
+:deep(.maplibregl-ctrl button.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon),
+:deep(.maplibregl-ctrl button.maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon) {
+	background-image: none;
+	background-color: var(--ink);
+	mask: center / 1.125rem no-repeat;
+}
+
+:deep(.maplibregl-ctrl button.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon) {
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E");
+}
+
+:deep(.maplibregl-ctrl button.maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon) {
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E");
+}
+
+:deep(.maplibregl-ctrl-attrib.maplibregl-compact) {
+	/* Small enough that the credits fit on one line on a phone while shown. */
+	font-size: 0.625rem;
+}
 </style>

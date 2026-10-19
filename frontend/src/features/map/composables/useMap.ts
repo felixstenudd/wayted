@@ -15,6 +15,9 @@ import type { LonLat } from '../geometry'
 
 setWorkerUrl(workerUrl)
 
+// OpenStreetMap's attribution guidelines let shown credits collapse after five seconds.
+const CREDITS_SHOWN_MS = 5000
+
 // Loads like any style, so overlays can be drawn without a base map.
 const EMPTY_STYLE: StyleSpecification = { version: 8, sources: {}, layers: [] }
 
@@ -33,6 +36,7 @@ export function useMap(
 	options: MapViewOptions,
 ): void {
 	const context = useMapContext()
+	let collapseCredits: ReturnType<typeof setTimeout> | undefined
 
 	onMounted(() => {
 		if (!container.value) return
@@ -59,6 +63,16 @@ export function useMap(
 		map.addControl(new ScaleControl(), 'bottom-right')
 
 		// The style, not the tiles: the tools should not wait for a slow tile server.
+		// MapLibre only folds narrow-map credits into their (i) button on a drag; this
+		// does the same when nobody drags. The class is what its own drag handler removes.
+		map.once('load', () => {
+			collapseCredits = setTimeout(() => {
+				container.value
+					?.querySelector('.maplibregl-ctrl-attrib.maplibregl-compact-show')
+					?.classList.remove('maplibregl-compact-show')
+			}, CREDITS_SHOWN_MS)
+		})
+
 		map.on('style.load', () => {
 			context.isReady.value = true
 		})
@@ -76,6 +90,7 @@ export function useMap(
 	})
 
 	onBeforeUnmount(() => {
+		clearTimeout(collapseCredits)
 		context.isReady.value = false
 		context.map.value?.remove()
 		context.map.value = null

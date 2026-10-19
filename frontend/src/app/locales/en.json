@@ -167,7 +167,7 @@
 			"finish": "Finish",
 			"clickHint": "Click the map to place it.",
 			"afterStartHint": "Place it after the start.",
-			"placedHint": "Drag it on the map to move it.",
+			"placedHint": "Drag it on the map.",
 			"useMyLocation": "Start at my location",
 			"locating": "Finding your location…",
 			"placeAtCenter": {
