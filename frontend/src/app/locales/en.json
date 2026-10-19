@@ -79,6 +79,16 @@
 			"signIn": "Sign in"
 		}
 	},
+	"account": {
+		"menu": "Account menu for {name}",
+		"planRoute": "Plan a route",
+		"notAvailableYet": "Not available yet",
+		"savedRoutes": "Saved routes",
+		"myReviews": "My reviews",
+		"publicReviews": "Public reviews",
+		"writeReview": "Write a review",
+		"signOut": "Sign out"
+	},
 	"planner": {
 		"title": "Plan a route",
 		"placeholder": "The map goes here."
