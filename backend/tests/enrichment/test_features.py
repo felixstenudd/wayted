@@ -160,6 +160,30 @@ async def test_moving_an_outline_node_rebuilds_the_area(
     assert await area_is(admin_conn, "relation", 30, f"POLYGON(({ring}))")
 
 
+@pytest.mark.parametrize(
+    "tags",
+    [
+        {"landuse": "forest"},
+        {"natural": "wood"},
+        {"natural": "scrub"},
+        {"natural": "heath"},
+        {"natural": "grassland"},
+        {"landuse": "meadow"},
+        {"natural": "wetland"},
+        {"leisure": "nature_reserve"},
+    ],
+)
+async def test_natural_land_becomes_a_nature_area(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, tags: dict[str, str]
+) -> None:
+    await add_square(admin_conn, 101, 1, (0, 0, 10, 10), tags)
+
+    await run(mapper_pool, enricher_pool)
+
+    cur = await admin_conn.execute("SELECT layer, osm_type, osm_id FROM enrich.areas")
+    assert await cur.fetchall() == [("nature", "way", 101)]
+
+
 async def test_every_downloaded_area_layer_has_a_feature_layer() -> None:
     downloaded = {layer.code for layer in DOWNLOADED_LAYERS if layer.is_area}
 

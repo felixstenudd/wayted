@@ -69,7 +69,7 @@ class OpenWaterDownloader(RoadDownloader):
 
 async def request(pool: Pool, tiles: set[Tile]) -> None:
     async with pool.connection() as conn:
-        await queue.request_area(conn, bounds_for_tiles(tiles))
+        await queue.request_area(conn, bounds_for_tiles(tiles), layers=RoadDownloader.layers)
 
 
 async def run(

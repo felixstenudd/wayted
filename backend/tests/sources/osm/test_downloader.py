@@ -9,7 +9,7 @@ from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 from psycopg_pool import AsyncConnectionPool
 
-from app.sources.osm import PARKS, ROADS, OsmData, OsmDownloader, OsmNode, OsmWay
+from app.sources.osm import NATURE, PARKS, ROADS, OsmData, OsmDownloader, OsmNode, OsmWay
 from app.sources.osm.overpass import build_query
 from app.sources.tiles import Bounds
 
@@ -69,6 +69,23 @@ async def test_roads_include_ferries_and_route_relations_without_members() -> No
     deep, shallow = query.split("->.deep;")
     assert 'way["route"="ferry"]' in deep
     assert 'relation["route"~"^(bicycle|foot|hiking|running|mtb)$"]' in shallow
+
+
+async def test_nature_asks_for_each_kind_of_land_as_ways_and_multipolygons() -> None:
+    seen: list[httpx.Request] = []
+    async with client_answering({"elements": []}, seen) as client:
+        await OsmDownloader(client, [NATURE]).fetch(BOUNDS)
+
+    query = sent_query(seen[0])
+    assert "is_in" in query
+    for key, values in [
+        ("landuse", "forest|meadow"),
+        ("natural", "wood|scrub|heath|grassland|wetland"),
+    ]:
+        assert f'way["{key}"~"^({values})$"]' in query
+        assert f'relation["{key}"~"^({values})$"]["type"="multipolygon"]' in query
+    assert 'way["leisure"="nature_reserve"]' in query
+    assert 'relation["leisure"="nature_reserve"]["type"="multipolygon"]' in query
 
 
 @pytest.mark.db

@@ -72,7 +72,7 @@ async def test_queued_tiles_show_why_one_failed(
     client: httpx.AsyncClient, admin_conn: Conn, api_pool: Pool
 ) -> None:
     async with api_pool.connection() as conn:
-        await queue.request_area(conn, TILE.bounds)
+        await queue.request_area(conn, TILE.bounds, layers=("roads", "parks"))
     await admin_conn.execute(
         """
         UPDATE raw.pending_tiles
@@ -289,14 +289,11 @@ async def test_request_queues_the_tiles_around_the_circle(
         "SELECT layer, count(*), bool_and(status = 'pending') FROM raw.pending_tiles GROUP BY layer"
     )
     per_layer = {layer: (count, pending) for layer, count, pending in await cur.fetchall()}
-    assert set(per_layer) == {"roads", "parks"}
-    assert per_layer["roads"] == per_layer["parks"]
-    assert per_layer["roads"][1]
-    assert body["queued"] == 2 * per_layer["roads"][0]
-    assert body["queued_by_layer"] == {
-        "parks": per_layer["parks"][0],
-        "roads": per_layer["roads"][0],
-    }
+    # Every layer covers the same tiles, all waiting.
+    [(count, pending)] = set(per_layer.values())
+    assert pending
+    assert body["queued_by_layer"] == {layer: count for layer in queue.LAYER_CODES}
+    assert body["queued"] == len(queue.LAYER_CODES) * count
 
 
 async def test_request_is_committed_before_the_answer_is_sent(
@@ -319,7 +316,7 @@ async def test_request_is_committed_before_the_answer_is_sent(
     async with httpx.AsyncClient(transport=transport, base_url="http://dev") as http:
         response = await http.post("/requests", json={**STOCKHOLM, "radius_m": 1})
 
-    assert visible == [response.json()["queued"]] == [2]
+    assert visible == [response.json()["queued"]] == [len(queue.LAYER_CODES)]
 
 
 async def test_request_for_tiles_already_waiting_queues_nothing(client: httpx.AsyncClient) -> None:
@@ -335,15 +332,14 @@ async def test_refetch_queues_tiles_that_are_fetched(
 ) -> None:
     tile = Tile.from_lat_lon(59.33, 18.07, 14)
     async with downloader_pool.connection() as conn:
-        await mark_fetched(conn, "roads", {tile})
-        await mark_fetched(conn, "parks", {tile})
+        for layer in queue.LAYER_CODES:
+            await mark_fetched(conn, layer, {tile})
 
     plain = await client.post("/requests", json={**STOCKHOLM, "radius_m": 1})
     refetch = await client.post("/requests", json={**STOCKHOLM, "radius_m": 1, "refetch": True})
 
-    assert (plain.json()["queued"], refetch.json()["queued"]) == (0, 2)
-    assert plain.json()["queued_by_layer"] == {"parks": 0, "roads": 0}
-    assert refetch.json()["queued_by_layer"] == {"parks": 1, "roads": 1}
+    assert plain.json()["queued_by_layer"] == {layer: 0 for layer in queue.LAYER_CODES}
+    assert refetch.json()["queued_by_layer"] == {layer: 1 for layer in queue.LAYER_CODES}
 
 
 async def test_request_at_the_radius_limit_is_accepted(client: httpx.AsyncClient) -> None:

@@ -18,6 +18,7 @@ type Pool = AsyncConnectionPool[Conn]
 # (layer, x, y, status, attempts)
 type Row = tuple[str, int, int, str, int]
 
+# The queue's mechanics run on two layers, so adding a layer leaves these tests alone.
 LAYERS = ("roads", "parks")
 RECT = TileRect(z=14, x_min=8800, y_min=4700, x_max=8801, y_max=4701)
 TILES = RECT.tiles()
@@ -28,7 +29,7 @@ ONE_RECT = TileRect.of_tile(ONE)
 
 async def request(pool: Pool, bounds: Bounds = BOUNDS, refetch: bool = False) -> int:
     async with pool.connection() as conn:
-        return sum((await queue.request_area(conn, bounds, refetch)).values())
+        return sum((await queue.request_area(conn, bounds, refetch, LAYERS)).values())
 
 
 async def rows(conn: Conn) -> list[Row]:
@@ -43,11 +44,14 @@ async def queued_tiles(conn: Conn, layer: str) -> set[Tile]:
     return {Tile(x=x, y=y, z=z) for x, y, z in await cur.fetchall()}
 
 
-async def test_request_queues_every_fetched_layer(admin_conn: Conn, api_pool: Pool) -> None:
-    assert await request(api_pool) == 8
+async def test_request_queues_every_downloaded_layer(admin_conn: Conn, api_pool: Pool) -> None:
+    async with api_pool.connection() as conn:
+        queued = await queue.request_area(conn, BOUNDS)
 
-    assert await queued_tiles(admin_conn, "roads") == TILES
-    assert await queued_tiles(admin_conn, "parks") == TILES
+    assert queued == {layer: len(TILES) for layer in queue.LAYER_CODES}
+    assert {"roads", "parks", "nature"} <= set(queue.LAYER_CODES)
+    for layer in queue.LAYER_CODES:
+        assert await queued_tiles(admin_conn, layer) == TILES
     # green_areas is in ref.source_layers, but nothing downloads it.
     assert await queued_tiles(admin_conn, "green_areas") == set()
     assert {(status, attempts) for _, _, _, status, attempts in await rows(admin_conn)} == {
@@ -87,7 +91,7 @@ async def test_request_counts_the_rows_queued_per_layer(
         await mark_fetched(conn, "parks", TILES)
 
     async with api_pool.connection() as conn:
-        queued = await queue.request_area(conn, BOUNDS)
+        queued = await queue.request_area(conn, BOUNDS, layers=LAYERS)
 
     # A layer with nothing to queue is still listed.
     assert queued == {"parks": 0, "roads": 3}
@@ -193,7 +197,10 @@ async def test_request_does_not_block_the_worker_on_queued_tiles(
 
     async with api_pool.connection() as api_conn:
         # Asked again, and the API transaction is still open.
-        assert await queue.request_area(api_conn, BOUNDS) == {"parks": 0, "roads": 0}
+        assert await queue.request_area(api_conn, BOUNDS, layers=LAYERS) == {
+            "parks": 0,
+            "roads": 0,
+        }
         async with downloader_pool.connection() as conn:
             claimed = await asyncio.wait_for(queue.claim(conn, LAYERS, 64), timeout=3)
 
