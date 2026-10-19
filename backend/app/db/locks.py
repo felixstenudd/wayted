@@ -14,10 +14,13 @@ async def pipeline_lock(conn: AsyncConnection[TupleRow]) -> AsyncIterator[None]:
     overlap. Taken outside any transaction: a REPEATABLE READ snapshot taken before the lock
     would predate the other batch's commit.
     """
-    await conn.execute("SELECT pg_advisory_lock(%s)", (PIPELINE_LOCK,))
-    await conn.commit()
     try:
+        await conn.execute("SELECT pg_advisory_lock(%s)", (PIPELINE_LOCK,))
+        await conn.commit()
         yield
-    finally:
         await conn.execute("SELECT pg_advisory_unlock(%s)", (PIPELINE_LOCK,))
         await conn.commit()
+    except BaseException:
+        # Unlocking can fail mid-transaction and hide this error; closing frees the lock.
+        await conn.close()
+        raise

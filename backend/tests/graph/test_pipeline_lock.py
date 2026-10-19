@@ -68,6 +68,20 @@ async def test_lock_is_released_when_the_batch_fails(admin_conn: Conn, mapper_po
     assert await lock_is_free(admin_conn)
 
 
+async def test_error_inside_an_unfinished_transaction_is_not_replaced(
+    admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    async with mapper_pool.connection() as conn:
+        with pytest.raises(ValueError, match="batch failed"):
+            async with pipeline_lock(conn):
+                # As when a cancel lands while the batch's transaction is still finishing.
+                unfinished = conn.transaction()
+                await unfinished.__aenter__()
+                raise ValueError("batch failed")
+
+    assert await lock_is_free(admin_conn)
+
+
 async def test_lock_does_not_outlive_the_block(admin_conn: Conn, mapper_pool: Pool) -> None:
     async with mapper_pool.connection() as conn:
         async with pipeline_lock(conn):
