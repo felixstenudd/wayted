@@ -3,6 +3,7 @@ import {
 	NavigationControl,
 	ScaleControl,
 	setWorkerUrl,
+	type ControlPosition,
 	type StyleSpecification,
 } from 'maplibre-gl'
 // Bundled by Vite: MapLibre cannot find its own worker file once it is in a bundle.
@@ -22,6 +23,8 @@ export interface MapViewOptions {
 	zoom: number
 	// keeps the position in the URL, so a reload shows the same place
 	keepViewInUrl?: boolean
+	// undefined is allowed so MapView can pass its optional prop on as it is
+	zoomButtonsPosition?: ControlPosition | undefined
 }
 
 /** Owns the MapLibre instance of one MapView. */
@@ -49,7 +52,10 @@ export function useMap(
 		})
 		map.keyboard.disableRotation()
 		map.touchZoomRotate.disableRotation()
-		map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
+		map.addControl(
+			new NavigationControl({ showCompass: false }),
+			options.zoomButtonsPosition ?? 'top-right',
+		)
 		map.addControl(new ScaleControl(), 'bottom-right')
 
 		// The style, not the tiles: the tools should not wait for a slow tile server.
