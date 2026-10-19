@@ -2,6 +2,9 @@ import type { components } from '@/shared/api'
 
 type RouteRequestIn = components['schemas']['RouteRequestIn']
 
+export type RouteAttribute = components['schemas']['AttributeOut']
+export type AttributeGroup = RouteAttribute['group']
+
 export type Activity = RouteRequestIn['activity']
 export type RouteShape = RouteRequestIn['shape']
 export type RouteRequest = RouteRequestIn

@@ -115,6 +115,38 @@
 			"shorter": "{step} km shorter",
 			"longer": "{step} km longer"
 		},
+		"preferences": {
+			"title": "What matters",
+			"setCount": "No preferences set | 1 preference set | {n} preferences set",
+			"reset": "Reset",
+			"loading": "Loading what you can weigh…",
+			"loadFailed": "What you can weigh could not be loaded. Check your connection, then try again.",
+			"tryAgain": "Try again",
+			"notScored": "Not scored yet",
+			"weights": {
+				"avoid": "Avoid",
+				"ratherNot": "Rather not",
+				"dontMind": "Don't mind",
+				"niceToHave": "Nice to have",
+				"prefer": "Prefer"
+			},
+			"groups": {
+				"surroundings": "Surroundings",
+				"streets": "Streets",
+				"sights": "Sights",
+				"surface": "Surface"
+			},
+			"attributes": {
+				"green": "Parks",
+				"nature": "Nature",
+				"water": "Water",
+				"quiet_streets": "Quiet streets",
+				"sights": "Places to see",
+				"bridges": "Bridges",
+				"asphalt": "Asphalt",
+				"gravel": "Gravel"
+			}
+		},
 		"points": {
 			"label": "Start and finish",
 			"start": "Start",

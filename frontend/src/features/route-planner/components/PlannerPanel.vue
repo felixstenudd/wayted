@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 
 import DistanceField from './DistanceField.vue'
+import PreferenceSection from './PreferenceSection.vue'
 import RouteKindFields from './RouteKindFields.vue'
 import RoutePoints from './RoutePoints.vue'
 
@@ -14,5 +15,6 @@ const { t } = useI18n()
 		<RouteKindFields />
 		<RoutePoints />
 		<DistanceField />
+		<PreferenceSection />
 	</div>
 </template>
