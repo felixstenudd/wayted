@@ -1,6 +1,7 @@
 import type { MapMouseEvent } from 'maplibre-gl'
 
 import { onMap } from '../context'
+import type { LonLat } from '../geometry'
 
 export interface ClickedFeature {
 	layerId: string
@@ -27,6 +28,17 @@ export function useMapClick(
 		)
 		onClick(feature ? { layerId: feature.layer.id, properties: feature.properties } : null)
 	}
+
+	onMap(
+		(map) => map.on('click', handle),
+		(map) => map.off('click', handle),
+	)
+}
+
+/** Calls back with where on the map a click landed. */
+export function useMapClickAt(onClick: (at: LonLat) => void): void {
+	const handle = (event: MapMouseEvent) =>
+		onClick({ lon: event.lngLat.lng, lat: event.lngLat.lat })
 
 	onMap(
 		(map) => map.on('click', handle),

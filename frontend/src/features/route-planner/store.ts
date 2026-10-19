@@ -52,6 +52,14 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		}
 	}
 
+	/** Puts a map click on the first point still missing. Returns false when none is. */
+	function placeNextPoint(at: LonLat): boolean {
+		if (missingPoint.value === 'start') start.value = at
+		else if (missingPoint.value === 'finish') finish.value = at
+		else return false
+		return true
+	}
+
 	function setTargetDistanceKm(km: number): void {
 		const { minKm, maxKm } = distanceRange.value
 		targetDistanceKm.value = Math.round(clamp(km, minKm, maxKm) * 10) / 10
@@ -89,6 +97,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		missingPoint,
 		routeRequest,
 		setActivity,
+		placeNextPoint,
 		setTargetDistanceKm,
 		weightOf,
 		setWeight,

@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import { AccountMenu } from '@/features/auth'
 import { MapView, provideMap } from '@/features/map'
-import { PlannerPanel } from '@/features/route-planner'
+import { PlannerPanel, PointMarkers } from '@/features/route-planner'
 import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { BottomSheet } from '@/shared/ui/bottom-sheet'
 
@@ -29,6 +29,7 @@ provideMap()
 			zoom-buttons-position="bottom-right"
 			:controls-bottom-px="hasRoomForPanel ? 0 : sheetHeightPx"
 		/>
+		<PointMarkers />
 		<div class="absolute top-4 right-4">
 			<AccountMenu />
 		</div>

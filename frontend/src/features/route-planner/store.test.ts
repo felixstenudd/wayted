@@ -129,3 +129,30 @@ describe('route request', () => {
 		expect(planner.routeRequest).not.toHaveProperty('finish')
 	})
 })
+
+describe('placeNextPoint', () => {
+	it('places the start first', () => {
+		const planner = usePlannerStore()
+
+		expect(planner.placeNextPoint(UMEA)).toBe(true)
+		expect(planner.start).toEqual(UMEA)
+	})
+
+	it('places the finish next, from point to point', () => {
+		const planner = usePlannerStore()
+		planner.shape = 'point_to_point'
+		planner.placeNextPoint(UMEA)
+
+		expect(planner.placeNextPoint(TAVLEBORG)).toBe(true)
+		expect(planner.finish).toEqual(TAVLEBORG)
+	})
+
+	it('leaves placed points alone once nothing is missing', () => {
+		const planner = usePlannerStore()
+		planner.placeNextPoint(UMEA)
+
+		expect(planner.placeNextPoint(TAVLEBORG)).toBe(false)
+		expect(planner.start).toEqual(UMEA)
+		expect(planner.finish).toBeNull()
+	})
+})

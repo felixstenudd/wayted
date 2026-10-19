@@ -94,6 +94,10 @@
 	},
 	"planner": {
 		"title": "Plan a route",
+		"points": {
+			"start": "Start",
+			"finish": "Finish"
+		},
 		"sheet": {
 			"expand": "Show more of the planner",
 			"collapse": "Show less of the planner"
