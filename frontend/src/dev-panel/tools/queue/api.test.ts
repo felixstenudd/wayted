@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 
 import { useFetchedTiles } from '../fetched-tiles/api'
-import { useQueuedTiles } from './api'
+import { usePendingWork, useQueuedTiles } from './api'
 
 const get = vi.hoisted(() => vi.fn())
 vi.mock('../../dev-api/client', () => ({ api: { GET: get } }))
@@ -30,6 +30,7 @@ function mountTools() {
 		defineComponent({
 			setup() {
 				useFetchedTiles()
+				usePendingWork()
 				queue = useQueuedTiles()
 				return () => null
 			},
@@ -39,7 +40,16 @@ function mountTools() {
 	return queue
 }
 
-const fetchedLoads = () => get.mock.calls.filter(([path]) => path === '/tiles/fetched').length
+const loads = (of: string) => get.mock.calls.filter(([path]) => path === of).length
+const fetchedLoads = () => loads('/tiles/fetched')
+const pending = {
+	mapper: { ways: 0, nodes: 0 },
+	enricher: { ways: 0, relations: 0, nodes: 0, edges: 0 },
+}
+const answers = (queued: () => unknown) => (path: string) =>
+	Promise.resolve(
+		ok(path === '/tiles/queued' ? queued() : path === '/pending' ? pending : collection()),
+	)
 
 afterEach(() => {
 	host?.unmount()
@@ -49,9 +59,7 @@ afterEach(() => {
 describe('useQueuedTiles', () => {
 	it('reloads the fetched tiles when a tile has left the queue', async () => {
 		let queued = collection(queuedTile(1), queuedTile(2))
-		get.mockImplementation((path: string) =>
-			Promise.resolve(ok(path === '/tiles/queued' ? queued : collection())),
-		)
+		get.mockImplementation(answers(() => queued))
 		const queue = mountTools()
 		await vi.waitFor(() => expect(queue.data.value).toEqual(queued))
 		expect(fetchedLoads()).toBe(1)
@@ -62,11 +70,22 @@ describe('useQueuedTiles', () => {
 		await vi.waitFor(() => expect(fetchedLoads()).toBe(2))
 	})
 
+	it('reloads the pending work when a tile has left the queue', async () => {
+		let queued = collection(queuedTile(1))
+		get.mockImplementation(answers(() => queued))
+		const queue = mountTools()
+		await vi.waitFor(() => expect(queue.data.value).toEqual(queued))
+		expect(loads('/pending')).toBe(1)
+
+		queued = collection()
+		await queue.refetch()
+
+		await vi.waitFor(() => expect(loads('/pending')).toBe(2))
+	})
+
 	it('leaves the fetched tiles alone while the queue only grows', async () => {
 		let queued = collection(queuedTile(1))
-		get.mockImplementation((path: string) =>
-			Promise.resolve(ok(path === '/tiles/queued' ? queued : collection())),
-		)
+		get.mockImplementation(answers(() => queued))
 		const queue = mountTools()
 		await vi.waitFor(() => expect(queue.data.value).toEqual(queued))
 
@@ -75,5 +94,6 @@ describe('useQueuedTiles', () => {
 		await vi.waitFor(() => expect(queue.data.value).toEqual(queued))
 
 		expect(fetchedLoads()).toBe(1)
+		expect(loads('/pending')).toBe(1)
 	})
 })

@@ -28,28 +28,36 @@
 	"queue": {
 		"title": "Queue",
 		"loading": "Loading the queue…",
-		"empty": "Nothing is queued.",
+		"empty": "No tiles are queued.",
 		"pending": "Waiting (dotted outline)",
 		"running": "Being fetched (thin outline)",
 		"failed": "Failed (thick outline)",
 		"failedTile": "{layer} {key}, 1 attempt | {layer} {key}, {count} attempts",
 		"noReason": "No reason recorded.",
 		"moreFailed": "and 1 more failed tile | and {count} more failed tiles",
-		"show": "Show on map"
+		"show": "Show on map",
+		"done": "The mapper and the enricher have nothing left to do.",
+		"mapper": "Mapper",
+		"enricher": "Enricher",
+		"changedWays": "Changed ways",
+		"changedRelations": "Changed relations",
+		"movedNodes": "Moved nodes",
+		"edgesToScore": "Edges to score"
 	},
 	"graph": {
 		"title": "Graph",
-		"load": "Load edges in this view",
-		"loading": "Loading edges…",
-		"notLoaded": "Load the edges of the current view.",
+		"load": "Load edges and areas in this view",
+		"loading": "Loading edges and areas…",
+		"notLoaded": "Load the edges and areas of the current view.",
 		"empty": "No edges in this view. It may not be fetched yet.",
-		"counts": "{edges} edges, {vertices} vertices in the dashed box",
+		"counts": "{edges} edges, {vertices} vertices and {areas} areas in the dashed box",
+		"scored": "{name}: {count} of {edges} edges scored",
 		"colorBy": "Colour edges by",
 		"noScores": "No scores yet",
 		"oneColor": "One colour",
-		"lowest": "lowest {value}",
-		"highest": "highest {value}",
-		"selectEdge": "Select an edge on the map to see its tags and scores.",
+		"fixedScale": "Fixed scale, the same in every view",
+		"viewScale": "Lowest and highest value in this view",
+		"selectEdge": "Select an edge or an area on the map to see its details.",
 		"edge": {
 			"title": "Edge {id}",
 			"way": "Way",
@@ -63,6 +71,20 @@
 			"scores": "Scores",
 			"noScores": "Not scored yet.",
 			"tags": "Tags"
+		},
+		"area": {
+			"layer": "Layer",
+			"element": "OSM element",
+			"way": "Way {id}",
+			"relation": "Relation {id}",
+			"tags": "Tags"
+		},
+		"legend": {
+			"title": "Areas",
+			"parks": "Parks",
+			"nature": "Nature",
+			"dotted": "dotted edge",
+			"solid": "solid edge"
 		}
 	},
 	"request": {

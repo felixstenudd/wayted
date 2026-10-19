@@ -11,6 +11,8 @@ COOKIE_SECURE: bool = os.environ.get("COOKIE_SECURE", "true") == "true"
 API_ROLE: str = "wayted_api"
 DOWNLOADER_ROLE: str = "wayted_downloader"
 MAPPER_ROLE: str = "wayted_mapper"
+ENRICHER_ROLE: str = "wayted_enricher"
 API_ROLE_PASSWORD: str = os.environ["WAYTED_API_PASSWORD"]
 DOWNLOADER_ROLE_PASSWORD: str = os.environ["WAYTED_DOWNLOADER_PASSWORD"]
 MAPPER_ROLE_PASSWORD: str = os.environ["WAYTED_MAPPER_PASSWORD"]
+ENRICHER_ROLE_PASSWORD: str = os.environ["WAYTED_ENRICHER_PASSWORD"]

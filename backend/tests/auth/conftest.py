@@ -6,5 +6,6 @@ for name in (
     "WAYTED_API_PASSWORD",
     "WAYTED_DOWNLOADER_PASSWORD",
     "WAYTED_MAPPER_PASSWORD",
+    "WAYTED_ENRICHER_PASSWORD",
 ):
     os.environ.setdefault(name, "test")

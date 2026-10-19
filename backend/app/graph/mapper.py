@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 
-from app.db import Connect
+from app.db import Connect, pipeline_lock
 
 from . import queries
 
@@ -29,7 +29,7 @@ async def map_pending(connect: Connect, batch_size: int = 5000) -> MapResult:
     """Map queued ways and nodes, one transaction per batch, until both queues are empty."""
     batches: list[BatchResult] = []
     while True:
-        async with connect() as conn:
+        async with connect() as conn, pipeline_lock(conn):
             batch = await _map_batch(conn, batch_size)
         if batch is None:
             return MapResult(tuple(batches))

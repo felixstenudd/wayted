@@ -69,7 +69,7 @@ class OpenWaterDownloader(RoadDownloader):
 
 async def request(pool: Pool, tiles: set[Tile]) -> None:
     async with pool.connection() as conn:
-        await queue.request_area(conn, bounds_for_tiles(tiles))
+        await queue.request_area(conn, bounds_for_tiles(tiles), layers=RoadDownloader.layers)
 
 
 async def run(
@@ -318,8 +318,9 @@ async def test_serve_resumes_interrupted_tiles_and_handles_later_requests(
     async def west_fetched() -> bool:
         return await fetched(admin_conn, "roads") == WEST
 
-    async def all_fetched() -> bool:
-        return await fetched(admin_conn, "roads") == WEST | EAST
+    async def all_done() -> bool:
+        # Fetched is not enough: the tiles leave the queue only after mapping.
+        return await fetched(admin_conn, "roads") == WEST | EAST and not await queued(admin_conn)
 
     # Left running by a worker that died.
     await request(api_pool, WEST)
@@ -333,7 +334,7 @@ async def test_serve_resumes_interrupted_tiles_and_handles_later_requests(
     try:
         await eventually(west_fetched)
         await request(api_pool, EAST)
-        await eventually(all_fetched)
+        await eventually(all_done)
     finally:
         serving.cancel()
         with suppress(asyncio.CancelledError):

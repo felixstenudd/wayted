@@ -1,0 +1,71 @@
+"""Score claimed edges, one key of graph.edges.scores per attribute."""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any
+
+from psycopg import AsyncConnection
+from psycopg.rows import TupleRow
+
+from . import queries
+from .layers import FeatureLayer
+
+# Share of a corridor of radius_m around the edge covered by the layers' areas, measured in the
+# edge's UTM zone. Areas are clipped to the corridor's box first, so a large park is not
+# transformed whole for each of its edges, and unioned, so overlaps count once.
+AREA_SHARE = """
+    WITH corridors AS (
+        SELECT e.id,
+               enrich.utm_srid(e.geom) AS srid,
+               enrich.expand_m(e.geom, %(radius_m)s) AS box,
+               ST_Buffer(ST_Transform(e.geom, enrich.utm_srid(e.geom)), %(radius_m)s) AS corridor
+        FROM claimed_edges c JOIN graph.edges e USING (id)
+    )
+    SELECT c.id AS edge_id,
+           least(
+               coalesce(ST_Area(ST_Intersection(
+                   c.corridor,
+                   ST_Union(ST_Transform(ST_ClipByBox2D(a.geom, c.box), c.srid))
+               )), 0) / ST_Area(c.corridor),
+               1
+           ) AS value
+    FROM corridors c
+    LEFT JOIN enrich.areas a ON a.layer = ANY(%(layers)s) AND a.geom && c.box
+    GROUP BY c.id, c.corridor
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class Attribute(ABC):
+    key: str  # the key in graph.edges.scores
+    layers: tuple[FeatureLayer, ...]
+
+    @abstractmethod
+    def score_query(self) -> tuple[str, dict[str, Any]]:
+        """SQL returning (edge_id, value) for every row of claimed_edges, and its parameters."""
+
+    @property
+    @abstractmethod
+    def reach_m(self) -> float:
+        """How far from an edge a feature can change its score."""
+
+    async def score(self, conn: AsyncConnection[TupleRow]) -> int:
+        """Merge {key: value} into the scores of the claimed edges. Returns the edges written."""
+        query, params = self.score_query()
+        sql = queries.MERGE_SCORES_HEAD + query + queries.MERGE_SCORES_TAIL
+        return (await conn.execute(sql, {**params, "key": self.key})).rowcount
+
+
+@dataclass(frozen=True, slots=True)
+class AreaShare(Attribute):
+    radius_m: float
+
+    def score_query(self) -> tuple[str, dict[str, Any]]:
+        return AREA_SHARE, {
+            "radius_m": self.radius_m,
+            "layers": [layer.code for layer in self.layers],
+        }
+
+    @property
+    def reach_m(self) -> float:
+        return self.radius_m
