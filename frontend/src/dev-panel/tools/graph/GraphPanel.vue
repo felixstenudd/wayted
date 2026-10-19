@@ -2,16 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import {
-	boundsPolygon,
-	EMPTY,
-	tokenColor,
-	useMapClick,
-	useMapFilter,
-	useMapPaint,
-	useMapSource,
-	useMapView,
-} from '@/features/map'
+import { useMapClick, useMapView } from '@/features/map'
 import { Button } from '@/shared/ui/button'
 
 import ProblemMessage from '../../components/ProblemMessage.vue'
@@ -19,29 +10,11 @@ import ToolSection from '../../components/ToolSection.vue'
 import { useGraph } from './api'
 import AreaDetails from './AreaDetails.vue'
 import AreaLegend from './AreaLegend.vue'
-import {
-	areaKey,
-	areaLayers,
-	byLayer,
-	fillOpacity,
-	isDotted,
-	layerFilter,
-	layerToken,
-	toMapAreas,
-} from './areas'
+import { areaKey } from './areas'
 import EdgeDetails from './EdgeDetails.vue'
-import {
-	colorScale,
-	edgeColor,
-	isFixedScale,
-	scoredCount,
-	scoreNames,
-	scoreToken,
-	toMapEdges,
-} from './edges'
-
-const NO_EDGE = -1
-const NO_AREA = ''
+import { colorScale, isFixedScale, scoredCount, scoreNames, scoreToken } from './edges'
+import { AREA_FILL_LAYER, useAreaLayers } from './useAreaLayers'
+import { EDGE_LAYER, useEdgeLayers } from './useEdgeLayers'
 
 const { t } = useI18n()
 const { bounds: view } = useMapView()
@@ -85,95 +58,20 @@ const selectedArea = computed(() =>
 	selectedAreaKey.value === null ? null : (areasByKey.value.get(selectedAreaKey.value) ?? null),
 )
 
-const colors = {
-	plain: tokenColor('--map-edge'),
-	low: tokenColor('--map-score-low'),
-	high: tokenColor('--map-score-high'),
-}
-useMapSource('graph-area', () => (loaded.value ? boundsPolygon(loaded.value.bounds) : EMPTY), [
-	{
-		id: 'graph-area-outline',
-		type: 'line',
-		paint: {
-			'line-color': tokenColor('--map-outline'),
-			'line-width': 1,
-			'line-dasharray': [4, 3],
-		},
-	},
-])
-const layersInView = computed(() => (areas.value ? areaLayers(areas.value) : []))
 const hiddenLayers = ref<string[]>([])
-const shownLayers = computed(() =>
-	layersInView.value.filter((layer) => !hiddenLayers.value.includes(layer)),
-)
-const areaColor = () =>
-	byLayer(layersInView.value, (layer) => tokenColor(layerToken(layer)), tokenColor('--map-area'))
-useMapSource('graph-areas', () => (areas.value ? toMapAreas(areas.value) : EMPTY), [
-	{ id: 'graph-area-fill', type: 'fill' },
-	{ id: 'graph-area-line', type: 'line', paint: { 'line-width': 1.5 } },
-	{
-		id: 'graph-area-dotted',
-		type: 'line',
-		layout: { 'line-cap': 'round' },
-		paint: { 'line-width': 2, 'line-dasharray': [0, 2] },
-	},
-	{
-		id: 'graph-area-selected',
-		type: 'line',
-		filter: ['==', ['get', 'key'], NO_AREA],
-		paint: { 'line-color': tokenColor('--map-selected'), 'line-width': 3 },
-	},
-])
-useMapSource('graph-edges', () => (graph.value ? toMapEdges(graph.value) : EMPTY), [
-	{
-		id: 'graph-edge',
-		type: 'line',
-		layout: { 'line-cap': 'round' },
-		paint: { 'line-color': colors.plain, 'line-width': 2 },
-	},
-	{
-		id: 'graph-edge-selected',
-		type: 'line',
-		layout: { 'line-cap': 'round' },
-		filter: ['==', ['get', 'id'], NO_EDGE],
-		paint: { 'line-color': tokenColor('--map-selected'), 'line-width': 6 },
-	},
-])
-useMapSource('graph-vertices', () => graph.value?.vertices ?? EMPTY, [
-	{
-		id: 'graph-vertex',
-		type: 'circle',
-		paint: { 'circle-radius': 2.5, 'circle-color': tokenColor('--map-vertex') },
-	},
-])
-useMapPaint('graph-area-fill', 'fill-color', areaColor)
-useMapPaint('graph-area-fill', 'fill-opacity', () =>
-	byLayer(layersInView.value, fillOpacity, fillOpacity('')),
-)
-useMapPaint('graph-area-line', 'line-color', areaColor)
-useMapPaint('graph-area-dotted', 'line-color', areaColor)
-useMapFilter('graph-area-fill', () => layerFilter(shownLayers.value))
-useMapFilter('graph-area-line', () =>
-	layerFilter(shownLayers.value.filter((layer) => !isDotted(layer))),
-)
-useMapFilter('graph-area-dotted', () => layerFilter(shownLayers.value.filter(isDotted)))
 // A hidden area can no longer be seen, so it is no longer selected either.
 watch(hiddenLayers, (hidden) => {
 	if (selectedArea.value && hidden.includes(selectedArea.value.layer))
 		selectedAreaKey.value = null
 })
-useMapPaint('graph-edge', 'line-color', () =>
-	edgeColor(colorBy.value, range.value, {
-		...colors,
-		high: colorBy.value === null ? colors.high : tokenColor(scoreToken(colorBy.value)),
-	}),
-)
-useMapFilter('graph-edge-selected', () => ['==', ['get', 'id'], selectedId.value ?? NO_EDGE])
-useMapFilter('graph-area-selected', () => ['==', ['get', 'key'], selectedAreaKey.value ?? NO_AREA])
+
+// Areas first, so edges are drawn above them.
+const { layersInView } = useAreaLayers(areas, hiddenLayers, selectedAreaKey)
+useEdgeLayers(() => loaded.value?.bounds, graph, colorBy, range, selectedId)
 // Edges are drawn above areas, so a click on an edge inside an area selects the edge.
-useMapClick(['graph-edge', 'graph-area-fill'], (feature) => {
-	const id = feature?.layerId === 'graph-edge' ? feature.properties.id : null
-	const key = feature?.layerId === 'graph-area-fill' ? feature.properties.key : null
+useMapClick([EDGE_LAYER, AREA_FILL_LAYER], (feature) => {
+	const id = feature?.layerId === EDGE_LAYER ? feature.properties.id : null
+	const key = feature?.layerId === AREA_FILL_LAYER ? feature.properties.key : null
 	selectedId.value = typeof id === 'number' ? id : null
 	selectedAreaKey.value = typeof key === 'string' ? key : null
 })
