@@ -6,14 +6,13 @@ import { nearestDetent, roundToHundredth, valueAtX, xOfValue } from '../utils/de
 const HOLD_MS = 400
 // Movement under this still counts as holding still.
 const HOLD_SLOP_PX = 3
-// While fine-tuning, the value moves at this share of the pointer's speed.
-const FINE_GAIN = 0.25
 // A press this close to the thumb grabs it instead of jumping to a detent.
 const THUMB_REACH_PX = 10
 
 /**
  * Pointer handling for a slider from -1 to 1. Dragging snaps to the detents;
- * holding still switches to fine-tuning in 0.01 steps until let go.
+ * holding still switches to fine-tuning, which follows the pointer in 0.01
+ * steps until let go.
  */
 export function useDetentPointer(
 	detents: readonly number[],
@@ -52,8 +51,14 @@ export function useDetentPointer(
 	function onPointerMove(event: PointerEvent): void {
 		const rect = track()
 		if (!isDragging.value || !rect) return
+		// The release was missed, say outside the window: end the drag here instead.
+		if (event.buttons === 0) {
+			end()
+			return
+		}
 		if (isFine.value) {
-			const moved = ((event.clientX - fineFrom.x) / rect.width) * 2 * FINE_GAIN
+			// From where fine-tuning began, so the thumb does not jump to the pointer.
+			const moved = ((event.clientX - fineFrom.x) / rect.width) * 2
 			value.value = roundToHundredth(Math.min(Math.max(fineFrom.value + moved, -1), 1))
 			return
 		}
@@ -62,13 +67,24 @@ export function useDetentPointer(
 		holdFrom(event.clientX)
 	}
 
-	function onPointerUp(event: PointerEvent): void {
+	function end(): void {
 		clearTimeout(holdTimer)
-		if (!isDragging.value) return
-		;(event.currentTarget as Element).releasePointerCapture(event.pointerId)
 		isDragging.value = false
 		isFine.value = false
 	}
 
-	return { isDragging, isFine, onPointerDown, onPointerMove, onPointerUp }
+	function onPointerUp(event: PointerEvent): void {
+		if (!isDragging.value) return
+		;(event.currentTarget as Element).releasePointerCapture(event.pointerId)
+		end()
+	}
+
+	return {
+		isDragging,
+		isFine,
+		onPointerDown,
+		onPointerMove,
+		onPointerUp,
+		onLostPointerCapture: end,
+	}
 }

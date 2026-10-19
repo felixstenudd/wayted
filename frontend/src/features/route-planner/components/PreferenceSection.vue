@@ -11,14 +11,15 @@ import { usePlannerStore } from '../store'
 import PreferenceRow from './PreferenceRow.vue'
 
 const HEADING_ID = 'preferences-heading'
-const PLACEHOLDER_ROWS = 4
+const PLACEHOLDER_ROWS = 2
 
 const i18n = useI18n()
 const { t } = i18n
 const planner = usePlannerStore()
 const attributes = useRouteAttributes()
 
-const groups = computed(() => groupAttributes(attributes.data.value ?? []))
+const scored = computed(() => (attributes.data.value ?? []).filter((a) => a.scored))
+const groups = computed(() => groupAttributes(scored.value))
 
 const name = (key: string) =>
 	i18n.te(`planner.preferences.attributes.${key}`)
@@ -28,6 +29,14 @@ const groupName = (group: string) =>
 	i18n.te(`planner.preferences.groups.${group}`)
 		? t(`planner.preferences.groups.${group}`)
 		: humanizeKey(group)
+
+// Listed in one line so the panel shows what is coming without a row of dead sliders.
+const comingLater = computed(() => {
+	const names = (attributes.data.value ?? []).filter((a) => !a.scored).map((a) => name(a.key))
+	if (names.length === 0) return null
+	const list = new Intl.ListFormat(i18n.locale.value, { type: 'conjunction' }).format(names)
+	return t('planner.preferences.comingLater', { attributes: list })
+})
 </script>
 
 <template>
@@ -92,7 +101,7 @@ const groupName = (group: string) =>
 			<div
 				v-for="{ group, attributes: members } in groups"
 				:key="group"
-				class="flex flex-col gap-1"
+				class="flex flex-col gap-0.5"
 			>
 				<h3 class="text-small font-semibold text-graphite">{{ groupName(group) }}</h3>
 				<PreferenceRow
@@ -102,6 +111,7 @@ const groupName = (group: string) =>
 					:name="name(attribute.key)"
 				/>
 			</div>
+			<p v-if="comingLater" class="pt-1 text-small text-graphite">{{ comingLater }}</p>
 		</template>
 	</section>
 </template>

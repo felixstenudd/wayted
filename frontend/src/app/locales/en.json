@@ -122,7 +122,7 @@
 			"loading": "Loading what you can weigh…",
 			"loadFailed": "What you can weigh could not be loaded. Check your connection, then try again.",
 			"tryAgain": "Try again",
-			"notScored": "Not scored yet",
+			"comingLater": "Coming later: {attributes}.",
 			"weights": {
 				"avoid": "Avoid",
 				"ratherNot": "Rather not",

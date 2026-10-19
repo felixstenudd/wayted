@@ -18,32 +18,20 @@ const weight = computed({
 	get: () => planner.weightOf(props.attribute.key),
 	set: (next: number) => planner.setWeight(props.attribute.key, next),
 })
-const word = computed(() =>
-	props.attribute.scored
-		? t(`planner.preferences.weights.${weightWord(weight.value)}`)
-		: t('planner.preferences.notScored'),
-)
-const isSet = computed(() => weight.value !== 0)
+const word = computed(() => t(`planner.preferences.weights.${weightWord(weight.value)}`))
 </script>
 
 <template>
-	<div class="flex items-center gap-2">
+	<div class="flex min-h-9 items-center gap-2">
 		<AttributeSymbol :attribute-key="attribute.key" />
-		<div class="w-28 shrink-0">
-			<p
-				class="truncate text-body"
-				:class="[isSet && 'font-semibold', !attribute.scored && 'text-graphite']"
-			>
-				{{ name }}
-			</p>
-			<p class="truncate text-small text-graphite" aria-hidden="true">{{ word }}</p>
-		</div>
+		<p class="w-28 shrink-0 truncate text-body" :class="{ 'font-semibold': weight !== 0 }">
+			{{ name }}
+		</p>
 		<BipolarSlider
 			v-model="weight"
 			class="min-w-0 flex-1"
 			:label="name"
 			:value-text="word"
-			:disabled="!attribute.scored"
 			:detents="WEIGHT_DETENTS"
 		/>
 	</div>

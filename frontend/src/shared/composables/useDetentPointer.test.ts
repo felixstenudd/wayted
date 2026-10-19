@@ -7,9 +7,9 @@ const DETENTS = [-1, -0.5, 0, 0.5, 1]
 // A 200 px track from x = 100 to 300: 0 is at 200, each detent 50 px apart.
 const TRACK = { left: 100, width: 200 } as DOMRect
 
-function pointer(clientX: number) {
+function pointer(clientX: number, buttons = 1) {
 	const target = { setPointerCapture: () => {}, releasePointerCapture: () => {} }
-	return { clientX, pointerId: 1, currentTarget: target } as unknown as PointerEvent
+	return { clientX, buttons, pointerId: 1, currentTarget: target } as unknown as PointerEvent
 }
 
 function setup(start = 0) {
@@ -48,20 +48,44 @@ describe('useDetentPointer', () => {
 		expect(value.value).toBe(-0.5)
 	})
 
-	it('fine-tunes in 0.01 steps at a quarter of the pointer speed after holding still', () => {
+	it('follows the pointer in 0.01 steps without snapping after holding still', () => {
 		const { value, slider } = setup()
 
 		slider.onPointerDown(pointer(250))
 		vi.advanceTimersByTime(400)
 		expect(slider.isFine.value).toBe(true)
-		// 20 px is 0.2 on this track, a quarter of that is 0.05.
-		slider.onPointerMove(pointer(270))
-		expect(value.value).toBe(0.55)
+		// 1 px is 0.01 on this track.
+		slider.onPointerMove(pointer(263))
+		expect(value.value).toBe(0.63)
 		slider.onPointerMove(pointer(254))
-		expect(value.value).toBe(0.51)
+		expect(value.value).toBe(0.54)
 		slider.onPointerUp(pointer(254))
 
-		expect(value.value).toBe(0.51)
+		expect(value.value).toBe(0.54)
+		expect(slider.isFine.value).toBe(false)
+	})
+
+	it('ends the drag when a move comes with no button pressed, as after a missed release', () => {
+		const { value, slider } = setup()
+
+		slider.onPointerDown(pointer(250))
+		vi.advanceTimersByTime(400)
+		slider.onPointerMove(pointer(290, 0))
+
+		expect(slider.isDragging.value).toBe(false)
+		expect(slider.isFine.value).toBe(false)
+		expect(value.value).toBe(0.5)
+	})
+
+	it('ends the drag when the pointer capture is lost', () => {
+		const { slider } = setup()
+
+		slider.onPointerDown(pointer(250))
+		vi.advanceTimersByTime(400)
+		slider.onLostPointerCapture()
+		vi.advanceTimersByTime(1000)
+
+		expect(slider.isDragging.value).toBe(false)
 		expect(slider.isFine.value).toBe(false)
 	})
 

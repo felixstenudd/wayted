@@ -69,6 +69,7 @@ function reset(): void {
 
 <template>
 	<div
+		data-slot="bipolar-slider"
 		class="group relative h-8 touch-none px-2.5 select-none"
 		:class="disabled ? 'opacity-40' : 'cursor-pointer'"
 		:data-fine="pointer.isFine.value || undefined"
@@ -76,14 +77,15 @@ function reset(): void {
 		@pointermove="pointer.onPointerMove"
 		@pointerup="pointer.onPointerUp"
 		@pointercancel="pointer.onPointerUp"
+		@lostpointercapture="pointer.onLostPointerCapture"
 	>
 		<div ref="track" class="relative h-full">
-			<div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-line" />
+			<div class="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-line-strong" />
 			<span
 				v-for="detent in detents"
 				:key="detent"
-				class="absolute top-1/2 w-px -translate-x-1/2 -translate-y-1/2 bg-line-strong"
-				:class="detent === 0 ? 'h-3' : 'h-2'"
+				class="absolute top-1/2 w-px -translate-x-1/2 -translate-y-1/2"
+				:class="detent === 0 ? 'h-3 bg-ink' : 'h-1.5 bg-graphite'"
 				:style="{ left: percent(detent) }"
 			/>
 			<span
@@ -93,7 +95,7 @@ function reset(): void {
 				:style="{ left: percent(mark) }"
 			/>
 			<div
-				class="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-ink"
+				class="absolute top-1/2 h-0.75 -translate-y-1/2 bg-ink"
 				:class="{ 'transition-[left,width] duration-150 ease-out': !pointer.isFine.value }"
 				:style="fill"
 			/>
@@ -107,7 +109,7 @@ function reset(): void {
 				:aria-valuetext="valueText"
 				:aria-disabled="disabled || undefined"
 				aria-orientation="horizontal"
-				class="absolute top-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-ink bg-paper group-data-fine:scale-125"
+				class="group/thumb absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-paper bg-ink ring-1 ring-ink group-data-fine:scale-125"
 				:class="
 					pointer.isFine.value
 						? 'transition-[scale] duration-150 ease-out'
@@ -116,7 +118,16 @@ function reset(): void {
 				:style="{ left: percent(value) }"
 				@keydown="onKeydown"
 				@dblclick="reset"
-			/>
+			>
+				<!-- The value in words while the slider is in use; at rest the shared scale says it. -->
+				<span
+					v-if="!disabled"
+					aria-hidden="true"
+					class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 rounded-sm bg-ink px-1.5 text-caption whitespace-nowrap text-paper opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-visible/thumb:opacity-100 group-active:opacity-100 group-data-fine:opacity-100"
+				>
+					{{ valueText }}
+				</span>
+			</div>
 		</div>
 	</div>
 </template>
