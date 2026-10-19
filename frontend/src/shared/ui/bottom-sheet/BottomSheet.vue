@@ -3,19 +3,23 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { useSheetDrag } from '@/shared/composables/useSheetDrag'
 
-const props = defineProps<{
-	/** Names the sheet for screen readers. */
-	label: string
-	expandLabel: string
-	collapseLabel: string
-}>()
+const props = withDefaults(
+	defineProps<{
+		/** Names the sheet for screen readers. */
+		label: string
+		expandLabel: string
+		collapseLabel: string
+		/** Height of the lowest stop: enough for what the sheet should always show. */
+		peekRem?: number
+	}>(),
+	{ peekRem: 9 },
+)
 const emit = defineEmits<{ height: [px: number] }>()
 /** 0 is the lowest stop, 2 the highest. */
 const stop = defineModel<number>('stop', { default: 0 })
 
 // Lowest shows a peek of the content, the middle half the screen, the highest
 // leaves a strip of the screen above it so the page behind stays in sight.
-const PEEK_REM = 9
 const TOP_GAP_REM = 4.5
 
 const viewportPx = ref(window.innerHeight)
@@ -27,7 +31,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', updateViewport))
 
 const stops = computed(() => {
 	const remPx = parseFloat(getComputedStyle(document.documentElement).fontSize)
-	return [PEEK_REM * remPx, viewportPx.value / 2, viewportPx.value - TOP_GAP_REM * remPx]
+	return [props.peekRem * remPx, viewportPx.value / 2, viewportPx.value - TOP_GAP_REM * remPx]
 })
 
 const { heightPx, isDragging, onPointerDown, onPointerMove, onPointerUp } = useSheetDrag(
@@ -72,6 +76,10 @@ function step(): void {
 		>
 			<span class="h-1 w-9 rounded-full bg-line-strong" />
 		</button>
+		<!-- Stays in place while the content below scrolls. -->
+		<div v-if="$slots.header" class="shrink-0 px-4 pb-4">
+			<slot name="header" />
+		</div>
 		<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
 			<slot />
 		</div>

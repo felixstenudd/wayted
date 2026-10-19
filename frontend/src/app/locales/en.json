@@ -147,6 +147,20 @@
 				"gravel": "Gravel"
 			}
 		},
+		"findRoutes": {
+			"submit": "Find routes",
+			"submitting": "Finding routes…",
+			"missing": {
+				"start": "Place the start on the map first.",
+				"finish": "Place the finish on the map first."
+			},
+			"errors": {
+				"notAvailable": "Finding routes isn't available yet. Your settings are kept for when it is.",
+				"notAccepted": "These settings were not accepted. Check the start, finish and distance, then try again.",
+				"signedOut": "You have been signed out. Sign in again to find routes.",
+				"unexpected": "Routes could not be found right now. Check your connection, then try again."
+			}
+		},
 		"points": {
 			"label": "Start and finish",
 			"start": "Start",

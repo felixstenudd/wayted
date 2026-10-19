@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import { AccountMenu } from '@/features/auth'
 import { MapView, provideMap } from '@/features/map'
-import { PlannerPanel, PointMarkers } from '@/features/route-planner'
+import { PlannerEssentials, PlannerPanel, PointMarkers } from '@/features/route-planner'
 import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { BottomSheet } from '@/shared/ui/bottom-sheet'
 
@@ -39,9 +39,9 @@ provideMap()
 		>
 			<aside
 				:aria-label="t('planner.title')"
-				class="pointer-events-auto max-h-full overflow-y-auto overscroll-contain rounded-lg bg-paper p-5 shadow-float"
+				class="pointer-events-auto max-h-full overflow-y-auto overscroll-contain rounded-lg bg-paper shadow-float"
 			>
-				<PlannerPanel />
+				<PlannerPanel layout="panel" />
 			</aside>
 		</div>
 		<BottomSheet
@@ -50,9 +50,13 @@ provideMap()
 			:label="t('planner.title')"
 			:expand-label="t('planner.sheet.expand')"
 			:collapse-label="t('planner.sheet.collapse')"
+			:peek-rem="13"
 			@height="sheetHeightPx = $event"
 		>
-			<PlannerPanel />
+			<template #header>
+				<PlannerEssentials />
+			</template>
+			<PlannerPanel layout="sheet" />
 		</BottomSheet>
 	</main>
 </template>
