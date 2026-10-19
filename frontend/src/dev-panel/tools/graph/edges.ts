@@ -56,6 +56,12 @@ const FIXED_SCALES: Record<string, ScoreRange> = {
 
 export const isFixedScale = (name: string) => Object.hasOwn(FIXED_SCALES, name)
 
+// A share ends in the colour of the layer it measures, so edges match the areas around them.
+const SCORE_TOKENS: Record<string, string> = { green: '--map-park', nature: '--map-nature' }
+
+export const scoreToken = (name: string) =>
+	(Object.hasOwn(SCORE_TOKENS, name) ? SCORE_TOKENS[name] : undefined) ?? '--map-score-high'
+
 /** The range to colour a score over: fixed for shares, else the values in view. */
 export function colorScale(graph: Graph, name: string): ScoreRange | null {
 	const range = scoreRange(graph, name)

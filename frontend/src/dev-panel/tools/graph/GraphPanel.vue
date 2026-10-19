@@ -18,9 +18,26 @@ import ProblemMessage from '../../components/ProblemMessage.vue'
 import ToolSection from '../../components/ToolSection.vue'
 import { useGraph } from './api'
 import AreaDetails from './AreaDetails.vue'
-import { areaKey, toMapAreas } from './areas'
+import AreaLegend from './AreaLegend.vue'
+import {
+	areaKey,
+	areaLayers,
+	byLayer,
+	fillOpacity,
+	isDotted,
+	layerToken,
+	toMapAreas,
+} from './areas'
 import EdgeDetails from './EdgeDetails.vue'
-import { colorScale, edgeColor, isFixedScale, scoredCount, scoreNames, toMapEdges } from './edges'
+import {
+	colorScale,
+	edgeColor,
+	isFixedScale,
+	scoredCount,
+	scoreNames,
+	scoreToken,
+	toMapEdges,
+} from './edges'
 
 const NO_EDGE = -1
 const NO_AREA = ''
@@ -83,14 +100,19 @@ useMapSource('graph-area', () => (loaded.value ? boundsPolygon(loaded.value.boun
 		},
 	},
 ])
-const areaColor = tokenColor('--map-score-high')
+const layersInView = computed(() => (areas.value ? areaLayers(areas.value) : []))
+const dottedInView = computed(() => layersInView.value.filter(isDotted))
+const areaColor = () =>
+	byLayer(layersInView.value, (layer) => tokenColor(layerToken(layer)), tokenColor('--map-area'))
 useMapSource('graph-areas', () => (areas.value ? toMapAreas(areas.value) : EMPTY), [
+	{ id: 'graph-area-fill', type: 'fill' },
+	{ id: 'graph-area-line', type: 'line', paint: { 'line-width': 1.5 } },
 	{
-		id: 'graph-area-fill',
-		type: 'fill',
-		paint: { 'fill-color': areaColor, 'fill-opacity': 0.2 },
+		id: 'graph-area-dotted',
+		type: 'line',
+		layout: { 'line-cap': 'round' },
+		paint: { 'line-width': 2, 'line-dasharray': [0, 2] },
 	},
-	{ id: 'graph-area-line', type: 'line', paint: { 'line-color': areaColor, 'line-width': 1 } },
 	{
 		id: 'graph-area-selected',
 		type: 'line',
@@ -120,7 +142,23 @@ useMapSource('graph-vertices', () => graph.value?.vertices ?? EMPTY, [
 		paint: { 'circle-radius': 2.5, 'circle-color': tokenColor('--map-vertex') },
 	},
 ])
-useMapPaint('graph-edge', 'line-color', () => edgeColor(colorBy.value, range.value, colors))
+useMapPaint('graph-area-fill', 'fill-color', areaColor)
+useMapPaint('graph-area-fill', 'fill-opacity', () =>
+	byLayer(layersInView.value, fillOpacity, fillOpacity('')),
+)
+useMapPaint('graph-area-line', 'line-color', areaColor)
+useMapPaint('graph-area-dotted', 'line-color', areaColor)
+useMapFilter('graph-area-line', () => [
+	'!',
+	['in', ['get', 'layer'], ['literal', dottedInView.value]],
+])
+useMapFilter('graph-area-dotted', () => ['in', ['get', 'layer'], ['literal', dottedInView.value]])
+useMapPaint('graph-edge', 'line-color', () =>
+	edgeColor(colorBy.value, range.value, {
+		...colors,
+		high: colorBy.value === null ? colors.high : tokenColor(scoreToken(colorBy.value)),
+	}),
+)
 useMapFilter('graph-edge-selected', () => ['==', ['get', 'id'], selectedId.value ?? NO_EDGE])
 useMapFilter('graph-area-selected', () => ['==', ['get', 'key'], selectedAreaKey.value ?? NO_AREA])
 // Edges are drawn above areas, so a click on an edge inside an area selects the edge.
@@ -154,6 +192,7 @@ useMapClick(['graph-edge', 'graph-area-fill'], (feature) => {
 			<p v-for="score in scored" :key="score.name" class="text-small">
 				{{ t('graph.scored', { name: score.name, count: score.count, edges: edgeCount }) }}
 			</p>
+			<AreaLegend v-if="layersInView.length > 0" :layers="layersInView" />
 
 			<div class="flex flex-col gap-1">
 				<label for="graph-color-by" class="text-small text-graphite">
@@ -174,7 +213,11 @@ useMapClick(['graph-edge', 'graph-area-fill'], (feature) => {
 					<p class="flex items-center gap-2 text-small">
 						<span class="size-3 rounded-sm bg-(--map-score-low)" aria-hidden="true" />
 						{{ range.min }}
-						<span class="size-3 rounded-sm bg-(--map-score-high)" aria-hidden="true" />
+						<span
+							class="size-3 rounded-sm"
+							:style="{ backgroundColor: `var(${scoreToken(colorBy ?? '')})` }"
+							aria-hidden="true"
+						/>
 						{{ range.max }}
 					</p>
 					<p class="text-small text-graphite">

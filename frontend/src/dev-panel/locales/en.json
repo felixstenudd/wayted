@@ -78,6 +78,13 @@
 			"way": "Way {id}",
 			"relation": "Relation {id}",
 			"tags": "Tags"
+		},
+		"legend": {
+			"title": "Areas",
+			"parks": "Parks",
+			"nature": "Nature",
+			"dotted": "dotted edge",
+			"solid": "solid edge"
 		}
 	},
 	"request": {

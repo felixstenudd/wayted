@@ -7,6 +7,7 @@ import {
 	isFixedScale,
 	scoredCount,
 	scoreNames,
+	scoreToken,
 	scoreRange,
 	toMapEdges,
 } from './edges'
@@ -125,5 +126,13 @@ describe('edgeColor', () => {
 			'green',
 			'black',
 		])
+	})
+})
+
+describe('scoreToken', () => {
+	it('ends a share in the colour of the layer it measures', () => {
+		expect(scoreToken('green')).toBe('--map-park')
+		expect(scoreToken('nature')).toBe('--map-nature')
+		expect(scoreToken('quiet')).toBe('--map-score-high')
 	})
 })
