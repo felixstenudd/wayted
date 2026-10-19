@@ -2,12 +2,15 @@ import math
 
 import pytest
 
+from app.enrichment import ATTRIBUTES
+
 from ..graph.raw_data import Conn, add_node, add_way
 from .area_data import Pool, add_relation, add_road, add_square, run, scores
 
 pytestmark = pytest.mark.db
 
 PARK = {"leisure": "park"}
+FOREST = {"landuse": "forest"}
 
 # Grid steps are about 57 m east-west and 111 m north-south. The park spans 570 m x 1110 m.
 PARK_BOX = (0, 0, 10, 10)
@@ -53,7 +56,35 @@ async def test_road_without_a_park_is_scored_zero(
 
     await run(mapper_pool, enricher_pool)
 
-    assert (await scores(admin_conn))[FAR] == {"green": 0}
+    # Every score is set: 0 means nothing near, a missing key means not scored yet.
+    assert (await scores(admin_conn))[FAR] == {attribute.key: 0 for attribute in ATTRIBUTES}
+
+
+async def test_path_through_a_forest_is_nature_and_not_green(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_square(admin_conn, 101, 1, PARK_BOX, FOREST)
+    await roads(admin_conn)
+
+    await run(mapper_pool, enricher_pool)
+
+    middle = (await scores(admin_conn))[MIDDLE]
+    assert middle["nature"] == pytest.approx(1, abs=1e-6)
+    assert middle["green"] == 0
+
+
+async def test_road_between_a_park_and_a_forest_is_half_of_each(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_square(admin_conn, 101, 1, (-10, 0, 0, 10), FOREST)
+    await add_square(admin_conn, 102, 5, PARK_BOX, PARK)
+    await roads(admin_conn)
+
+    await run(mapper_pool, enricher_pool)
+
+    side = (await scores(admin_conn))[SIDE]
+    assert side["green"] == pytest.approx(0.5, abs=1e-3)
+    assert side["nature"] == pytest.approx(0.5, abs=1e-3)
 
 
 async def test_overlapping_parks_count_once(
@@ -112,7 +143,7 @@ async def test_park_arriving_later_rescores_unchanged_roads(
     result = await run(mapper_pool, enricher_pool)
 
     assert (await scores(admin_conn))[MIDDLE]["green"] == pytest.approx(1, abs=1e-6)
-    assert (await scores(admin_conn))[FAR] == {"green": 0}
+    assert (await scores(admin_conn))[FAR]["green"] == 0
     assert sum(b.edges_queued for b in result.batches) == 2  # MIDDLE and SIDE
 
 
@@ -126,7 +157,7 @@ async def test_removed_park_rescores_its_roads(
     await add_way(admin_conn, 101, [1, 2, 3, 4, 1], {})
     await run(mapper_pool, enricher_pool)
 
-    assert (await scores(admin_conn))[MIDDLE] == {"green": 0}
+    assert (await scores(admin_conn))[MIDDLE]["green"] == 0
 
 
 async def test_moving_a_park_node_rescores_roads_near_the_new_shape(
@@ -136,7 +167,7 @@ async def test_moving_a_park_node_rescores_roads_near_the_new_shape(
     # Just east of the park, more than 25 m from it.
     await add_road(admin_conn, 500, (501, 11, 8), (502, 11, 9))
     await run(mapper_pool, enricher_pool)
-    assert (await scores(admin_conn))[500] == {"green": 0}
+    assert (await scores(admin_conn))[500]["green"] == 0
 
     # The north-east corner moves east; the road is now well inside.
     await add_node(admin_conn, 3, 20, 10)
@@ -172,4 +203,4 @@ async def test_multipolygon_hole_is_not_green(
 
     await run(mapper_pool, enricher_pool)
 
-    assert (await scores(admin_conn))[600] == {"green": 0}
+    assert (await scores(admin_conn))[600]["green"] == 0

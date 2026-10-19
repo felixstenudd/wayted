@@ -82,6 +82,10 @@ describe('colorScale', () => {
 		expect(isFixedScale('green')).toBe(true)
 	})
 
+	it('runs from 0 to 1 for nature too', () => {
+		expect(isFixedScale('nature')).toBe(true)
+	})
+
 	it('runs over the values in view for other scores', () => {
 		expect(colorScale(scored, 'quiet')).toEqual({ min: 1, max: 1 })
 		expect(isFixedScale('quiet')).toBe(false)

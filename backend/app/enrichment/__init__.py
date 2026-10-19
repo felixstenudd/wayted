@@ -4,13 +4,15 @@ rebuilds the affected features and rescores the edges near them. Runs in its own
 """
 
 from .attributes import AreaShare, Attribute
-from .definitions import ATTRIBUTES, GREEN, LAYERS, PARKS
+from .definitions import ATTRIBUTES, GREEN, LAYERS, NATURAL_LAND, NATURE, PARKS
 from .enricher import BatchResult, EnrichResult, enrich_pending
 
 __all__ = [
     "ATTRIBUTES",
     "GREEN",
     "LAYERS",
+    "NATURAL_LAND",
+    "NATURE",
     "PARKS",
     "AreaShare",
     "Attribute",

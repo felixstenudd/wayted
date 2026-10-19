@@ -49,7 +49,10 @@ export function scoreRange(graph: Graph, name: string): ScoreRange | null {
 }
 
 // Shares of the corridor around an edge, so a colour means the same share in every view.
-const FIXED_SCALES: Record<string, ScoreRange> = { green: { min: 0, max: 1 } }
+const FIXED_SCALES: Record<string, ScoreRange> = {
+	green: { min: 0, max: 1 },
+	nature: { min: 0, max: 1 },
+}
 
 export const isFixedScale = (name: string) => Object.hasOwn(FIXED_SCALES, name)
 
