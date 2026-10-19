@@ -25,6 +25,7 @@ import {
 	byLayer,
 	fillOpacity,
 	isDotted,
+	layerFilter,
 	layerToken,
 	toMapAreas,
 } from './areas'
@@ -101,7 +102,10 @@ useMapSource('graph-area', () => (loaded.value ? boundsPolygon(loaded.value.boun
 	},
 ])
 const layersInView = computed(() => (areas.value ? areaLayers(areas.value) : []))
-const dottedInView = computed(() => layersInView.value.filter(isDotted))
+const hiddenLayers = ref<string[]>([])
+const shownLayers = computed(() =>
+	layersInView.value.filter((layer) => !hiddenLayers.value.includes(layer)),
+)
 const areaColor = () =>
 	byLayer(layersInView.value, (layer) => tokenColor(layerToken(layer)), tokenColor('--map-area'))
 useMapSource('graph-areas', () => (areas.value ? toMapAreas(areas.value) : EMPTY), [
@@ -148,11 +152,16 @@ useMapPaint('graph-area-fill', 'fill-opacity', () =>
 )
 useMapPaint('graph-area-line', 'line-color', areaColor)
 useMapPaint('graph-area-dotted', 'line-color', areaColor)
-useMapFilter('graph-area-line', () => [
-	'!',
-	['in', ['get', 'layer'], ['literal', dottedInView.value]],
-])
-useMapFilter('graph-area-dotted', () => ['in', ['get', 'layer'], ['literal', dottedInView.value]])
+useMapFilter('graph-area-fill', () => layerFilter(shownLayers.value))
+useMapFilter('graph-area-line', () =>
+	layerFilter(shownLayers.value.filter((layer) => !isDotted(layer))),
+)
+useMapFilter('graph-area-dotted', () => layerFilter(shownLayers.value.filter(isDotted)))
+// A hidden area can no longer be seen, so it is no longer selected either.
+watch(hiddenLayers, (hidden) => {
+	if (selectedArea.value && hidden.includes(selectedArea.value.layer))
+		selectedAreaKey.value = null
+})
 useMapPaint('graph-edge', 'line-color', () =>
 	edgeColor(colorBy.value, range.value, {
 		...colors,
@@ -192,7 +201,11 @@ useMapClick(['graph-edge', 'graph-area-fill'], (feature) => {
 			<p v-for="score in scored" :key="score.name" class="text-small">
 				{{ t('graph.scored', { name: score.name, count: score.count, edges: edgeCount }) }}
 			</p>
-			<AreaLegend v-if="layersInView.length > 0" :layers="layersInView" />
+			<AreaLegend
+				v-if="layersInView.length > 0"
+				v-model:hidden="hiddenLayers"
+				:layers="layersInView"
+			/>
 
 			<div class="flex flex-col gap-1">
 				<label for="graph-color-by" class="text-small text-graphite">

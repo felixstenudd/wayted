@@ -7,6 +7,7 @@ import {
 	byLayer,
 	fillOpacity,
 	isDotted,
+	layerFilter,
 	layerToken,
 	osmUrl,
 	toMapAreas,
@@ -117,5 +118,11 @@ describe('isDotted', () => {
 describe('fillOpacity', () => {
 	it('washes natural land lighter than parks, as it covers far more of the map', () => {
 		expect(fillOpacity('nature')).toBeLessThan(fillOpacity('parks'))
+	})
+})
+
+describe('layerFilter', () => {
+	it('keeps only the areas of the given layers', () => {
+		expect(layerFilter(['parks'])).toEqual(['in', ['get', 'layer'], ['literal', ['parks']]])
 	})
 })

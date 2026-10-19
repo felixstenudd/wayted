@@ -7,6 +7,7 @@ import { fillOpacity, isDotted, layerToken } from './areas'
 const props = defineProps<{
 	layers: string[]
 }>()
+const hidden = defineModel<string[]>('hidden', { required: true })
 
 const i18n = useI18n()
 const { t } = i18n
@@ -24,17 +25,33 @@ const entries = computed(() =>
 		},
 	})),
 )
+
+function toggle(layer: string, event: Event) {
+	if (!(event.target instanceof HTMLInputElement)) return
+	hidden.value = event.target.checked
+		? hidden.value.filter((other) => other !== layer)
+		: [...hidden.value, layer]
+}
 </script>
 
 <template>
-	<div class="flex flex-col gap-1">
-		<h3 class="text-small text-graphite">{{ t('graph.legend.title') }}</h3>
-		<ul class="flex flex-col gap-1 text-small">
-			<li v-for="entry in entries" :key="entry.layer" class="flex items-center gap-2">
-				<span class="rounded-xs size-4 border-2" :style="entry.style" aria-hidden="true" />
-				<span>{{ entry.name }}</span>
-				<span class="text-graphite">{{ entry.edge }}</span>
-			</li>
-		</ul>
-	</div>
+	<fieldset class="flex flex-col gap-1">
+		<legend class="mb-1 text-small text-graphite">{{ t('graph.legend.title') }}</legend>
+		<label
+			v-for="entry in entries"
+			:key="entry.layer"
+			class="flex items-center gap-2 text-small"
+		>
+			<input
+				type="checkbox"
+				:value="entry.layer"
+				:checked="!hidden.includes(entry.layer)"
+				class="size-4 accent-ink"
+				@change="toggle(entry.layer, $event)"
+			/>
+			<span class="rounded-xs size-4 border-2" :style="entry.style" aria-hidden="true" />
+			<span>{{ entry.name }}</span>
+			<span class="text-graphite">{{ entry.edge }}</span>
+		</label>
+	</fieldset>
 </template>

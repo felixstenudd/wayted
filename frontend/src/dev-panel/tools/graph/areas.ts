@@ -1,4 +1,4 @@
-import type { ExpressionSpecification } from 'maplibre-gl'
+import type { ExpressionSpecification, FilterSpecification } from 'maplibre-gl'
 
 import type { Area, Areas } from '../../dev-api/types'
 
@@ -32,6 +32,12 @@ export const layerToken = (layer: string) =>
 	(Object.hasOwn(LAYER_TOKENS, layer) ? LAYER_TOKENS[layer] : undefined) ?? '--map-area'
 
 export const isDotted = (layer: string) => DOTTED_LAYERS.has(layer)
+
+export const layerFilter = (layers: string[]): FilterSpecification => [
+	'in',
+	['get', 'layer'],
+	['literal', layers],
+]
 
 // Natural land covers far more of the map than parks, so its wash is lighter.
 const FILL_OPACITIES: Record<string, number> = { parks: 0.25, nature: 0.12 }
