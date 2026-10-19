@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
+import DistanceField from './DistanceField.vue'
+import RouteKindFields from './RouteKindFields.vue'
 import RoutePoints from './RoutePoints.vue'
 
 const { t } = useI18n()
@@ -9,6 +11,8 @@ const { t } = useI18n()
 <template>
 	<div class="flex flex-col gap-5">
 		<h1 class="text-heading">{{ t('planner.title') }}</h1>
+		<RouteKindFields />
 		<RoutePoints />
+		<DistanceField />
 	</div>
 </template>

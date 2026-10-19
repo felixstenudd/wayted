@@ -94,6 +94,27 @@
 	},
 	"planner": {
 		"title": "Plan a route",
+		"activity": {
+			"label": "Activity",
+			"running": "Run",
+			"cycling": "Ride"
+		},
+		"shape": {
+			"label": "Route shape",
+			"loop": "Loop",
+			"pointToPoint": "A to B"
+		},
+		"distance": {
+			"label": "Target distance",
+			"unit": "km",
+			"hint": {
+				"running": "Between {min} and {max} km for a run.",
+				"cycling": "Between {min} and {max} km for a ride."
+			},
+			"invalid": "Enter a distance in kilometres, like 10 or 10.5.",
+			"shorter": "{step} km shorter",
+			"longer": "{step} km longer"
+		},
 		"points": {
 			"label": "Start and finish",
 			"start": "Start",
