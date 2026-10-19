@@ -48,6 +48,21 @@ export function scoreRange(graph: Graph, name: string): ScoreRange | null {
 	return { min: Math.min(...values), max: Math.max(...values) }
 }
 
+// Shares of the corridor around an edge, so a colour means the same share in every view.
+const FIXED_SCALES: Record<string, ScoreRange> = { green: { min: 0, max: 1 } }
+
+export const isFixedScale = (name: string) => Object.hasOwn(FIXED_SCALES, name)
+
+/** The range to colour a score over: fixed for shares, else the values in view. */
+export function colorScale(graph: Graph, name: string): ScoreRange | null {
+	const range = scoreRange(graph, name)
+	return range && (FIXED_SCALES[name] ?? range)
+}
+
+export function scoredCount(graph: Graph, name: string): number {
+	return graph.edges.features.filter((edge) => isScore(edge.properties.scores[name])).length
+}
+
 /** A line colour: plain, or from low to high over the range of one score. */
 export function edgeColor(
 	name: string | null,

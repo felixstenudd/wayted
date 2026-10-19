@@ -20,7 +20,7 @@ import { useGraph } from './api'
 import AreaDetails from './AreaDetails.vue'
 import { areaKey, toMapAreas } from './areas'
 import EdgeDetails from './EdgeDetails.vue'
-import { edgeColor, scoreNames, scoreRange, toMapEdges } from './edges'
+import { colorScale, edgeColor, isFixedScale, scoredCount, scoreNames, toMapEdges } from './edges'
 
 const NO_EDGE = -1
 const NO_AREA = ''
@@ -45,7 +45,11 @@ watch(names, (next) => {
 	if (colorBy.value !== null && !next.includes(colorBy.value)) colorBy.value = null
 })
 const range = computed(() =>
-	graph.value && colorBy.value !== null ? scoreRange(graph.value, colorBy.value) : null,
+	graph.value && colorBy.value !== null ? colorScale(graph.value, colorBy.value) : null,
+)
+const fixedScale = computed(() => colorBy.value !== null && isFixedScale(colorBy.value))
+const scored = computed(() =>
+	names.value.map((name) => ({ name, count: graph.value ? scoredCount(graph.value, name) : 0 })),
 )
 
 const selectedId = ref<number | null>(null)
@@ -147,6 +151,9 @@ useMapClick(['graph-edge', 'graph-area-fill'], (feature) => {
 					t('graph.counts', { edges: edgeCount, vertices: vertexCount, areas: areaCount })
 				}}
 			</p>
+			<p v-for="score in scored" :key="score.name" class="text-small">
+				{{ t('graph.scored', { name: score.name, count: score.count, edges: edgeCount }) }}
+			</p>
 
 			<div class="flex flex-col gap-1">
 				<label for="graph-color-by" class="text-small text-graphite">
@@ -163,12 +170,17 @@ useMapClick(['graph-edge', 'graph-area-fill'], (feature) => {
 					</option>
 					<option v-for="name in names" :key="name" :value="name">{{ name }}</option>
 				</select>
-				<p v-if="range" class="flex items-center gap-2 text-small">
-					<span class="size-3 rounded-sm bg-(--map-score-low)" aria-hidden="true" />
-					{{ t('graph.lowest', { value: range.min }) }}
-					<span class="size-3 rounded-sm bg-(--map-score-high)" aria-hidden="true" />
-					{{ t('graph.highest', { value: range.max }) }}
-				</p>
+				<template v-if="range">
+					<p class="flex items-center gap-2 text-small">
+						<span class="size-3 rounded-sm bg-(--map-score-low)" aria-hidden="true" />
+						{{ range.min }}
+						<span class="size-3 rounded-sm bg-(--map-score-high)" aria-hidden="true" />
+						{{ range.max }}
+					</p>
+					<p class="text-small text-graphite">
+						{{ fixedScale ? t('graph.fixedScale') : t('graph.viewScale') }}
+					</p>
+				</template>
 			</div>
 
 			<EdgeDetails v-if="selected" :edge="selected" />

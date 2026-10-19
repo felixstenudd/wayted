@@ -1,6 +1,6 @@
 import { ringBounds, type Bounds } from '@/features/map'
 
-import type { QueuedTiles, QueueStatus } from '../../dev-api/types'
+import type { PendingWork, QueuedTiles, QueueStatus } from '../../dev-api/types'
 import { tileKey } from '../tileKey'
 
 export interface FailedTile {
@@ -59,4 +59,9 @@ const queueId = (tile: { layer: string; z: number; x: number; y: number }) =>
 export function hasFinishedTiles(before: QueuedTiles, after: QueuedTiles): boolean {
 	const stillQueued = new Set(after.features.map((tile) => queueId(tile.properties)))
 	return before.features.some((tile) => !stillQueued.has(queueId(tile.properties)))
+}
+
+export function hasPendingWork(pending: PendingWork): boolean {
+	const counts = [...Object.values(pending.mapper), ...Object.values(pending.enricher)]
+	return counts.some((count) => count > 0)
 }

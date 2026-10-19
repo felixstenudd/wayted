@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Graph } from '../../dev-api/types'
-import { edgeColor, scoreNames, scoreRange, toMapEdges } from './edges'
+import {
+	colorScale,
+	edgeColor,
+	isFixedScale,
+	scoredCount,
+	scoreNames,
+	scoreRange,
+	toMapEdges,
+} from './edges'
 
 const edge = (id: number, scores: Record<string, unknown>) => ({
 	type: 'Feature' as const,
@@ -65,6 +73,29 @@ describe('scoreRange', () => {
 
 	it('is null for a score no edge has', () => {
 		expect(scoreRange(scored, 'hilly')).toBeNull()
+	})
+})
+
+describe('colorScale', () => {
+	it('runs from 0 to 1 for green in every view', () => {
+		expect(colorScale(scored, 'green')).toEqual({ min: 0, max: 1 })
+		expect(isFixedScale('green')).toBe(true)
+	})
+
+	it('runs over the values in view for other scores', () => {
+		expect(colorScale(scored, 'quiet')).toEqual({ min: 1, max: 1 })
+		expect(isFixedScale('quiet')).toBe(false)
+	})
+
+	it('is null for a score no edge has', () => {
+		expect(colorScale(graph(edge(1, {})), 'green')).toBeNull()
+	})
+})
+
+describe('scoredCount', () => {
+	it('counts the edges that hold a number for the score', () => {
+		expect(scoredCount(scored, 'green')).toBe(2)
+		expect(scoredCount(scored, 'quiet')).toBe(1)
 	})
 })
 

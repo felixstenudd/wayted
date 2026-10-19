@@ -7,8 +7,8 @@ import { Button } from '@/shared/ui/button'
 
 import ProblemMessage from '../../components/ProblemMessage.vue'
 import ToolSection from '../../components/ToolSection.vue'
-import { useQueuedTiles } from './api'
-import { countByStatus, failedTiles, toMapTiles } from './queue'
+import { usePendingWork, useQueuedTiles } from './api'
+import { countByStatus, failedTiles, hasPendingWork, toMapTiles } from './queue'
 
 // About one screen of the sidebar; a source outage can fail thousands of tiles.
 const MAX_FAILED_SHOWN = 10
@@ -22,6 +22,9 @@ const failed = computed(() =>
 	queued.value ? failedTiles(queued.value, MAX_FAILED_SHOWN) : { shown: [], hiddenCount: 0 },
 )
 const isEmpty = computed(() => queued.value?.features.length === 0)
+
+const { data: pending, error: pendingError } = usePendingWork()
+const isWorking = computed(() => (pending.value ? hasPendingWork(pending.value) : false))
 
 // The three statuses differ in line pattern and width, not only in colour.
 useMapSource('queue', () => (queued.value ? toMapTiles(queued.value) : EMPTY), [
@@ -92,5 +95,28 @@ useMapSource('queue', () => (queued.value ? toMapTiles(queued.value) : EMPTY), [
 		<p v-if="failed.hiddenCount > 0" class="text-small text-graphite">
 			{{ t('queue.moreFailed', { count: failed.hiddenCount }) }}
 		</p>
+
+		<ProblemMessage v-if="pendingError" :error="pendingError" />
+		<p v-if="pending && !isWorking" class="text-small text-graphite">{{ t('queue.done') }}</p>
+		<template v-if="pending && isWorking">
+			<h3 class="font-semibold">{{ t('queue.mapper') }}</h3>
+			<dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+				<dt>{{ t('queue.changedWays') }}</dt>
+				<dd class="text-right tabular-nums">{{ pending.mapper.ways }}</dd>
+				<dt>{{ t('queue.movedNodes') }}</dt>
+				<dd class="text-right tabular-nums">{{ pending.mapper.nodes }}</dd>
+			</dl>
+			<h3 class="font-semibold">{{ t('queue.enricher') }}</h3>
+			<dl class="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+				<dt>{{ t('queue.changedWays') }}</dt>
+				<dd class="text-right tabular-nums">{{ pending.enricher.ways }}</dd>
+				<dt>{{ t('queue.changedRelations') }}</dt>
+				<dd class="text-right tabular-nums">{{ pending.enricher.relations }}</dd>
+				<dt>{{ t('queue.movedNodes') }}</dt>
+				<dd class="text-right tabular-nums">{{ pending.enricher.nodes }}</dd>
+				<dt>{{ t('queue.edgesToScore') }}</dt>
+				<dd class="text-right tabular-nums">{{ pending.enricher.edges }}</dd>
+			</dl>
+		</template>
 	</ToolSection>
 </template>

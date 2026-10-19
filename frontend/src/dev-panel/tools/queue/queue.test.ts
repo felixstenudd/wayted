@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { QueuedTiles, QueueStatus } from '../../dev-api/types'
-import { countByStatus, failedTiles, hasFinishedTiles, toMapTiles } from './queue'
+import { countByStatus, failedTiles, hasFinishedTiles, hasPendingWork, toMapTiles } from './queue'
 
 const ring = [
 	[18, 59],
@@ -119,5 +119,21 @@ describe('hasFinishedTiles', () => {
 			tile('roads', 9, 'pending'),
 		)
 		expect(hasFinishedTiles(queued, after)).toBe(false)
+	})
+})
+
+describe('hasPendingWork', () => {
+	const idle = {
+		mapper: { ways: 0, nodes: 0 },
+		enricher: { ways: 0, relations: 0, nodes: 0, edges: 0 },
+	}
+
+	it('is false when every queue is empty', () => {
+		expect(hasPendingWork(idle)).toBe(false)
+	})
+
+	it('is true when any queue holds work', () => {
+		expect(hasPendingWork({ ...idle, mapper: { ways: 0, nodes: 1 } })).toBe(true)
+		expect(hasPendingWork({ ...idle, enricher: { ...idle.enricher, edges: 3 } })).toBe(true)
 	})
 })
