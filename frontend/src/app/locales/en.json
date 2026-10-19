@@ -95,8 +95,27 @@
 	"planner": {
 		"title": "Plan a route",
 		"points": {
+			"label": "Start and finish",
 			"start": "Start",
-			"finish": "Finish"
+			"finish": "Finish",
+			"clickHint": "Click the map to place it.",
+			"afterStartHint": "Place it after the start.",
+			"placedHint": "Drag it on the map to move it.",
+			"useMyLocation": "Start at my location",
+			"locating": "Finding your location…",
+			"placeAtCenter": {
+				"start": "Place the start at the centre of the map",
+				"finish": "Place the finish at the centre of the map"
+			},
+			"remove": {
+				"start": "Remove the start",
+				"finish": "Remove the finish"
+			},
+			"locationErrors": {
+				"denied": "Location access is off for this site. Allow it in your browser settings, or click the map to place the start.",
+				"unavailable": "Your location could not be found. Try again, or click the map to place the start.",
+				"unsupported": "This browser cannot share your location. Click the map to place the start."
+			}
 		},
 		"sheet": {
 			"expand": "Show more of the planner",
