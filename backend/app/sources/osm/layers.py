@@ -33,5 +33,18 @@ PARKS = OsmLayer(
     is_area=True,
 )
 
+# Land left to grow: the opposite of a park, for runs out of the city.
+_NATURE_TAGS = (
+    '["landuse"~"^(forest|meadow)$"]',
+    '["natural"~"^(wood|scrub|heath|grassland|wetland)$"]',
+    '["leisure"="nature_reserve"]',
+)
+NATURE = OsmLayer(
+    code="nature",
+    selectors=tuple(f"way{tags}" for tags in _NATURE_TAGS)
+    + tuple(f'relation{tags}["type"="multipolygon"]' for tags in _NATURE_TAGS),
+    is_area=True,
+)
+
 # Every layer available (that has a downloader)
-LAYERS = (ROADS, PARKS)
+LAYERS = (ROADS, PARKS, NATURE)
