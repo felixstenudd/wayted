@@ -16,5 +16,7 @@ export type QueuedTile = Schemas['QueuedTileOut']
 export type QueueStatus = Schemas['Status']
 export type Graph = Loose<Schemas['GraphOut']>
 export type Edge = Schemas['EdgeOut']
+export type Areas = Loose<Schemas['FeatureCollection_MultiPolygon_AreaOut_']>
+export type Area = Schemas['AreaOut']
 export type AreaRequest = Schemas['AreaRequestIn']
 export type AreaRequestResult = Schemas['AreaRequestOut']

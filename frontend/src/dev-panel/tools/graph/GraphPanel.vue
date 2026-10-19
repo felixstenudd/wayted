@@ -17,15 +17,19 @@ import { Button } from '@/shared/ui/button'
 import ProblemMessage from '../../components/ProblemMessage.vue'
 import ToolSection from '../../components/ToolSection.vue'
 import { useGraph } from './api'
+import AreaDetails from './AreaDetails.vue'
+import { areaKey, toMapAreas } from './areas'
 import EdgeDetails from './EdgeDetails.vue'
 import { edgeColor, scoreNames, scoreRange, toMapEdges } from './edges'
 
 const NO_EDGE = -1
+const NO_AREA = ''
 
 const { t } = useI18n()
 const { bounds: view } = useMapView()
 const { loaded, error, isFetching, load } = useGraph()
 const graph = computed(() => loaded.value?.graph)
+const areas = computed(() => loaded.value?.areas)
 
 function loadView() {
 	if (view.value) load(view.value)
@@ -33,6 +37,7 @@ function loadView() {
 
 const edgeCount = computed(() => graph.value?.edges.features.length ?? 0)
 const vertexCount = computed(() => graph.value?.vertices.features.length ?? 0)
+const areaCount = computed(() => areas.value?.features.length ?? 0)
 
 const names = computed(() => (graph.value ? scoreNames(graph.value) : []))
 const colorBy = ref<string | null>(null)
@@ -50,6 +55,13 @@ const edgesById = computed(
 const selected = computed(() =>
 	selectedId.value === null ? null : (edgesById.value.get(selectedId.value) ?? null),
 )
+const selectedAreaKey = ref<string | null>(null)
+const areasByKey = computed(
+	() => new Map(areas.value?.features.map((area) => [areaKey(area.properties), area.properties])),
+)
+const selectedArea = computed(() =>
+	selectedAreaKey.value === null ? null : (areasByKey.value.get(selectedAreaKey.value) ?? null),
+)
 
 const colors = {
 	plain: tokenColor('--map-edge'),
@@ -65,6 +77,21 @@ useMapSource('graph-area', () => (loaded.value ? boundsPolygon(loaded.value.boun
 			'line-width': 1,
 			'line-dasharray': [4, 3],
 		},
+	},
+])
+const areaColor = tokenColor('--map-score-high')
+useMapSource('graph-areas', () => (areas.value ? toMapAreas(areas.value) : EMPTY), [
+	{
+		id: 'graph-area-fill',
+		type: 'fill',
+		paint: { 'fill-color': areaColor, 'fill-opacity': 0.2 },
+	},
+	{ id: 'graph-area-line', type: 'line', paint: { 'line-color': areaColor, 'line-width': 1 } },
+	{
+		id: 'graph-area-selected',
+		type: 'line',
+		filter: ['==', ['get', 'key'], NO_AREA],
+		paint: { 'line-color': tokenColor('--map-selected'), 'line-width': 3 },
 	},
 ])
 useMapSource('graph-edges', () => (graph.value ? toMapEdges(graph.value) : EMPTY), [
@@ -91,9 +118,13 @@ useMapSource('graph-vertices', () => graph.value?.vertices ?? EMPTY, [
 ])
 useMapPaint('graph-edge', 'line-color', () => edgeColor(colorBy.value, range.value, colors))
 useMapFilter('graph-edge-selected', () => ['==', ['get', 'id'], selectedId.value ?? NO_EDGE])
-useMapClick(['graph-edge'], (feature) => {
-	const id = feature?.properties.id
+useMapFilter('graph-area-selected', () => ['==', ['get', 'key'], selectedAreaKey.value ?? NO_AREA])
+// Edges are drawn above areas, so a click on an edge inside an area selects the edge.
+useMapClick(['graph-edge', 'graph-area-fill'], (feature) => {
+	const id = feature?.layerId === 'graph-edge' ? feature.properties.id : null
+	const key = feature?.layerId === 'graph-area-fill' ? feature.properties.key : null
 	selectedId.value = typeof id === 'number' ? id : null
+	selectedAreaKey.value = typeof key === 'string' ? key : null
 })
 </script>
 
@@ -111,7 +142,11 @@ useMapClick(['graph-edge'], (feature) => {
 		</p>
 
 		<template v-if="graph && edgeCount > 0">
-			<p>{{ t('graph.counts', { edges: edgeCount, vertices: vertexCount }) }}</p>
+			<p>
+				{{
+					t('graph.counts', { edges: edgeCount, vertices: vertexCount, areas: areaCount })
+				}}
+			</p>
 
 			<div class="flex flex-col gap-1">
 				<label for="graph-color-by" class="text-small text-graphite">
@@ -137,6 +172,7 @@ useMapClick(['graph-edge'], (feature) => {
 			</div>
 
 			<EdgeDetails v-if="selected" :edge="selected" />
+			<AreaDetails v-else-if="selectedArea" :area="selectedArea" />
 			<p v-else class="text-small text-graphite">{{ t('graph.selectEdge') }}</p>
 		</template>
 	</ToolSection>

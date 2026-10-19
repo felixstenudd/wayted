@@ -39,17 +39,17 @@
 	},
 	"graph": {
 		"title": "Graph",
-		"load": "Load edges in this view",
-		"loading": "Loading edges…",
-		"notLoaded": "Load the edges of the current view.",
+		"load": "Load edges and areas in this view",
+		"loading": "Loading edges and areas…",
+		"notLoaded": "Load the edges and areas of the current view.",
 		"empty": "No edges in this view. It may not be fetched yet.",
-		"counts": "{edges} edges, {vertices} vertices in the dashed box",
+		"counts": "{edges} edges, {vertices} vertices and {areas} areas in the dashed box",
 		"colorBy": "Colour edges by",
 		"noScores": "No scores yet",
 		"oneColor": "One colour",
 		"lowest": "lowest {value}",
 		"highest": "highest {value}",
-		"selectEdge": "Select an edge on the map to see its tags and scores.",
+		"selectEdge": "Select an edge or an area on the map to see its details.",
 		"edge": {
 			"title": "Edge {id}",
 			"way": "Way",
@@ -62,6 +62,13 @@
 			"nobody": "nobody",
 			"scores": "Scores",
 			"noScores": "Not scored yet.",
+			"tags": "Tags"
+		},
+		"area": {
+			"layer": "Layer",
+			"element": "OSM element",
+			"way": "Way {id}",
+			"relation": "Relation {id}",
 			"tags": "Tags"
 		}
 	},
