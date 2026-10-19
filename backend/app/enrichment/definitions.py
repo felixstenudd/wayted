@@ -1,22 +1,13 @@
 """The layers and attributes the enricher builds and scores."""
 
+from app.sources import osm
+
 from .attributes import AreaShare, Attribute
 from .layers import AreaLayer, FeatureLayer
 
-PARKS = AreaLayer(code="parks", match=({"leisure": "park"},))
-NATURAL_LAND = AreaLayer(
-    code="nature",
-    match=(
-        {"landuse": "forest"},
-        {"natural": "wood"},
-        {"natural": "scrub"},
-        {"natural": "heath"},
-        {"natural": "grassland"},
-        {"landuse": "meadow"},
-        {"natural": "wetland"},
-        {"leisure": "nature_reserve"},
-    ),
-)
+# Built from the tags they are downloaded by, so the two lists cannot drift apart.
+PARKS = AreaLayer(code=osm.PARKS.code, match=osm.PARKS.tags)
+NATURAL_LAND = AreaLayer(code=osm.NATURE.code, match=osm.NATURE.tags)
 
 # Kept apart: parks suit a city run, natural land a trail run.
 GREEN = AreaShare(key="green", layers=(PARKS,), radius_m=25)

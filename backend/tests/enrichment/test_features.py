@@ -184,7 +184,9 @@ async def test_natural_land_becomes_a_nature_area(
     assert await cur.fetchall() == [("nature", "way", 101)]
 
 
-async def test_every_downloaded_area_layer_has_a_feature_layer() -> None:
-    downloaded = {layer.code for layer in DOWNLOADED_LAYERS if layer.is_area}
+async def test_every_downloaded_area_layer_is_built_from_the_same_tags() -> None:
+    built = {layer.code: layer.match for layer in LAYERS}
 
-    assert downloaded <= {layer.code for layer in LAYERS}
+    for layer in DOWNLOADED_LAYERS:
+        if layer.is_area:
+            assert built.get(layer.code) == layer.tags, layer.code

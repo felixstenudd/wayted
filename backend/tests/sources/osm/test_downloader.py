@@ -10,6 +10,7 @@ from psycopg.rows import TupleRow
 from psycopg_pool import AsyncConnectionPool
 
 from app.sources.osm import NATURE, PARKS, ROADS, OsmData, OsmDownloader, OsmNode, OsmWay
+from app.sources.osm.layers import area_selectors
 from app.sources.osm.overpass import build_query
 from app.sources.tiles import Bounds
 
@@ -86,6 +87,24 @@ async def test_nature_asks_for_each_kind_of_land_as_ways_and_multipolygons() -> 
         assert f'relation["{key}"~"^({values})$"]["type"="multipolygon"]' in query
     assert 'way["leisure"="nature_reserve"]' in query
     assert 'relation["leisure"="nature_reserve"]["type"="multipolygon"]' in query
+
+
+def test_area_selectors_merge_the_values_of_one_key() -> None:
+    tags = (
+        {"landuse": "forest"},
+        {"natural": "wood"},
+        {"landuse": "meadow"},
+        {"leisure": "park", "access": "yes"},
+    )
+
+    assert area_selectors(tags) == (
+        'way["landuse"~"^(forest|meadow)$"]',
+        'way["natural"="wood"]',
+        'way["leisure"="park"]["access"="yes"]',
+        'relation["landuse"~"^(forest|meadow)$"]["type"="multipolygon"]',
+        'relation["natural"="wood"]["type"="multipolygon"]',
+        'relation["leisure"="park"]["access"="yes"]["type"="multipolygon"]',
+    )
 
 
 @pytest.mark.db
