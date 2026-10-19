@@ -136,6 +136,7 @@ services:
     ports: ["5173:5173"]
     environment:
       API_PROXY_TARGET: http://backend:8000
+      VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-https://tiles.openfreemap.org/styles/positron}
     volumes:
       - ./frontend:/app
       # Keeps the container's Linux node_modules separate from the host's.

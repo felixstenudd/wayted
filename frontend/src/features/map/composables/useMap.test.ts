@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, useTemplateRef } from 'vue'
 
 import { provideMap, useMapContext, type MapContext } from '../context'
-import { useMap } from './useMap'
+import { useMap, type MapViewOptions } from './useMap'
 
 // jsdom has no WebGL, so MapLibre's map is replaced by one that only keeps listeners.
 const { FakeMap, maps } = vi.hoisted(() => {
@@ -43,7 +43,7 @@ const { FakeMap, maps } = vi.hoisted(() => {
 			this.style = style
 		}
 
-		addControl() {}
+		addControl = vi.fn()
 		remove() {}
 	}
 	return { FakeMap, maps }
@@ -61,13 +61,13 @@ const EMPTY_STYLE = { version: 8, sources: {}, layers: [] }
 
 let host: VueWrapper | null = null
 
-function mountMap() {
+function mountMap(options: Partial<MapViewOptions> = {}) {
 	let context!: MapContext
 	const MapHost = defineComponent({
 		setup() {
 			context = useMapContext()
 			const container = useTemplateRef<HTMLElement>('container')
-			useMap(container, { center: { lon: 18, lat: 59 }, zoom: 13 })
+			useMap(container, { center: { lon: 18, lat: 59 }, zoom: 13, ...options })
 			return () => h('div', { ref: 'container' })
 		},
 	})
@@ -111,6 +111,36 @@ describe('useMap', () => {
 		expect(map.options).toMatchObject({ dragRotate: false, touchPitch: false })
 		expect(map.keyboard.disableRotation).toHaveBeenCalled()
 		expect(map.touchZoomRotate.disableRotation).toHaveBeenCalled()
+	})
+
+	it('puts the zoom buttons top right unless told otherwise', () => {
+		const positions = (map: InstanceType<typeof FakeMap>) =>
+			map.addControl.mock.calls.map(([, position]: unknown[]) => position)
+
+		expect(positions(mountMap().map)).toEqual(['top-right', 'bottom-right'])
+		host?.unmount()
+		expect(positions(mountMap({ zoomButtonsPosition: 'bottom-right' }).map)).toEqual([
+			'bottom-right',
+			'bottom-right',
+		])
+	})
+
+	it('folds shown compact credits into their button five seconds after loading', () => {
+		vi.useFakeTimers()
+		try {
+			const { map } = mountMap()
+			const credits = document.createElement('details')
+			credits.className = 'maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show'
+			host?.element.append(credits)
+
+			map.fire('load')
+			vi.advanceTimersByTime(4999)
+			expect(credits.classList.contains('maplibregl-compact-show')).toBe(true)
+			vi.advanceTimersByTime(1)
+			expect(credits.classList.contains('maplibregl-compact-show')).toBe(false)
+		} finally {
+			vi.useRealTimers()
+		}
 	})
 
 	it('says so and draws on an empty map when no style URL is set', () => {

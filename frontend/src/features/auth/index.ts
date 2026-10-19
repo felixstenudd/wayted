@@ -1,6 +1,8 @@
+export { default as AccountMenu } from './components/AccountMenu.vue'
 export { default as AuthLayout } from './components/AuthLayout.vue'
 export { default as CreateAccountForm } from './components/CreateAccountForm.vue'
 export { default as SignInForm } from './components/SignInForm.vue'
 export { useAuthSubmit } from './composables/useAuthSubmit'
+export { authRedirect, safeRedirect } from './guard'
 export { useAuthStore } from './store'
 export type { CreateAccountValues, SignInValues, User } from './types'

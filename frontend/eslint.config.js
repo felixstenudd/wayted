@@ -21,6 +21,7 @@ export default defineConfigWithVueTs(
 			'node_modules/**',
 			'coverage/**',
 			'src/dev-panel/dev-api/schema.d.ts',
+			'src/shared/api/schema.d.ts',
 		],
 	},
 

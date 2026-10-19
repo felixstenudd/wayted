@@ -12,6 +12,10 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
 FROM deps AS build
 
+# Vite reads it while building.
+ARG VITE_MAP_STYLE_URL
+ENV VITE_MAP_STYLE_URL=$VITE_MAP_STYLE_URL
+
 COPY . .
 RUN npm run build
 
