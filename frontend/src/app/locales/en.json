@@ -93,6 +93,10 @@
 		"baseMapFailed": "The map did not load. Reload the page to try again."
 	},
 	"planner": {
-		"title": "Plan a route"
+		"title": "Plan a route",
+		"sheet": {
+			"expand": "Show more of the planner",
+			"collapse": "Show less of the planner"
+		}
 	}
 }
