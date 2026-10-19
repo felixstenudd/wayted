@@ -28,6 +28,11 @@ class Polygon(BaseModel):
     coordinates: list[list[Position]]
 
 
+class MultiPolygon(BaseModel):
+    type: Literal["MultiPolygon"]
+    coordinates: list[list[list[Position]]]
+
+
 class Feature[Geometry, Properties](BaseModel):
     type: Literal["Feature"] = "Feature"
     geometry: Geometry
@@ -80,6 +85,30 @@ class VertexOut(BaseModel):
 class GraphOut(BaseModel):
     edges: FeatureCollection[LineString, EdgeOut]
     vertices: FeatureCollection[Point, VertexOut]
+
+
+class AreaOut(BaseModel):
+    layer: str
+    osm_type: Literal["way", "relation"]
+    osm_id: int
+    tags: dict[str, str]
+
+
+class MapperPendingOut(BaseModel):
+    ways: int
+    nodes: int
+
+
+class EnricherPendingOut(BaseModel):
+    ways: int
+    relations: int
+    nodes: int
+    edges: int
+
+
+class PendingOut(BaseModel):
+    mapper: MapperPendingOut
+    enricher: EnricherPendingOut
 
 
 class BoundsOut(BaseModel):

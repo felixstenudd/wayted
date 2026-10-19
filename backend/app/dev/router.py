@@ -6,22 +6,29 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.dependencies import Conn
+from app.dev.pending import pending_counts
 from app.dev.schemas import (
+    AreaOut,
     AreaRequestIn,
     AreaRequestOut,
     BoundsOut,
     EdgeOut,
+    EnricherPendingOut,
     ErrorOut,
     Feature,
     FeatureCollection,
     FetchedTileOut,
     GraphOut,
     LineString,
+    MapperPendingOut,
+    MultiPolygon,
+    PendingOut,
     Point,
     Polygon,
     QueuedTileOut,
     VertexOut,
 )
+from app.enrichment.areas import areas_in_bounds
 from app.graph.area import AreaTooLarge, graph_in_bounds
 from app.sources.queue import queued_tiles, request_area
 from app.sources.registry import fetched_tiles
@@ -129,6 +136,39 @@ async def graph(db_conn: Conn, west: Lon, south: Lat, east: Lon, north: Lat) -> 
                 for vertex in area.vertices
             ]
         ),
+    )
+
+
+@router.get("/areas", responses={status.HTTP_400_BAD_REQUEST: {"model": ErrorOut}})
+async def areas(
+    db_conn: Conn, west: Lon, south: Lat, east: Lon, north: Lat
+) -> FeatureCollection[MultiPolygon, AreaOut]:
+    """The area features that intersect the box, whole."""
+    bounds = Bounds(west=west, south=south, east=east, north=north)
+    try:
+        found = await areas_in_bounds(db_conn, bounds)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
+    return FeatureCollection(
+        features=[
+            Feature(
+                geometry=MultiPolygon(**area.geometry),
+                properties=AreaOut(
+                    layer=area.layer, osm_type=area.osm_type, osm_id=area.osm_id, tags=area.tags
+                ),
+            )
+            for area in found
+        ]
+    )
+
+
+@router.get("/pending")
+async def pending(db_conn: Conn) -> PendingOut:
+    """How many distinct elements wait for the mapper and for the enricher."""
+    counts = await pending_counts(db_conn)
+    return PendingOut(
+        mapper=MapperPendingOut(**asdict(counts.mapper)),
+        enricher=EnricherPendingOut(**asdict(counts.enricher)),
     )
 
 
