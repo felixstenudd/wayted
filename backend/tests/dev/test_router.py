@@ -6,11 +6,13 @@ from psycopg_pool import AsyncConnectionPool
 from starlette.types import Message, Receive, Scope, Send
 
 from app.dev.main import app
+from app.enrichment import enrich_pending
 from app.graph import map_pending
 from app.sources import queue
 from app.sources.registry import mark_fetched
 from app.sources.tiles import Tile
 
+from ..enrichment.area_data import add_square
 from ..graph.raw_data import add_line
 
 pytestmark = pytest.mark.db
@@ -194,6 +196,82 @@ def test_graph_documents_its_one_sentence_errors() -> None:
     schema = refused["content"]["application/json"]["schema"]
     assert schema == {"$ref": "#/components/schemas/ErrorOut"}
     assert spec["components"]["schemas"]["ErrorOut"]["properties"]["detail"]["type"] == "string"
+
+
+async def test_areas_returns_the_parks_in_the_box(
+    client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_square(admin_conn, 101, 1, (0, 0, 2, 2), {"leisure": "park", "name": "Square"})
+    await map_pending(mapper_pool.connection)
+    await enrich_pending(enricher_pool.connection)
+
+    response = await client.get("/areas", params=GRID)
+
+    assert response.status_code == 200
+    [area] = response.json()["features"]
+    corners = [[18.0, 59.3], [18.002, 59.3], [18.002, 59.302], [18.0, 59.302], [18.0, 59.3]]
+    assert area["geometry"]["type"] == "MultiPolygon"
+    [[ring]] = area["geometry"]["coordinates"]
+    assert sorted(map(tuple, ring[:-1])) == sorted(map(tuple, corners[:-1]))
+    assert area["properties"] == {
+        "layer": "parks",
+        "osm_type": "way",
+        "osm_id": 101,
+        "tags": {"leisure": "park", "name": "Square"},
+    }
+
+
+async def test_areas_outside_the_box_are_left_out(
+    client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_square(admin_conn, 101, 1, (0, 0, 2, 2), {"leisure": "park"})
+    await map_pending(mapper_pool.connection)
+    await enrich_pending(enricher_pool.connection)
+
+    response = await client.get("/areas", params={**GRID, "west": 18.005})
+
+    assert response.json() == {"type": "FeatureCollection", "features": []}
+
+
+async def test_areas_refuses_an_inside_out_box(client: httpx.AsyncClient) -> None:
+    response = await client.get("/areas", params={**GRID, "west": 18.02})
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {"detail": "West must not be east of east."},
+    )
+
+
+async def test_pending_counts_the_work_each_step_has_left(
+    client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_line(admin_conn, 10, [(1, 0, 0), (2, 2, 0)], {"highway": "path"})
+    # Queued twice, counted once.
+    await add_line(admin_conn, 10, [(1, 0, 0), (2, 2, 0)], {"highway": "path", "name": "P"})
+    await map_pending(mapper_pool.connection)
+
+    mapped = (await client.get("/pending")).json()
+    await enrich_pending(enricher_pool.connection)
+    enriched = (await client.get("/pending")).json()
+
+    assert mapped == {
+        "mapper": {"ways": 0, "nodes": 0},
+        "enricher": {"ways": 1, "relations": 0, "nodes": 0, "edges": 1},
+    }
+    assert enriched == {
+        "mapper": {"ways": 0, "nodes": 0},
+        "enricher": {"ways": 0, "relations": 0, "nodes": 0, "edges": 0},
+    }
+
+
+async def test_pending_counts_ways_waiting_for_the_mapper(
+    client: httpx.AsyncClient, admin_conn: Conn
+) -> None:
+    await add_line(admin_conn, 10, [(1, 0, 0), (2, 2, 0)], {"highway": "path"})
+
+    response = await client.get("/pending")
+
+    assert response.json()["mapper"]["ways"] == 1
 
 
 async def test_request_queues_the_tiles_around_the_circle(
