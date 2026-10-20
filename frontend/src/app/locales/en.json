@@ -155,10 +155,25 @@
 				"finish": "Place the finish on the map first."
 			},
 			"errors": {
-				"notAvailable": "Finding routes isn't available yet. Your settings are kept for when it is.",
+				"startOffRoad": "There is no road or path near the start. Move it closer to one.",
+				"finishOffRoad": "There is no road or path near the finish. Move it closer to one.",
+				"unreachable": "The finish cannot be reached from the start. Try moving one of them.",
+				"noLoop": "No loop could be found from this start. Try another start or distance.",
 				"notAccepted": "These settings were not accepted. Check the start, finish and distance, then try again.",
+				"tooSlow": "Finding this route took too long. Try a shorter distance.",
+				"stillPreparing": "The map data for this area is taking longer than usual. Try again in a few minutes.",
 				"signedOut": "You have been signed out. Sign in again to find routes.",
 				"unexpected": "Routes could not be found right now. Check your connection, then try again."
+			},
+			"preparing": "Getting map data…",
+			"preparingHint": "The map data for this area is being downloaded. The first route in a new area can take a minute or two."
+		},
+		"route": {
+			"length": "{km} km",
+			"share": "{name} {percent}",
+			"warnings": {
+				"too_short": "The direct way is longer than {km} km, so this route takes it.",
+				"target_missed": "No route close to {km} km was found here, so this is the nearest one."
 			}
 		},
 		"points": {

@@ -156,3 +156,35 @@ describe('placeNextPoint', () => {
 		expect(planner.finish).toBeNull()
 	})
 })
+
+describe('findRoutes', () => {
+	it('does nothing until the points are placed', () => {
+		const planner = usePlannerStore()
+
+		expect(planner.findRoutes()).toBe(false)
+		expect(planner.search).toBeNull()
+	})
+
+	it('searches for the current request, anew on every press', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+
+		planner.findRoutes()
+		const first = planner.search
+		planner.findRoutes()
+
+		expect(first?.request).toEqual(planner.routeRequest)
+		expect(planner.search?.request).toEqual(planner.routeRequest)
+		expect(planner.search?.id).not.toBe(first?.id)
+	})
+
+	it('drops the search once the request changes', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.findRoutes()
+
+		planner.setWeight('green', 1)
+
+		expect(planner.search).toBeNull()
+	})
+})

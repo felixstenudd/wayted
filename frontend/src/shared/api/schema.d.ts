@@ -184,7 +184,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Routes */
+        /**
+         * Routes
+         * @description Plan a route. Answers 202 while the map data around it is downloaded and scored; the
+         *     client asks again until it gets the route.
+         */
         post: operations["routes_routing_routes_post"];
         delete?: never;
         options?: never;
@@ -265,12 +269,29 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** LineString */
+        LineString: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "LineString";
+            /** Coordinates */
+            coordinates: components["schemas"]["Position"][];
+        };
         /** LoginIn */
         LoginIn: {
             /** Email */
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * NoRouteOut
+         * @description Why no route was found.
+         */
+        NoRouteOut: {
+            detail: components["schemas"]["Reason"];
         };
         /** PointIn */
         PointIn: {
@@ -279,6 +300,24 @@ export interface components {
             /** Lat */
             lat: number;
         };
+        Position: [
+            number,
+            number
+        ];
+        /**
+         * PreparingOut
+         * @description The map data around the route is still being downloaded or scored; ask again shortly.
+         */
+        PreparingOut: {
+            /**
+             * Status
+             * @default preparing
+             * @constant
+             */
+            status: "preparing";
+        };
+        /** @enum {string} */
+        Reason: "start_off_road" | "finish_off_road" | "unreachable" | "no_loop";
         /** RegisterIn */
         RegisterIn: {
             /** Email */
@@ -287,6 +326,33 @@ export interface components {
             name: string;
             /** Password */
             password: string;
+        };
+        /**
+         * RouteOut
+         * @description The route as a GeoJSON Feature, its line in travel order.
+         */
+        RouteOut: {
+            /**
+             * Type
+             * @default Feature
+             * @constant
+             */
+            type: "Feature";
+            geometry: components["schemas"]["LineString"];
+            properties: components["schemas"]["RoutePropertiesOut"];
+        };
+        /** RoutePropertiesOut */
+        RoutePropertiesOut: {
+            /** Length M */
+            length_m: number;
+            /** Scores */
+            scores: {
+                [key: string]: number;
+            };
+            /** Reused M */
+            reused_m: number;
+            /** Warnings */
+            warnings: components["schemas"]["RouteWarning"][];
         };
         /** RouteRequestIn */
         RouteRequestIn: {
@@ -312,6 +378,8 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** @enum {string} */
+        RouteWarning: "too_short" | "target_missed";
         /** UserOut */
         UserOut: {
             /** Email */
@@ -603,20 +671,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["RouteOut"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparingOut"];
+                };
+            };
+            /** @description No route between the points, or the request is invalid */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["NoRouteOut"];
                 };
             };
-            /** @description Not available yet */
-            501: {
+            /** @description Planning took too long */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

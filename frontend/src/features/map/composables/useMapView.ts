@@ -7,10 +7,18 @@ const PADDING_PX = 48
 // Close enough to see which street a point is on.
 const POINT_ZOOM = 15
 
+/** How far, in px, something drawn over the map covers it from each edge. */
+export interface MapCover {
+	top?: number
+	right?: number
+	bottom?: number
+	left?: number
+}
+
 /** The bounds of what the map shows, and a way to move it. */
 export function useMapView(): {
 	bounds: Readonly<Ref<Bounds | null>>
-	showBounds: (bounds: Bounds) => void
+	showBounds: (bounds: Bounds, cover?: MapCover) => void
 	center: () => LonLat | null
 	showPoint: (at: LonLat) => void
 } {
@@ -36,13 +44,21 @@ export function useMapView(): {
 		(ready) => ready.off('moveend', read),
 	)
 
-	const showBounds = ({ west, south, east, north }: Bounds) => {
+	/** Fits the map to bounds, keeping them clear of what covers the map. */
+	const showBounds = ({ west, south, east, north }: Bounds, cover: MapCover = {}) => {
 		map.value?.fitBounds(
 			[
 				[west, south],
 				[east, north],
 			],
-			{ padding: PADDING_PX },
+			{
+				padding: {
+					top: PADDING_PX + (cover.top ?? 0),
+					right: PADDING_PX + (cover.right ?? 0),
+					bottom: PADDING_PX + (cover.bottom ?? 0),
+					left: PADDING_PX + (cover.left ?? 0),
+				},
+			},
 		)
 	}
 

@@ -1,9 +1,16 @@
 import { defineStore } from 'pinia'
-import { computed, readonly, ref } from 'vue'
+import { computed, readonly, ref, watch } from 'vue'
 
 import type { LonLat } from '@/features/map'
 
-import type { Activity, DistanceRange, MissingPoint, RouteRequest, RouteShape } from './types'
+import type {
+	Activity,
+	DistanceRange,
+	MissingPoint,
+	RouteRequest,
+	RouteSearch,
+	RouteShape,
+} from './types'
 
 export const DISTANCE_RANGES: Record<Activity, DistanceRange> = {
 	running: { minKm: 1, maxKm: 50, defaultKm: 5 },
@@ -12,7 +19,7 @@ export const DISTANCE_RANGES: Record<Activity, DistanceRange> = {
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
-/** The route the user is setting up, before any routes are found. */
+/** The route the user is setting up, and the search for it once they ask. */
 export const usePlannerStore = defineStore('route-planner', () => {
 	const activity = ref<Activity>('running')
 	const shape = ref<RouteShape>('loop')
@@ -22,6 +29,9 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	const targetDistanceKm = ref(DISTANCE_RANGES.running.defaultKm)
 	// Only weights other than 0 ("don't mind") are kept.
 	const preferenceWeights = ref<Record<string, number>>({})
+	// The last press of Find routes, until the request changes.
+	const search = ref<RouteSearch | null>(null)
+	let searches = 0
 
 	const distanceRange = computed(() => DISTANCE_RANGES[activity.value])
 	const setWeightCount = computed(() => Object.keys(preferenceWeights.value).length)
@@ -43,6 +53,24 @@ export const usePlannerStore = defineStore('route-planner', () => {
 			preferences: { ...preferenceWeights.value },
 		}
 	})
+
+	// A route found for other settings is stale. Sync, so a change and a search in one tick
+	// keep the search.
+	watch(
+		routeRequest,
+		() => {
+			search.value = null
+		},
+		{ flush: 'sync' },
+	)
+
+	/** Starts a search for the current request. Returns false when points are missing. */
+	function findRoutes(): boolean {
+		if (routeRequest.value === null) return false
+		searches += 1
+		search.value = { id: searches, request: routeRequest.value, startedAt: Date.now() }
+		return true
+	}
 
 	function setActivity(next: Activity): void {
 		activity.value = next
@@ -96,6 +124,8 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		setWeightCount,
 		missingPoint,
 		routeRequest,
+		search: readonly(search),
+		findRoutes,
 		setActivity,
 		placeNextPoint,
 		setTargetDistanceKm,

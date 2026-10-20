@@ -1,8 +1,11 @@
-import { useMutation, useQuery } from '@tanstack/vue-query'
+import { useQuery } from '@tanstack/vue-query'
+import { computed, type ComputedRef } from 'vue'
 
 import { useAuthStore } from '@/features/auth'
 
-import type { RouteAttribute, RouteRequest } from './types'
+import { PREPARING_POLL_MS, routeState, shouldPoll, type RouteState } from './route'
+import { usePlannerStore } from './store'
+import type { RouteAnswer, RouteAttribute } from './types'
 
 export function useRouteAttributes() {
 	const auth = useAuthStore()
@@ -14,11 +17,39 @@ export function useRouteAttributes() {
 	})
 }
 
-/** Asks the backend for routes. Generation is not built yet, so for now it answers 501. */
-export function useFindRoutes() {
+/**
+ * The route for the planner's current search. The backend answers 202 until the map data around
+ * the route is ready, so it is asked again every few seconds until it answers with the route.
+ */
+export function useFoundRoute(): ComputedRef<RouteState> {
 	const auth = useAuthStore()
-	return useMutation({
-		mutationFn: (request: RouteRequest) =>
-			auth.authedRequest<unknown>('/routing/routes', { method: 'POST', body: request }),
+	const planner = usePlannerStore()
+	const query = useQuery({
+		queryKey: computed(() => ['routing', 'route', planner.search] as const),
+		queryFn: ({ queryKey: [, , search] }) =>
+			auth.authedRequest<RouteAnswer>('/routing/routes', {
+				method: 'POST',
+				body: search?.request,
+			}),
+		enabled: computed(() => planner.search !== null),
+		// Each search is planned once; asking again is up to the user.
+		staleTime: Infinity,
+		refetchOnWindowFocus: false,
+		// A failure is the answer: no route, or one that took the backend too long.
+		retry: false,
+		refetchInterval: ({ queryKey: [, , search], state }) =>
+			search && shouldPoll(state.data, search.startedAt, state.dataUpdatedAt)
+				? PREPARING_POLL_MS
+				: false,
 	})
+	return computed(() =>
+		routeState({
+			isSearching: planner.search !== null,
+			answer: query.data.value,
+			error: query.error.value,
+			isFetching: query.isFetching.value,
+			startedAt: planner.search?.startedAt ?? 0,
+			answeredAt: query.dataUpdatedAt.value,
+		}),
+	)
 }

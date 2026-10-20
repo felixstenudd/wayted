@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { AccountMenu } from '@/features/auth'
-import { MapView, provideMap } from '@/features/map'
-import { PlannerEssentials, PlannerPanel, PointMarkers } from '@/features/route-planner'
+import { MapView, provideMap, type MapCover } from '@/features/map'
+import { PlannerEssentials, PlannerPanel, PointMarkers, RouteLine } from '@/features/route-planner'
 import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { BottomSheet } from '@/shared/ui/bottom-sheet'
 
@@ -16,6 +16,13 @@ const { t } = useI18n()
 const hasRoomForPanel = useMediaQuery('(min-width: 48rem)')
 const sheetStop = ref(0)
 const sheetHeightPx = ref(0)
+const panel = useTemplateRef<HTMLElement>('panel')
+
+// A route is fitted beside the panel, or above the sheet.
+function plannerCover(): MapCover {
+	if (!hasRoomForPanel.value) return { bottom: sheetHeightPx.value }
+	return { left: panel.value?.getBoundingClientRect().right ?? 0 }
+}
 
 provideMap()
 </script>
@@ -31,6 +38,7 @@ provideMap()
 			class="pointer-events-none absolute inset-y-4 left-4 z-10 flex w-90 flex-col"
 		>
 			<aside
+				ref="panel"
 				:aria-label="t('planner.title')"
 				class="pointer-events-auto max-h-full overflow-y-auto overscroll-contain rounded-lg bg-paper shadow-float"
 			>
@@ -58,6 +66,7 @@ provideMap()
 			zoom-buttons-position="bottom-right"
 			:controls-bottom-px="hasRoomForPanel ? 0 : sheetHeightPx"
 		/>
+		<RouteLine :cover="plannerCover" />
 		<PointMarkers />
 	</main>
 </template>
