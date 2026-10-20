@@ -3,7 +3,7 @@ Scores graph edges against attribute layers. Triggers on raw queue changed eleme
 rebuilds the affected features and rescores the edges near them. Runs in its own process.
 """
 
-from .attributes import AreaShare, Attribute, Proximity
+from .attributes import AreaShare, Attribute, Proximity, SurfaceScore
 from .definitions import (
     ATTRIBUTES,
     GREEN,
@@ -11,6 +11,8 @@ from .definitions import (
     NATURAL_LAND,
     NATURE,
     PARKS,
+    PREPARED,
+    WATER,
     WATER_AREAS,
     WATER_LINES,
 )
@@ -24,6 +26,7 @@ __all__ = [
     "NATURAL_LAND",
     "NATURE",
     "PARKS",
+    "PREPARED",
     "WATER",
     "WATER_AREAS",
     "WATER_LINES",
@@ -33,5 +36,6 @@ __all__ = [
     "EnrichResult",
     "LineLayer",
     "Proximity",
+    "SurfaceScore",
     "enrich_pending",
 ]

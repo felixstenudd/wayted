@@ -83,10 +83,11 @@ CLAIM_EDGES = """
 
 HAS_PENDING_EDGES = "SELECT EXISTS (SELECT 1 FROM graph.pending_edges)"
 
-# An attribute's query goes between the two, as the subquery s.
+# An attribute's query goes between the two, as the subquery s. A NULL value leaves the key out.
 MERGE_SCORES_HEAD = """
     UPDATE graph.edges e
-    SET scores = e.scores || jsonb_build_object(%(key)s::text, s.value)
+    SET scores = CASE WHEN s.value IS NULL THEN e.scores - %(key)s::text
+                      ELSE e.scores || jsonb_build_object(%(key)s::text, s.value) END
     FROM (
 """
 

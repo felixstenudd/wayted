@@ -1,11 +1,13 @@
 """Score claimed edges, one key of graph.edges.scores per attribute."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
+from psycopg.types.json import Jsonb
 
 from . import queries
 from .layers import FeatureLayer
@@ -70,6 +72,25 @@ PROXIMITY = """
     GROUP BY s.id
 """
 
+# From the edge's own way: its surface when known, else a guess from the highway, for tracks
+# from the tracktype. NULL when neither is known.
+SURFACE = """
+    SELECT c.id AS edge_id,
+           coalesce(
+               (%(surfaces)s::jsonb ->> (w.tags ->> 'surface'))::float,
+               CASE WHEN w.tags ->> 'highway' = 'track'
+                    THEN coalesce(
+                        (%(tracktypes)s::jsonb ->> (w.tags ->> 'tracktype'))::float,
+                        %(track_default)s
+                    )
+                    ELSE (%(highways)s::jsonb ->> (w.tags ->> 'highway'))::float
+               END
+           ) AS value
+    FROM claimed_edges c
+    JOIN graph.edges e USING (id)
+    JOIN graph.ways w ON w.id = e.way_id
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class Attribute(ABC):
@@ -122,3 +143,23 @@ class Proximity(Attribute):
     @property
     def reach_m(self) -> float:
         return self.radius_m
+
+
+@dataclass(frozen=True, slots=True)
+class SurfaceScore(Attribute):
+    surfaces: Mapping[str, float]
+    highways: Mapping[str, float]
+    tracktypes: Mapping[str, float]
+    track_default: float
+
+    def score_query(self) -> tuple[str, dict[str, Any]]:
+        return SURFACE, {
+            "surfaces": Jsonb(dict(self.surfaces)),
+            "highways": Jsonb(dict(self.highways)),
+            "tracktypes": Jsonb(dict(self.tracktypes)),
+            "track_default": self.track_default,
+        }
+
+    @property
+    def reach_m(self) -> float:
+        return 0

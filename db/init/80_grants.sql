@@ -18,12 +18,14 @@ GRANT SELECT ON ALL TABLES IN SCHEMA ref, raw TO wayted_mapper;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA graph TO wayted_mapper;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA graph TO wayted_mapper;
 
--- wayted_enricher: reads ref and raw, builds enrich, writes only scores and the edge queue in graph.
+-- wayted_enricher: reads ref, raw and way tags, builds enrich, writes only scores and the edge
+-- queue in graph.
 GRANT USAGE ON SCHEMA ref, raw, graph, enrich TO wayted_enricher;
 GRANT SELECT ON ALL TABLES IN SCHEMA ref, raw TO wayted_enricher;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA enrich TO wayted_enricher;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA enrich TO wayted_enricher;
 GRANT SELECT, UPDATE (scores) ON graph.edges TO wayted_enricher;
+GRANT SELECT ON graph.ways TO wayted_enricher;
 GRANT SELECT, INSERT, DELETE ON graph.pending_edges TO wayted_enricher;
 GRANT USAGE ON SEQUENCE graph.pending_edges_id_seq TO wayted_enricher;
 
