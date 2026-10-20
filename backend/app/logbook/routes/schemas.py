@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
+from app.logbook.route_reviews.schemas import RouteReviewOut
 from app.routing.attributes import KEYS
 
 type Activity = Literal["running", "cycling"]
@@ -79,5 +80,6 @@ class RouteOut(BaseModel):
     scores: dict[str, AttributeScoreOut]
     geometry: LineString
     edges: list[RouteEdgeOut]
+    review: RouteReviewOut | None
     created_at: datetime
     updated_at: datetime

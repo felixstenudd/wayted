@@ -1,5 +1,7 @@
 """SQL for saved routes. %(edge_ids)s and %(forward)s are parallel arrays in route order."""
 
+from app.logbook.route_reviews.queries import REVIEW_OF_ROUTE
+
 _STEPS = """
     SELECT s.seq - 1 AS seq, s.edge_id, s.forward
     FROM unnest(%(edge_ids)s::bigint[], %(forward)s::boolean[]) WITH ORDINALITY
@@ -67,7 +69,7 @@ CREATE_ROUTE = f"""
     SELECT id FROM route
 """
 
-GET_ROUTE = """
+GET_ROUTE = f"""
     SELECT r.id, r.name, r.activity, r.shape, r.target_distance_m, r.preferences, r.distance_m,
            r.scores, ST_AsGeoJSON(r.geom, 6)::jsonb AS geometry,
            (SELECT coalesce(jsonb_agg(jsonb_build_object(
@@ -75,6 +77,7 @@ GET_ROUTE = """
                     ORDER BY e.seq), '[]')
             FROM app.route_edges e
             WHERE e.route_id = r.id) AS edges,
+           {REVIEW_OF_ROUTE} AS review,
            r.created_at, r.updated_at
     FROM app.routes r
     WHERE r.id = %(route_id)s AND r.user_id = %(user_id)s
