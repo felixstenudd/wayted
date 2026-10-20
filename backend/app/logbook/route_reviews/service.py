@@ -4,6 +4,7 @@ from uuid import UUID
 
 from psycopg import AsyncConnection
 
+from app.logbook.preferences.service import lock_weights
 from app.routing.attributes import ROUTE_ATTRIBUTES
 
 from . import queries
@@ -68,7 +69,8 @@ async def _nudge_weights(
 ) -> list[PreferenceChangeOut]:
     if not steps:
         return []
-    cur = await conn.execute(queries.LOCK_WEIGHTS, {"user_id": user_id, "attributes": list(steps)})
+    await lock_weights(user_id, conn)
+    cur = await conn.execute(queries.GET_WEIGHTS, {"user_id": user_id, "attributes": list(steps)})
     weights: dict[str, Decimal] = dict(await cur.fetchall())
     nudged = {key: nudge(weights.get(key, Decimal(0)), step) for key, step in steps.items()}
 

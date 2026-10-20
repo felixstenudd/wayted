@@ -1,16 +1,24 @@
+from collections.abc import Awaitable, Callable
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
 from psycopg import AsyncConnection
+from psycopg.errors import LockNotAvailable
 from psycopg.rows import TupleRow
+from psycopg_pool import AsyncConnectionPool
 
-from app.logbook.route_reviews.service import nudge
+from app.logbook.preferences.service import save_preferences
+from app.logbook.route_reviews.schemas import RouteReviewIn
+from app.logbook.route_reviews.service import nudge, save_review
 
 from .app_data import add_edges
 
 type Conn = AsyncConnection[TupleRow]
+type Pool = AsyncConnectionPool[Conn]
+type WeightWrite = Callable[[UUID, int, Conn], Awaitable[object]]
 
 
 @pytest.mark.parametrize(
@@ -135,3 +143,39 @@ async def test_routes_you_do_not_have_cannot_be_reviewed(client: httpx.AsyncClie
     response = await client.put("/logbook/routes/999/review", json={"answers": {"green": 1}})
 
     assert response.status_code == 404
+
+
+async def review_green_up(user_id: UUID, route_id: int, conn: Conn) -> object:
+    return await save_review(user_id, route_id, RouteReviewIn(answers={"green": 1}), conn)
+
+
+async def save_green_defaults(user_id: UUID, route_id: int, conn: Conn) -> object:
+    return await save_preferences(user_id, {"green": 0.5}, conn)
+
+
+@pytest.mark.db
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [(review_green_up, save_green_defaults), (save_green_defaults, review_green_up)],
+    ids=["defaults wait for a review", "a review waits for the defaults"],
+)
+async def test_writes_to_the_weights_wait_for_each_other(
+    client: httpx.AsyncClient,
+    app_conn: Conn,
+    api_pool: Pool,
+    user_id: UUID,
+    first: WeightWrite,
+    second: WeightWrite,
+) -> None:
+    route_id = int((await saved_route(client, app_conn)).rsplit("/", 1)[1])
+
+    async with (
+        api_pool.connection() as holding,
+        api_pool.connection() as waiting,
+        holding.transaction(force_rollback=True),
+    ):
+        await first(user_id, route_id, holding)
+        with pytest.raises(LockNotAvailable):
+            async with waiting.transaction():
+                await waiting.execute("SET LOCAL lock_timeout = '200ms'")
+                await second(user_id, route_id, waiting)

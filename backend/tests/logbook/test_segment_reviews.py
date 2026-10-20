@@ -109,8 +109,18 @@ async def test_an_edge_run_twice_is_reviewed_once(
         {"from_seq": 0, "to_seq": 0, "reasons": []},
         {"from_seq": 0, "to_seq": 0, "reasons": ["lava_bad"]},
         {"from_seq": 0, "to_seq": 0, "reasons": ["green_bad", "green_good"]},
+        {"from_seq": 0, "to_seq": 0, "reasons": ["green\x00bad"]},
+        {"from_seq": 0, "to_seq": 0, "reasons": ["green_bad"], "comment": "Too\x00grey"},
     ],
-    ids=["past the end", "backwards", "no reason", "unknown reason", "both sides of a topic"],
+    ids=[
+        "past the end",
+        "backwards",
+        "no reason",
+        "unknown reason",
+        "both sides of a topic",
+        "NUL in a reason",
+        "NUL in the comment",
+    ],
 )
 async def test_stretch_reviews_that_do_not_fit_are_refused(
     client: httpx.AsyncClient, app_conn: Conn, body: dict[str, Any]

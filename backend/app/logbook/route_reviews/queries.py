@@ -15,8 +15,9 @@ REVIEW_OF_ROUTE = """
      WHERE v.route_id = r.id AND v.user_id = r.user_id)
 """
 
+# Keeps the route from being deleted before the review is in.
 OWNS_ROUTE = """
-    SELECT 1 FROM app.routes WHERE id = %(route_id)s AND user_id = %(user_id)s
+    SELECT 1 FROM app.routes WHERE id = %(route_id)s AND user_id = %(user_id)s FOR KEY SHARE
 """
 
 GET_REVIEW = f"""
@@ -45,10 +46,9 @@ INSERT_ANSWERS = """
     FROM unnest(%(attributes)s::text[], %(answers)s::smallint[]) AS a (attribute, answer)
 """
 
-LOCK_WEIGHTS = """
+GET_WEIGHTS = """
     SELECT attribute, weight FROM app.user_preferences
     WHERE user_id = %(user_id)s AND attribute = ANY (%(attributes)s)
-    FOR UPDATE
 """
 
 UPSERT_WEIGHTS = """

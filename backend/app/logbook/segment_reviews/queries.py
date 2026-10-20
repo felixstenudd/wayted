@@ -13,6 +13,9 @@ ROUTE_EDGE_COUNT = """
     WHERE r.id = %(route_id)s AND r.user_id = %(user_id)s
 """
 
+# Also keeps the route from being deleted before the review is in.
+LOCK_ROUTE_EDGE_COUNT = f"{ROUTE_EDGE_COUNT}    FOR KEY SHARE OF r\n"
+
 # The stretch is cut from the route's own line: from where edge from_seq starts (the end of the
 # edge before it) to where edge to_seq ends.
 CREATE_REVIEW = """

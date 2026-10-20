@@ -4,13 +4,16 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 
 from app.logbook.route_reviews.schemas import RouteReviewOut
+from app.logbook.text import NO_NUL
 from app.routing.attributes import KEYS
 
 type Activity = Literal["running", "cycling"]
 type Shape = Literal["loop", "point_to_point"]
 type Position = tuple[float, float]
 
-Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+Name = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80, pattern=NO_NUL)
+]
 Weight = Annotated[float, Field(ge=-1, le=1)]
 
 
@@ -27,7 +30,8 @@ class LineString(BaseModel):
 
 
 class EdgeStepIn(BaseModel):
-    edge_id: int
+    # within bigint, the graph's id type
+    edge_id: int = Field(ge=-(2**63), le=2**63 - 1)
     # whether the route runs from the edge's source to its target
     forward: bool
 

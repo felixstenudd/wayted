@@ -28,8 +28,9 @@ GRANT SELECT, UPDATE (scores, feedback) ON graph.edges TO wayted_enricher;
 GRANT SELECT ON graph.ways TO wayted_enricher;
 GRANT SELECT, INSERT, DELETE ON graph.pending_edges TO wayted_enricher;
 GRANT USAGE ON SEQUENCE graph.pending_edges_id_seq TO wayted_enricher;
-GRANT SELECT ON app.segment_reviews, app.segment_review_edges, app.segment_review_reasons
-    TO wayted_enricher;
+-- Only what counting needs: not the comments or where people went.
+GRANT SELECT (id, user_id, activity, updated_at) ON app.segment_reviews TO wayted_enricher;
+GRANT SELECT ON app.segment_review_edges, app.segment_review_reasons TO wayted_enricher;
 
 -- wayted_api: reads ref and graph (including through pgRouting), owns the app data.
 GRANT USAGE ON SCHEMA ref, graph, app TO wayted_api;

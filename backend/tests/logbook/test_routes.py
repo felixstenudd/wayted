@@ -140,6 +140,21 @@ async def test_unknown_attributes_in_preferences_are_refused(
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "overrides",
+    [{"name": "Morning\x00loop"}, {"edges": [{"edge_id": 2**63, "forward": True}]}],
+    ids=["NUL in the name", "edge id past bigint"],
+)
+async def test_input_the_database_cannot_hold_is_refused(
+    client: httpx.AsyncClient, app_conn: Conn, overrides: dict[str, Any]
+) -> None:
+    a, _, _ = await add_network(app_conn)
+
+    response = await client.post("/logbook/routes", json=route([(a, True)]) | overrides)
+
+    assert response.status_code == 422
+
+
 async def test_the_list_has_only_your_routes_newest_first(
     client: httpx.AsyncClient, app_conn: Conn
 ) -> None:

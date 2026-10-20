@@ -4,9 +4,10 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from app.logbook.routes.schemas import Activity, LineString
+from app.logbook.text import Comment
 
-Comment = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
-Reasons = Annotated[list[str], Field(min_length=1)]
+ReasonCode = Annotated[str, StringConstraints(pattern=r"^[a-z_]{1,64}$")]
+Reasons = Annotated[list[ReasonCode], Field(min_length=1)]
 
 
 class ReasonOut(BaseModel):

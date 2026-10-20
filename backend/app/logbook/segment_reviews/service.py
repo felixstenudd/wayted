@@ -32,7 +32,7 @@ async def create_review(
 ) -> SegmentReviewOut:
     """Review a stretch of the user's route; the activity is the route's."""
     keys = {"user_id": user_id, "route_id": route_id}
-    row = await (await conn.execute(queries.ROUTE_EDGE_COUNT, keys)).fetchone()
+    row = await (await conn.execute(queries.LOCK_ROUTE_EDGE_COUNT, keys)).fetchone()
     if row is None:
         raise NotFound("Route not found.")
     if review.to_seq >= row[0]:

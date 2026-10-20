@@ -1,16 +1,15 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, StringConstraints
+from pydantic import AfterValidator, BaseModel
 
+from app.logbook.text import Comment
 from app.routing.attributes import ROUTE_ATTRIBUTES
 
 SCORED = frozenset(a.key for a in ROUTE_ATTRIBUTES if a.scored)
 
 # -1 wanted less, 0 about right, 1 wanted more
 type Answer = Literal[-1, 0, 1]
-
-Comment = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
 
 
 def _scored_keys(answers: dict[str, int]) -> dict[str, int]:
