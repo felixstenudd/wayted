@@ -95,3 +95,44 @@ MERGE_SCORES_TAIL = """
     ) s
     WHERE e.id = s.edge_id
 """
+
+# Users' segment reviews of the claimed edges as votes per activity and topic:
+# {activity: {topic: {"up": n, "down": n}}}. A user counts once per edge, activity and topic,
+# with the latest of their reviews that says something on that topic.
+COUNT_FEEDBACK = """
+    WITH votes AS (
+        SELECT DISTINCT ON (s.user_id, re.edge_id, s.activity, r.topic)
+               re.edge_id, s.activity, r.topic, r.sentiment
+        FROM claimed_edges c
+        JOIN app.segment_review_edges re ON re.edge_id = c.id
+        JOIN app.segment_reviews s ON s.id = re.review_id
+        JOIN app.segment_review_reasons sr ON sr.review_id = s.id
+        JOIN ref.review_reasons r ON r.code = sr.reason
+        ORDER BY s.user_id, re.edge_id, s.activity, r.topic, s.updated_at DESC, s.id DESC
+    ),
+    topics AS (
+        SELECT edge_id, activity, topic,
+               jsonb_build_object(
+                   'up', count(*) FILTER (WHERE sentiment = 1),
+                   'down', count(*) FILTER (WHERE sentiment = -1)
+               ) AS counts
+        FROM votes
+        GROUP BY edge_id, activity, topic
+    ),
+    activities AS (
+        SELECT edge_id, activity, jsonb_object_agg(topic, counts) AS topics
+        FROM topics
+        GROUP BY edge_id, activity
+    ),
+    counted AS (
+        SELECT c.id,
+               coalesce(jsonb_object_agg(a.activity, a.topics) FILTER (WHERE a.edge_id IS NOT NULL),
+                        '{}') AS feedback
+        FROM claimed_edges c
+        LEFT JOIN activities a ON a.edge_id = c.id
+        GROUP BY c.id
+    )
+    UPDATE graph.edges e SET feedback = counted.feedback
+    FROM counted
+    WHERE e.id = counted.id AND e.feedback IS DISTINCT FROM counted.feedback
+"""
