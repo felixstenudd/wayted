@@ -29,6 +29,8 @@ CREATE TABLE graph.edges (
     backward   text[]           NOT NULL,
     -- written by the enricher; '{}' until the edge is scored
     scores     jsonb            NOT NULL DEFAULT '{}',
+    -- users' segment reviews, counted by the enricher: {activity: {topic: {"up": n, "down": n}}}
+    feedback   jsonb            NOT NULL DEFAULT '{}',
     CONSTRAINT edges_natural_key UNIQUE (way_id, source, target, occurrence),
     CONSTRAINT edges_routable_check CHECK (cardinality(forward) + cardinality(backward) > 0)
 );

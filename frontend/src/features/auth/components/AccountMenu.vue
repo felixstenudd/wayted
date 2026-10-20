@@ -26,7 +26,6 @@ const initial = computed(() => Array.from(auth.user?.name.trim() ?? '')[0]?.toLo
 
 // Listed so people can see what is coming. They become links once their pages exist.
 const comingLater = [
-	{ key: 'savedRoutes', icon: Bookmark },
 	{ key: 'myReviews', icon: MessageSquare },
 	{ key: 'publicReviews', icon: UsersRound },
 	{ key: 'writeReview', icon: PenLine },
@@ -61,6 +60,12 @@ async function signOut(): Promise<void> {
 				<RouterLink :to="{ name: 'planner' }">
 					<Route />
 					{{ t('account.planRoute') }}
+				</RouterLink>
+			</DropdownMenuItem>
+			<DropdownMenuItem as-child>
+				<RouterLink :to="{ name: 'routes' }">
+					<Bookmark />
+					{{ t('account.savedRoutes') }}
 				</RouterLink>
 			</DropdownMenuItem>
 			<DropdownMenuSeparator />

@@ -13,7 +13,7 @@ from app.sources.tiles import Bounds
 # Seven decimals is what OSM stores.
 EDGES_IN_BOUNDS = """
     SELECT edge.id, edge.way_id, edge.source, edge.target, edge.length_m, edge.forward,
-           edge.backward, edge.scores, way.tags, ST_AsGeoJSON(edge.geom, 7)::jsonb
+           edge.backward, edge.scores, edge.feedback, way.tags, ST_AsGeoJSON(edge.geom, 7)::jsonb
     FROM graph.edges AS edge
     JOIN graph.ways AS way ON way.id = edge.way_id
     WHERE ST_Intersects(
@@ -41,6 +41,8 @@ class AreaEdge:
     forward: list[str]
     backward: list[str]
     scores: dict[str, Any]
+    # {activity: {topic: {"up": n, "down": n}}}
+    feedback: dict[str, Any]
     # of the edge's way
     tags: dict[str, str]
     # GeoJSON LineString

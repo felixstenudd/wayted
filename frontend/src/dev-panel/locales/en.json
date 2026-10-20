@@ -52,11 +52,20 @@
 		"empty": "No edges in this view. It may not be fetched yet.",
 		"counts": "{edges} edges, {vertices} vertices, {areas} areas and {lines} lines in the dashed box",
 		"scored": "{name}: {count} of {edges} edges have a value",
+		"voted": "Review votes, {activity}: {count} of {edges} edges have votes",
 		"colorBy": "Colour edges by",
 		"noScores": "No scores yet",
 		"oneColor": "One colour",
+		"votes": "Review votes",
+		"votesFor": "Votes, {activity}",
 		"fixedScale": "Fixed scale, the same in every view",
 		"viewScale": "Lowest and highest value in this view",
+		"feedbackScale": {
+			"bad": "all down",
+			"mixed": "mixed",
+			"good": "all up",
+			"how": "Up votes minus down votes over all topics, as a share of the edge's votes."
+		},
 		"selectEdge": "Select an edge, an area or a line on the map to see its details.",
 		"edge": {
 			"title": "Edge {id}",
@@ -70,6 +79,9 @@
 			"nobody": "nobody",
 			"scores": "Scores",
 			"noScores": "Not scored yet.",
+			"feedback": "Review votes",
+			"noFeedback": "No stretch reviews cover this edge.",
+			"votes": "{up} up, {down} down",
 			"tags": "Tags"
 		},
 		"area": {

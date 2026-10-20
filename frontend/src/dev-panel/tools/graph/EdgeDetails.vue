@@ -11,6 +11,14 @@ const props = defineProps<{
 const { t } = useI18n()
 
 const scores = computed(() => Object.entries(props.edge.scores))
+const feedback = computed(() =>
+	Object.entries(props.edge.feedback)
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([activity, topics]) => ({
+			activity,
+			topics: Object.entries(topics).sort(([a], [b]) => a.localeCompare(b)),
+		})),
+)
 const tags = computed(() => Object.entries(props.edge.tags).sort(([a], [b]) => a.localeCompare(b)))
 const list = (activities: string[]) => activities.join(', ') || t('graph.edge.nobody')
 </script>
@@ -43,6 +51,22 @@ const list = (activities: string[]) => activities.join(', ') || t('graph.edge.no
 					<dd>{{ value }}</dd>
 				</template>
 			</dl>
+		</div>
+
+		<div>
+			<h4 class="font-semibold">{{ t('graph.edge.feedback') }}</h4>
+			<p v-if="feedback.length === 0" class="text-graphite">
+				{{ t('graph.edge.noFeedback') }}
+			</p>
+			<template v-for="{ activity, topics } in feedback" :key="activity">
+				<h5 class="mt-1 text-graphite">{{ activity }}</h5>
+				<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+					<template v-for="[topic, votes] in topics" :key="topic">
+						<dt class="text-graphite">{{ topic }}</dt>
+						<dd>{{ t('graph.edge.votes', { up: votes.up, down: votes.down }) }}</dd>
+					</template>
+				</dl>
+			</template>
 		</div>
 
 		<div>

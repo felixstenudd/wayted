@@ -2,6 +2,7 @@ import httpx
 import pytest
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
+from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 from starlette.types import Message, Receive, Scope, Send
 
@@ -123,11 +124,26 @@ async def test_graph_returns_edges_and_their_vertices(
     assert properties["tags"] == {"highway": "residential", "name": "Main"}
     assert properties["forward"] == ["cycling", "running"]
     assert properties["scores"] == {}
+    assert properties["feedback"] == {}
     assert properties["length_m"] == pytest.approx(113.7, abs=0.5)
     assert [(v["properties"]["id"], v["geometry"]) for v in body["vertices"]["features"]] == [
         (1, {"type": "Point", "coordinates": [18.0, 59.3]}),
         (2, {"type": "Point", "coordinates": [18.002, 59.3]}),
     ]
+
+
+async def test_graph_edges_carry_their_review_votes(
+    client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    await add_line(admin_conn, 10, [(1, 0, 0), (2, 2, 0)], {"highway": "residential"})
+    await map_pending(mapper_pool.connection)
+    feedback = {"running": {"green": {"up": 2, "down": 1}}}
+    await admin_conn.execute("UPDATE graph.edges SET feedback = %s", (Jsonb(feedback),))
+
+    response = await client.get("/graph", params=GRID)
+
+    [edge] = response.json()["edges"]["features"]
+    assert edge["properties"]["feedback"] == feedback
 
 
 async def test_graph_of_an_empty_area_is_two_empty_collections(client: httpx.AsyncClient) -> None:

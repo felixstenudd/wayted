@@ -236,6 +236,12 @@ export interface components {
             scores: {
                 [key: string]: unknown;
             };
+            /** Feedback */
+            feedback: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["VotesOut"];
+                };
+            };
             /** Tags */
             tags: {
                 [key: string]: string;
@@ -532,6 +538,13 @@ export interface components {
         VertexOut: {
             /** Id */
             id: number;
+        };
+        /** VotesOut */
+        VotesOut: {
+            /** Up */
+            up: number;
+            /** Down */
+            down: number;
         };
     };
     responses: never;

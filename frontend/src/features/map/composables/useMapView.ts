@@ -14,7 +14,7 @@ export function useMapView(): {
 	center: () => LonLat | null
 	showPoint: (at: LonLat) => void
 } {
-	const { map } = useMapContext()
+	const { map, coveredPx } = useMapContext()
 	const bounds = ref<Bounds | null>(null)
 
 	const read = () => {
@@ -36,13 +36,22 @@ export function useMapView(): {
 		(ready) => ready.off('moveend', read),
 	)
 
+	/** Fits the bounds into the part of the map that panels and sheets leave in view. */
 	const showBounds = ({ west, south, east, north }: Bounds) => {
+		const covered = coveredPx.value
 		map.value?.fitBounds(
 			[
 				[west, south],
 				[east, north],
 			],
-			{ padding: PADDING_PX },
+			{
+				padding: {
+					top: PADDING_PX,
+					right: PADDING_PX,
+					bottom: PADDING_PX + covered.bottom,
+					left: PADDING_PX + covered.left,
+				},
+			},
 		)
 	}
 
