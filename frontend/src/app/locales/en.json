@@ -130,6 +130,32 @@
 				"niceToHave": "Nice to have",
 				"prefer": "Prefer"
 			},
+			"weightWords": {
+				"green": {
+					"avoid": "Avoid parks",
+					"ratherNot": "Fewer parks",
+					"niceToHave": "Some parks",
+					"prefer": "Through parks"
+				},
+				"nature": {
+					"avoid": "Avoid nature",
+					"ratherNot": "Less nature",
+					"niceToHave": "Some nature",
+					"prefer": "Out in nature"
+				},
+				"water": {
+					"avoid": "Away from water",
+					"ratherNot": "Less water",
+					"niceToHave": "Some water",
+					"prefer": "Along water"
+				},
+				"prepared": {
+					"avoid": "Rough paths",
+					"ratherNot": "Mostly rough",
+					"niceToHave": "Mostly prepared",
+					"prefer": "Prepared only"
+				}
+			},
 			"groups": {
 				"surroundings": "Surroundings",
 				"streets": "Streets",
@@ -143,8 +169,7 @@
 				"quiet_streets": "Quiet streets",
 				"sights": "Places to see",
 				"bridges": "Bridges",
-				"asphalt": "Asphalt",
-				"gravel": "Gravel"
+				"prepared": "Prepared"
 			}
 		},
 		"findRoutes": {
