@@ -82,6 +82,11 @@ const navItems = computed(() => [
 
 // Picking a stretch needs the map, so the sheet steps down; saying what it was like needs the sheet.
 const savedRoutes = useSavedRoutesStore()
+const isPickingStretch = computed(
+	() => savedRoutes.isPickingStretch && savedRoutes.stretchStage === 'pick',
+)
+// The lowest stop holds the picker's instruction and its way on while the map is tapped.
+const peekRem = computed(() => (isPickingStretch.value ? 18 : 13))
 watch(
 	() => (savedRoutes.isPickingStretch ? savedRoutes.stretchStage : null),
 	(stage) => {
@@ -119,7 +124,7 @@ provideMap()
 			:label="t(parts.titleKey)"
 			:expand-label="t('planner.sheet.expand')"
 			:collapse-label="t('planner.sheet.collapse')"
-			:peek-rem="13"
+			:peek-rem="peekRem"
 			@height="sheetHeightPx = $event"
 		>
 			<template #header>

@@ -82,4 +82,22 @@ describe('useStretchPick', () => {
 		pick.setTo(0)
 		expect(pick.stretch.value).toEqual({ from: 2, to: 3 })
 	})
+
+	it('lets the sliders pick a stretch without the map', () => {
+		const { pick } = setup()
+		expect(pick.sliders.value).toEqual({ from: 0, to: 4 })
+
+		pick.setFrom(1)
+		expect(pick.stretch.value).toEqual({ from: 1, to: 4 })
+		pick.setTo(2)
+		expect(pick.stretch.value).toEqual({ from: 1, to: 2 })
+	})
+
+	it('keeps a start placed on the map when a slider moves the end', () => {
+		const { pick } = setup()
+		pick.placeAt(junction(2))
+
+		pick.setTo(3)
+		expect(pick.stretch.value).toEqual({ from: 2, to: 3 })
+	})
 })

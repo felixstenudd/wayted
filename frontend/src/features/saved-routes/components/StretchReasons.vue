@@ -102,7 +102,7 @@ async function submit(): Promise<void> {
 				<ChevronLeft class="size-4" aria-hidden="true" />
 				{{ t('savedRoutes.stretch.change') }}
 			</button>
-			<h1 :id="headingId" class="text-heading">
+			<h1 :id="headingId" tabindex="-1" class="text-heading outline-none">
 				{{ t('savedRoutes.stretch.reasonsTitle') }}
 			</h1>
 			<p class="text-small text-graphite">{{ where }}</p>

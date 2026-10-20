@@ -328,14 +328,14 @@
 			"start": "Review a stretch",
 			"title": "Review a stretch",
 			"click": {
-				"start": "Click where the stretch starts.",
-				"end": "Click where the stretch ends."
+				"start": "Click where the stretch starts, or use the sliders.",
+				"end": "Click where the stretch ends, or use the sliders."
 			},
 			"tap": {
-				"start": "Tap where the stretch starts.",
-				"end": "Tap where the stretch ends."
+				"start": "Tap where the stretch starts, or use the sliders.",
+				"end": "Tap where the stretch ends, or use the sliders."
 			},
-			"adjust": "Drag the ends on the map, or use the sliders, to adjust.",
+			"adjust": "Drag the ends on the map, or use the sliders.",
 			"length": "{km} km stretch",
 			"from": "Starts at",
 			"to": "Ends at",

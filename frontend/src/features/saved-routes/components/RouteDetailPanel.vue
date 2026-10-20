@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronLeft, CircleAlert, Ellipsis, PenLine, Trash2 } from '@lucide/vue'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
@@ -61,6 +61,16 @@ watch(
 )
 // Picking belongs to this route's page; leaving it ends the picking.
 onBeforeUnmount(() => store.stopPickingStretch())
+// Each view replaces the one whose button had focus. Focus moves to the new view's heading, so
+// keyboard and screen reader users carry on from there rather than from the top of the page.
+const view = computed(() => {
+	if (store.isPickingStretch) return store.stretchStage
+	return isReviewing.value ? 'review' : 'route'
+})
+watch(view, async () => {
+	await nextTick()
+	document.getElementById(HEADING_ID)?.focus()
+})
 // A review answers attributes the route has scores for; without any there is nothing to ask.
 const canReview = computed(() => Object.keys(route.value?.scores ?? {}).length > 0)
 

@@ -92,8 +92,9 @@ watch(
 </script>
 
 <template>
+	<!-- Earlier marks stay in sight while a stretch is picked, so an overlap shows before Next. -->
+	<ReviewedStretches :route-id="routeId" :dimmed="store.isPickingStretch" />
 	<StretchLayers v-if="store.isPickingStretch" :route-id="routeId" />
-	<ReviewedStretches v-else :route-id="routeId" />
 	<MapMarker
 		v-for="(chevron, index) in chevrons"
 		:key="`${routeId}-${index}`"

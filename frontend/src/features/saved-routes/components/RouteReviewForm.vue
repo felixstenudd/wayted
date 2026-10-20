@@ -76,7 +76,7 @@ async function submit(): Promise<void> {
 <template>
 	<form class="flex flex-col gap-5" @submit.prevent="submit">
 		<div class="flex flex-col gap-1">
-			<h1 :id="headingId" class="text-heading">
+			<h1 :id="headingId" tabindex="-1" class="text-heading outline-none">
 				{{ isEditing ? t('savedRoutes.review.editTitle') : t('savedRoutes.review.title') }}
 			</h1>
 			<p class="text-small text-graphite">

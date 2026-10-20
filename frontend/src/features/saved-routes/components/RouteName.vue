@@ -54,7 +54,9 @@ async function save(): Promise<void> {
 
 <template>
 	<div v-if="!isEditing" class="flex items-start gap-1">
-		<h1 :id="headingId" class="min-w-0 text-heading wrap-break-word">{{ route.name }}</h1>
+		<h1 :id="headingId" tabindex="-1" class="min-w-0 text-heading wrap-break-word outline-none">
+			{{ route.name }}
+		</h1>
 		<Button
 			variant="ghost"
 			size="icon"

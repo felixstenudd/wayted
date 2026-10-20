@@ -11,7 +11,11 @@ import { voteCounts } from '../reasons'
 import { useSavedRoutesStore } from '../store'
 import { pointAlong } from '../stretch'
 
-const props = defineProps<{ routeId: number }>()
+const props = defineProps<{
+	routeId: number
+	/** Stepped back behind a stretch being picked; the pills would be in the way of taps. */
+	dimmed: boolean
+}>()
 
 const NO_REVIEW = -1
 
@@ -59,10 +63,16 @@ useMapPaint('saved-route-reviews', 'line-width', (): ExpressionSpecification => 
 	4,
 	2,
 ])
+useMapPaint('saved-route-reviews', 'line-opacity', () => (props.dimmed ? 0.35 : 1))
 </script>
 
 <template>
-	<MapMarker v-for="pill in pills" :key="pill.id" :lon-lat="pill.at" :label="pill.label">
+	<MapMarker
+		v-for="pill in dimmed ? [] : pills"
+		:key="pill.id"
+		:lon-lat="pill.at"
+		:label="pill.label"
+	>
 		<span
 			class="flex items-center gap-1 rounded-full border border-line bg-paper px-1.5 py-0.5 text-caption font-semibold text-ink shadow-float"
 			:class="{ 'border-ink': store.highlightedReviewId === pill.id }"

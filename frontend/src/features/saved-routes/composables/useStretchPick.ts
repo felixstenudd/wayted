@@ -28,6 +28,14 @@ export function useStretchPick(routeId: MaybeRefOrGetter<number>) {
 		if (!ends || ends.start === null || ends.end === null) return null
 		return orderedStretch(ends.start, ends.end, all.value.length)
 	})
+	// What the sliders show: the stretch, or before one exists, the start so far up to the
+	// route's end. Moving a slider makes it the stretch, so the map is not needed to pick one.
+	const sliders = computed(() => {
+		if (stretch.value) return stretch.value
+		const last = Math.max(all.value.length - 1, 1)
+		const from = Math.min(store.stretchEnds?.start ?? 0, last - 1)
+		return { from, to: last }
+	})
 	const line = computed(() =>
 		stretch.value ? stretchLine(coordinates.value, all.value, stretch.value) : [],
 	)
@@ -84,16 +92,19 @@ export function useStretchPick(routeId: MaybeRefOrGetter<number>) {
 
 	/** From the sliders: an end moves, and never past the other. */
 	function setFrom(index: number): void {
-		if (stretch.value) setEnds(Math.min(index, stretch.value.to - 1), stretch.value.to)
+		const { to } = sliders.value
+		setEnds(Math.min(index, to - 1), to)
 	}
 
 	function setTo(index: number): void {
-		if (stretch.value) setEnds(stretch.value.from, Math.max(index, stretch.value.from + 1))
+		const { from } = sliders.value
+		setEnds(from, Math.max(index, from + 1))
 	}
 
 	return {
 		step,
 		stretch,
+		sliders,
 		junctions: all,
 		line,
 		lengthM,
