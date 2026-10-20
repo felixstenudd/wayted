@@ -182,6 +182,11 @@ async def test_enricher_may_update_only_scores(admin_conn: Conn, enricher_pool: 
             await conn.execute("UPDATE graph.edges SET length_m = 0")
 
 
+async def test_enricher_reads_graph_ways(enricher_pool: Pool) -> None:
+    async with enricher_pool.connection() as conn:
+        await conn.execute("SELECT tags FROM graph.ways")
+
+
 async def test_enricher_cannot_write_raw_or_the_graph_tables(enricher_pool: Pool) -> None:
     for statement in (
         "DELETE FROM raw.osm_ways",
