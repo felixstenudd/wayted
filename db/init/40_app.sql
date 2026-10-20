@@ -96,6 +96,9 @@ CREATE TABLE app.segment_reviews (
     -- kept when the route is deleted: the review is about the road
     route_id   bigint REFERENCES app.routes (id) ON DELETE SET NULL,
     activity   text   NOT NULL REFERENCES ref.activities (code),
+    -- where on the route the stretch is, as route_edges seq
+    from_seq   integer CHECK (from_seq >= 0),
+    to_seq     integer CHECK (to_seq >= from_seq),
     -- the stretch as reviewed
     geom       geometry(LineString, 4326) NOT NULL,
     comment    text   CHECK (char_length(comment) BETWEEN 1 AND 500),

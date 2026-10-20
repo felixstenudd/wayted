@@ -21,8 +21,8 @@ STEPS = f"""
     ORDER BY st.seq
 """
 
-# ST_MakeLine drops the point where one edge ends and the next begins, so an edge adds its point
-# count minus one.
+# Every edge after the first leaves out its first point, where the edge before ends, so an edge
+# adds its point count minus one.
 CREATE_ROUTE = f"""
     WITH steps AS ({_STEPS}),
     legs AS (
@@ -30,6 +30,12 @@ CREATE_ROUTE = f"""
                CASE WHEN st.forward THEN e.geom ELSE ST_Reverse(e.geom) END AS geom
         FROM steps st
         JOIN graph.edges e ON e.id = st.edge_id
+    ),
+    points AS (
+        SELECT l.seq, p.path[1] AS n, p.geom
+        FROM legs l
+        CROSS JOIN LATERAL ST_DumpPoints(l.geom) p
+        WHERE l.seq = 0 OR p.path[1] > 1
     ),
     total AS (
         SELECT sum(length_m) AS length_m FROM legs
@@ -47,7 +53,7 @@ CREATE_ROUTE = f"""
         )
         SELECT %(user_id)s, %(name)s, %(activity)s, %(shape)s, %(target_distance_m)s,
                %(preferences)s,
-               (SELECT ST_MakeLine(geom ORDER BY seq) FROM legs),
+               (SELECT ST_MakeLine(array_agg(geom ORDER BY seq, n)) FROM points),
                total.length_m,
                coalesce(
                    (SELECT jsonb_object_agg(s.key, jsonb_build_object(
