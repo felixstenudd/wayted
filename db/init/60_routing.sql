@@ -482,7 +482,7 @@ $$;
 -- The edges of the route through p_vias in travel order, with the vertex each is entered from.
 -- Legs are routed one after another, each with the edges before it in p_used, so the reuse
 -- penalty keeps a leg off the streets the route has already taken where it can.
--- Raises no_data_found when a leg cannot be travelled.
+-- Raises no_data_found (detail unreachable) when a leg cannot be travelled.
 CREATE FUNCTION routing.route_edges(
     p_profile routing.profile, p_area geometry, p_vias bigint[]
 ) RETURNS TABLE (step integer, vertex bigint, edge_id bigint)
@@ -501,7 +501,7 @@ BEGIN
         WHERE d.edge <> -1;
         IF v_edges IS NULL THEN
             RAISE EXCEPTION 'no path from vertex % to %', p_vias[i], p_vias[i + 1]
-                USING ERRCODE = 'no_data_found';
+                USING ERRCODE = 'no_data_found', DETAIL = 'unreachable';
         END IF;
         RETURN QUERY
             SELECT v_step + u.n::integer, u.node, u.edge
@@ -564,8 +564,10 @@ $$;
 -- Candidates are generated and scored in bulk; if the best misses the tolerance, the goal is
 -- scaled by how much it missed and candidates are tried once more. Warnings: too_short (the
 -- finish is farther than the target), target_missed (no candidate came within tolerance).
--- Raises invalid_parameter_value for bad input and no_data_found when there is no road near a
--- point or no way between them.
+-- Raises invalid_parameter_value for bad input, and no_data_found when there is no route; its
+-- detail says why, for the API to pass on: start_off_road or finish_off_road (no road within
+-- snap_m), unreachable (no way from the start to the finish) or no_loop (too few roads around
+-- the start to come back by another way).
 CREATE FUNCTION routing.plan_route(
     p_activity text,
     p_start    geometry,
@@ -613,14 +615,16 @@ BEGIN
     v_area := routing.search_area(p_start, p_finish, p_target_m);
     v_start := routing.snap(p_activity, p_start, v_snap_m);
     IF v_start IS NULL THEN
-        RAISE EXCEPTION 'no road near the start' USING ERRCODE = 'no_data_found';
+        RAISE EXCEPTION 'no road near the start'
+            USING ERRCODE = 'no_data_found', DETAIL = 'start_off_road';
     END IF;
     v_finish := CASE
         WHEN p_finish IS NULL THEN v_start
         ELSE routing.snap(p_activity, p_finish, v_snap_m)
     END;
     IF v_finish IS NULL THEN
-        RAISE EXCEPTION 'no road near the finish' USING ERRCODE = 'no_data_found';
+        RAISE EXCEPTION 'no road near the finish'
+            USING ERRCODE = 'no_data_found', DETAIL = 'finish_off_road';
     END IF;
 
     v_goal_m := p_target_m;
@@ -652,10 +656,12 @@ BEGIN
     END LOOP;
 
     IF v_best.vias IS NULL THEN
-        RAISE EXCEPTION '%', CASE
-            WHEN v_start = v_finish THEN 'too few roads around the start for a loop'
-            ELSE 'the finish cannot be reached from the start'
-        END USING ERRCODE = 'no_data_found';
+        IF v_start = v_finish THEN
+            RAISE EXCEPTION 'too few roads around the start for a loop'
+                USING ERRCODE = 'no_data_found', DETAIL = 'no_loop';
+        END IF;
+        RAISE EXCEPTION 'the finish cannot be reached from the start'
+            USING ERRCODE = 'no_data_found', DETAIL = 'unreachable';
     END IF;
     IF abs(v_best.length_m - p_target_m) > v_tolerance * p_target_m THEN
         v_warnings := v_warnings || CASE

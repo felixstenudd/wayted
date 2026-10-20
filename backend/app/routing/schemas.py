@@ -2,7 +2,10 @@ from typing import Annotated, Literal, Self
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
+from app.geojson import Feature, LineString
+
 from .attributes import KEYS, Group
+from .service import Reason, RouteWarning
 
 
 class AttributeOut(BaseModel):
@@ -42,3 +45,29 @@ class RouteRequestIn(BaseModel):
         if self.shape == "point_to_point" and self.finish is None:
             raise ValueError("a point to point route needs a finish")
         return self
+
+
+class RoutePropertiesOut(BaseModel):
+    length_m: float
+    # attribute key -> length-weighted share of the route, 0..1, for the attributes that are scored
+    scores: dict[str, float]
+    # length travelled more than once
+    reused_m: float
+    # too_short: the finish is farther than the target; target_missed: no route came close
+    warnings: list[RouteWarning]
+
+
+class RouteOut(Feature[LineString, RoutePropertiesOut]):
+    """The route as a GeoJSON Feature, its line in travel order."""
+
+
+class PreparingOut(BaseModel):
+    """The map data around the route is still being downloaded or scored; ask again shortly."""
+
+    status: Literal["preparing"] = "preparing"
+
+
+class NoRouteOut(BaseModel):
+    """Why no route was found."""
+
+    detail: Reason

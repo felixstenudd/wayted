@@ -15,20 +15,15 @@ from app.dev.schemas import (
     EdgeOut,
     EnricherPendingOut,
     ErrorOut,
-    Feature,
-    FeatureCollection,
     FetchedTileOut,
     GraphOut,
-    LineString,
     MapperPendingOut,
-    MultiPolygon,
     PendingOut,
-    Point,
-    Polygon,
     QueuedTileOut,
     VertexOut,
 )
 from app.enrichment.areas import areas_in_bounds
+from app.geojson import Feature, FeatureCollection, LineString, MultiPolygon, Point, Polygon
 from app.graph.area import AreaTooLarge, graph_in_bounds
 from app.sources.queue import queued_tiles, request_area
 from app.sources.registry import fetched_tiles

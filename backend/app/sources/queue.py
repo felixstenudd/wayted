@@ -112,6 +112,17 @@ SECONDS_UNTIL_DUE = """
     WHERE status = 'pending' AND layer = ANY(%(layers)s)
 """
 
+# Failed tiles are left out: request_area queues them again, so a caller that just requested the
+# area sees them pending.
+WAITING_IN_RECTANGLE = """
+    SELECT EXISTS (
+        SELECT FROM raw.pending_tiles
+        WHERE layer = %(layer)s AND z = %(z)s
+          AND x BETWEEN %(x_min)s AND %(x_max)s AND y BETWEEN %(y_min)s AND %(y_max)s
+          AND status IN ('pending', 'running')
+    )
+"""
+
 QUEUED_TILES = """
     SELECT layer, z, x, y, requested_at, status, attempts, next_attempt_at,
            last_status, last_message
@@ -160,6 +171,28 @@ async def request_area(
         reset = (await conn.execute(RESET_FAILED, params)).rowcount
         queued[layer] = reset + (await conn.execute(QUEUE_TILES, params)).rowcount
     return queued
+
+
+async def waiting_in_bounds(
+    conn: AsyncConnection[TupleRow], bounds: Bounds, layers: Sequence[str] = LAYER_CODES
+) -> bool:
+    """Whether any tile covering bounds waits to be fetched or is being fetched, for any layer."""
+    cur = await conn.execute(LAYER_ZOOMS, (list(layers),))
+    for layer, zoom in await cur.fetchall():
+        tiles = tiles_for_bounds(bounds, zoom)
+        params = {
+            "layer": layer,
+            "z": zoom,
+            "x_min": min(t.x for t in tiles),
+            "x_max": max(t.x for t in tiles),
+            "y_min": min(t.y for t in tiles),
+            "y_max": max(t.y for t in tiles),
+        }
+        row = await (await conn.execute(WAITING_IN_RECTANGLE, params)).fetchone()
+        assert row is not None
+        if row[0]:
+            return True
+    return False
 
 
 async def claim(

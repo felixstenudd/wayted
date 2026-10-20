@@ -1,8 +1,8 @@
 """
-Generates routes from a start point, an endpoint, optional via points,
-a target distance and user preferences. Builds a per-request cost from
-edge attributes, user weigths and feedback, then searches the graph with
-pgRouting
+Generates routes of a target length from a start point, back to it or to a finish, weighted by the
+user's preferences. The planning runs in the database (routing.plan_route in
+db/init/60_routing.sql, on pgRouting); this package only makes sure the map data is there and
+calls it.
 """
 
 from .router import router
