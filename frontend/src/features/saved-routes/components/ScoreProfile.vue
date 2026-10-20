@@ -73,18 +73,23 @@ const rows = computed(() =>
 					}}</span>
 					<span v-if="row.known" class="text-caption text-graphite">{{ row.known }}</span>
 				</div>
-				<div
-					class="relative h-2 flex-1 overflow-hidden rounded-full bg-line"
-					aria-hidden="true"
-				>
-					<span
-						class="absolute inset-y-0 left-0 rounded-full bg-ink"
-						:style="{ width: `${row.fillPercent}%` }"
-					/>
+				<div class="relative flex-1" aria-hidden="true">
+					<div class="relative h-2 overflow-hidden rounded-full bg-line">
+						<span
+							class="absolute inset-y-0 left-0 rounded-full bg-ink"
+							:style="{ width: `${row.fillPercent}%` }"
+						/>
+						<span
+							v-if="row.unknownPercent > 0"
+							class="unknown absolute inset-y-0 right-0"
+							:style="{ width: `${row.unknownPercent}%` }"
+						/>
+					</div>
+					<!-- Where the scored part ends: the word describes what is left of this tick. -->
 					<span
 						v-if="row.unknownPercent > 0"
-						class="unknown absolute inset-y-0 right-0"
-						:style="{ width: `${row.unknownPercent}%` }"
+						class="absolute -inset-y-1 w-0.5 -translate-x-1/2 bg-graphite"
+						:style="{ left: `${100 - row.unknownPercent}%` }"
 					/>
 				</div>
 				<span class="w-16 shrink-0 text-right text-small font-semibold">
