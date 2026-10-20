@@ -24,3 +24,20 @@ CREATE TABLE ref.activity_highways (
     highway  text NOT NULL,
     PRIMARY KEY (activity, highway)
 );
+
+-- Attributes a user can weight. Their order and whether they are scored live in
+-- app/routing/attributes.py; a test keeps the two in step.
+CREATE TABLE ref.attributes (
+    key text PRIMARY KEY CHECK (key ~ '^[a-z][a-z_]*$')
+);
+
+-- What a segment review can say about a stretch. Per topic only a user's latest review counts,
+-- so a good and a bad reason on the same topic replace each other.
+CREATE TABLE ref.review_reasons (
+    code      text     PRIMARY KEY CHECK (code ~ '^[a-z][a-z_]*$'),
+    topic     text     NOT NULL CHECK (topic ~ '^[a-z][a-z_]*$'),
+    sentiment smallint NOT NULL CHECK (sentiment IN (-1, 1)),
+    attribute text     REFERENCES ref.attributes (key),
+    CONSTRAINT review_reasons_topic_sentiment_key UNIQUE (topic, sentiment),
+    CONSTRAINT review_reasons_attribute_is_topic_check CHECK (attribute IS NULL OR attribute = topic)
+);
