@@ -350,6 +350,29 @@ async def test_doubled_counts_going_back_alongside_and_lobes_but_not_crossing(
     assert lobe == pytest.approx((4_250 - 1_000) / 2, rel=0.1)
 
 
+async def test_reused_edges_score_worse_than_missing_the_target_by_as_much(
+    api_pool: Pool,
+) -> None:
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT routing.score(1000, 1000, 1, 0, 0),
+                   routing.score(1000, 1100, 1, 0, 0),
+                   routing.score(1000, 1000, 1, 0, 100),
+                   routing.score(1000, 1000, 1, 100, 100)
+            """
+        )
+        row = await cur.fetchone()
+
+    assert row is not None
+    exact, long, reused, reused_far_along = row
+    assert exact == 0
+    # 10 % of the route reused costs three times as much as being 10 % too long, and twice that
+    # again when it is far enough along to count as doubled too.
+    assert reused == pytest.approx(3 * long)
+    assert reused_far_along == pytest.approx(5 * long)
+
+
 async def test_route_to_a_finish_does_not_set_off_behind_the_start(
     admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
 ) -> None:

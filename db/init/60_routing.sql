@@ -737,18 +737,23 @@ LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
 $$;
 
 -- How well a route of p_length_m fits, lower is better: the share by which it misses the target,
--- 0.3 per unit of length-weighted preference below 1, and twice the share that is doubled (see
--- routing.doubled_m), so that going out and back scores worse than missing the target by as much.
+-- 0.3 per unit of length-weighted preference below 1, twice the share that is doubled (see
+-- routing.doubled_m), so that going out and back scores worse than missing the target by as much,
+-- and three times more the share on edges travelled more than once (p_reused_m). Going back over
+-- the same edges is the worst of all, and short stretches of it, such as into a side street and
+-- out again, are too near along the route for routing.doubled_m to see.
 CREATE FUNCTION routing.score(
     p_target_m   double precision,
     p_length_m   double precision,
     p_preference double precision,
-    p_doubled_m  double precision
+    p_doubled_m  double precision,
+    p_reused_m   double precision
 ) RETURNS double precision
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT abs(p_length_m - p_target_m) / p_target_m
         + 0.3 * (1 - coalesce(p_preference, 0))
         + 2 * coalesce(p_doubled_m / nullif(p_length_m, 0), 0)
+        + 3 * coalesce(p_reused_m / nullif(p_length_m, 0), 0)
 $$;
 
 -- A candidate as pgRouting routes it: its length, length-weighted preference, length that is
@@ -948,7 +953,8 @@ LANGUAGE sql AS $$
             u.n,
             sum(e.length_m * u.times) AS length_m,
             sum(e.length_m * u.times * routing.preference(p_profile.weights, e.scores))
-                AS preferred_m
+                AS preferred_m,
+            sum(e.length_m * (u.times - 1)) AS reused_m
         FROM uses u JOIN graph.edges e ON e.id = u.edge
         GROUP BY u.n
     )
@@ -957,8 +963,9 @@ LANGUAGE sql AS $$
         t.length_m,
         t.preferred_m / nullif(t.length_m, 0),
         d.doubled_m,
-        routing.score(p_target_m, t.length_m, t.preferred_m / nullif(t.length_m, 0), d.doubled_m)
-            + CASE WHEN r.n IS NULL AND s.n IS NULL THEN 0 ELSE 1 END
+        routing.score(
+            p_target_m, t.length_m, t.preferred_m / nullif(t.length_m, 0), d.doubled_m, t.reused_m
+        ) + CASE WHEN r.n IS NULL AND s.n IS NULL THEN 0 ELSE 1 END
     )::routing.evaluation
     FROM totals t
     JOIN candidates c USING (n)
@@ -1214,7 +1221,8 @@ BEGIN
             p_target_m,
             v_length_m,
             routing.preference(v_profile.weights, v_routed -> 'scores'),
-            routing.doubled_m(ST_GeomFromGeoJSON(v_routed -> 'geometry'))
+            routing.doubled_m(ST_GeomFromGeoJSON(v_routed -> 'geometry')),
+            (v_routed ->> 'reused_m')::double precision
         );
         IF v_route IS NULL OR v_score < v_best_score THEN
             v_route := v_routed;
