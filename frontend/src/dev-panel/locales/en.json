@@ -50,14 +50,14 @@
 		"loading": "Loading edges and areas…",
 		"notLoaded": "Load the edges and areas of the current view.",
 		"empty": "No edges in this view. It may not be fetched yet.",
-		"counts": "{edges} edges, {vertices} vertices and {areas} areas in the dashed box",
+		"counts": "{edges} edges, {vertices} vertices, {areas} areas and {lines} lines in the dashed box",
 		"scored": "{name}: {count} of {edges} edges scored",
 		"colorBy": "Colour edges by",
 		"noScores": "No scores yet",
 		"oneColor": "One colour",
 		"fixedScale": "Fixed scale, the same in every view",
 		"viewScale": "Lowest and highest value in this view",
-		"selectEdge": "Select an edge or an area on the map to see its details.",
+		"selectEdge": "Select an edge, an area or a line on the map to see its details.",
 		"edge": {
 			"title": "Edge {id}",
 			"way": "Way",
@@ -80,11 +80,14 @@
 			"tags": "Tags"
 		},
 		"legend": {
-			"title": "Areas",
+			"title": "Layers",
 			"parks": "Parks",
 			"nature": "Nature",
+			"water": "Water",
+			"water_lines": "Rivers and coast",
 			"dotted": "dotted edge",
-			"solid": "solid edge"
+			"solid": "solid edge",
+			"line": "line"
 		}
 	},
 	"request": {

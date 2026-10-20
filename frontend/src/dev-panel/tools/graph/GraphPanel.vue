@@ -15,12 +15,14 @@ import EdgeDetails from './EdgeDetails.vue'
 import { colorScale, isFixedScale, scoredCount, scoreNames, scoreToken } from './edges'
 import { AREA_FILL_LAYER, useAreaLayers } from './useAreaLayers'
 import { EDGE_LAYER, useEdgeLayers } from './useEdgeLayers'
+import { LINE_LAYER, useLineLayers } from './useLineLayers'
 
 const { t } = useI18n()
 const { bounds: view } = useMapView()
 const { loaded, error, isFetching, load } = useGraph()
 const graph = computed(() => loaded.value?.graph)
 const areas = computed(() => loaded.value?.areas)
+const lines = computed(() => loaded.value?.lines)
 
 function loadView() {
 	if (view.value) load(view.value)
@@ -29,6 +31,7 @@ function loadView() {
 const edgeCount = computed(() => graph.value?.edges.features.length ?? 0)
 const vertexCount = computed(() => graph.value?.vertices.features.length ?? 0)
 const areaCount = computed(() => areas.value?.features.length ?? 0)
+const lineCount = computed(() => lines.value?.features.length ?? 0)
 
 const names = computed(() => (graph.value ? scoreNames(graph.value) : []))
 const colorBy = ref<string | null>(null)
@@ -51,8 +54,15 @@ const selected = computed(() =>
 	selectedId.value === null ? null : (edgesById.value.get(selectedId.value) ?? null),
 )
 const selectedAreaKey = ref<string | null>(null)
+// Lines share the areas' properties and keys, so one map finds either.
 const areasByKey = computed(
-	() => new Map(areas.value?.features.map((area) => [areaKey(area.properties), area.properties])),
+	() =>
+		new Map(
+			[...(areas.value?.features ?? []), ...(lines.value?.features ?? [])].map((feature) => [
+				areaKey(feature.properties),
+				feature.properties,
+			]),
+		),
 )
 const selectedArea = computed(() =>
 	selectedAreaKey.value === null ? null : (areasByKey.value.get(selectedAreaKey.value) ?? null),
@@ -65,13 +75,20 @@ watch(hiddenLayers, (hidden) => {
 		selectedAreaKey.value = null
 })
 
-// Areas first, so edges are drawn above them.
-const { layersInView } = useAreaLayers(areas, hiddenLayers, selectedAreaKey)
+// Areas first, then lines, so edges are drawn above both.
+const { layersInView: areaLayersInView } = useAreaLayers(areas, hiddenLayers, selectedAreaKey)
+const { layersInView: lineLayersInView } = useLineLayers(lines, hiddenLayers, selectedAreaKey)
+const layersInView = computed(() =>
+	[...new Set([...areaLayersInView.value, ...lineLayersInView.value])].sort(),
+)
 useEdgeLayers(() => loaded.value?.bounds, graph, colorBy, range, selectedId)
 // Edges are drawn above areas, so a click on an edge inside an area selects the edge.
-useMapClick([EDGE_LAYER, AREA_FILL_LAYER], (feature) => {
+useMapClick([EDGE_LAYER, LINE_LAYER, AREA_FILL_LAYER], (feature) => {
 	const id = feature?.layerId === EDGE_LAYER ? feature.properties.id : null
-	const key = feature?.layerId === AREA_FILL_LAYER ? feature.properties.key : null
+	const key =
+		feature?.layerId === AREA_FILL_LAYER || feature?.layerId === LINE_LAYER
+			? feature.properties.key
+			: null
 	selectedId.value = typeof id === 'number' ? id : null
 	selectedAreaKey.value = typeof key === 'string' ? key : null
 })
@@ -93,7 +110,12 @@ useMapClick([EDGE_LAYER, AREA_FILL_LAYER], (feature) => {
 		<template v-if="graph && edgeCount > 0">
 			<p>
 				{{
-					t('graph.counts', { edges: edgeCount, vertices: vertexCount, areas: areaCount })
+					t('graph.counts', {
+						edges: edgeCount,
+						vertices: vertexCount,
+						areas: areaCount,
+						lines: lineCount,
+					})
 				}}
 			</p>
 			<p v-for="score in scored" :key="score.name" class="text-small">
@@ -103,6 +125,7 @@ useMapClick([EDGE_LAYER, AREA_FILL_LAYER], (feature) => {
 				v-if="layersInView.length > 0"
 				v-model:hidden="hiddenLayers"
 				:layers="layersInView"
+				:line-layers="lineLayersInView"
 			/>
 
 			<div class="flex flex-col gap-1">

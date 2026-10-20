@@ -52,12 +52,18 @@ export function scoreRange(graph: Graph, name: string): ScoreRange | null {
 const FIXED_SCALES: Record<string, ScoreRange> = {
 	green: { min: 0, max: 1 },
 	nature: { min: 0, max: 1 },
+	water: { min: 0, max: 1 },
+	prepared: { min: 0, max: 1 },
 }
 
 export const isFixedScale = (name: string) => Object.hasOwn(FIXED_SCALES, name)
 
 // A share ends in the colour of the layer it measures, so edges match the areas around them.
-const SCORE_TOKENS: Record<string, string> = { green: '--map-park', nature: '--map-nature' }
+const SCORE_TOKENS: Record<string, string> = {
+	green: '--map-park',
+	nature: '--map-nature',
+	water: '--map-water',
+}
 
 export const scoreToken = (name: string) =>
 	(Object.hasOwn(SCORE_TOKENS, name) ? SCORE_TOKENS[name] : undefined) ?? '--map-score-high'

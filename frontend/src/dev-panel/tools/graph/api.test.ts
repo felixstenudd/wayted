@@ -16,6 +16,7 @@ const graph = {
 	vertices: { type: 'FeatureCollection', features: [] },
 }
 const areas = { type: 'FeatureCollection', features: [] }
+const lines = { type: 'FeatureCollection', features: [] }
 
 const answer = (status: number, body: unknown) => {
 	const response = new Response(null, { status })
@@ -49,15 +50,18 @@ afterEach(() => {
 })
 
 describe('useGraph', () => {
-	it('loads the graph and the areas of the bounds it is given', async () => {
-		get.mockResolvedValueOnce(answer(200, graph)).mockResolvedValueOnce(answer(200, areas))
+	it('loads the graph, the areas and the lines of the bounds it is given', async () => {
+		get.mockResolvedValueOnce(answer(200, graph))
+			.mockResolvedValueOnce(answer(200, areas))
+			.mockResolvedValueOnce(answer(200, lines))
 		const { loaded, load } = mountGraph()
 
 		load(inner)
 
-		await vi.waitFor(() => expect(loaded.value).toEqual({ bounds: inner, graph, areas }))
+		await vi.waitFor(() => expect(loaded.value).toEqual({ bounds: inner, graph, areas, lines }))
 		expect(get).toHaveBeenCalledWith('/graph', { params: { query: inner } })
 		expect(get).toHaveBeenCalledWith('/areas', { params: { query: inner } })
+		expect(get).toHaveBeenCalledWith('/lines', { params: { query: inner } })
 	})
 
 	it('does not ask for the areas of a view whose graph is refused', async () => {
@@ -73,6 +77,7 @@ describe('useGraph', () => {
 	it('keeps the loaded graph when a later load is refused', async () => {
 		get.mockResolvedValueOnce(answer(200, graph))
 			.mockResolvedValueOnce(answer(200, areas))
+			.mockResolvedValueOnce(answer(200, lines))
 			.mockResolvedValueOnce(answer(400, { detail: 'Zoom in.' }))
 		const { loaded, error, load } = mountGraph()
 		load(inner)
@@ -83,20 +88,21 @@ describe('useGraph', () => {
 		await vi.waitFor(() =>
 			expect(problemOf(error.value)).toEqual({ kind: 'refused', detail: 'Zoom in.' }),
 		)
-		expect(loaded.value).toEqual({ bounds: inner, graph, areas })
+		expect(loaded.value).toEqual({ bounds: inner, graph, areas, lines })
 	})
 
 	it('drops the message when the next load works', async () => {
 		get.mockResolvedValueOnce(answer(400, { detail: 'Zoom in.' }))
 			.mockResolvedValueOnce(answer(200, graph))
 			.mockResolvedValueOnce(answer(200, areas))
+			.mockResolvedValueOnce(answer(200, lines))
 		const { loaded, error, load } = mountGraph()
 		load(outer)
 		await vi.waitFor(() => expect(error.value).not.toBeNull())
 
 		load(inner)
 
-		await vi.waitFor(() => expect(loaded.value).toEqual({ bounds: inner, graph, areas }))
+		await vi.waitFor(() => expect(loaded.value).toEqual({ bounds: inner, graph, areas, lines }))
 		expect(error.value).toBeNull()
 	})
 })
