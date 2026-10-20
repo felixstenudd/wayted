@@ -146,7 +146,13 @@ useMapClick([EDGE_LAYER, LINE_LAYER, AREA_FILL_LAYER], (feature) => {
 				{{ t('graph.scored', { name: score.name, count: score.count, edges: edgeCount }) }}
 			</p>
 			<p v-for="votes in voted" :key="votes.activity" class="text-small">
-				{{ t('graph.voted', { activity: votes.activity, count: votes.count, edges: edgeCount }) }}
+				{{
+					t('graph.voted', {
+						activity: votes.activity,
+						count: votes.count,
+						edges: edgeCount,
+					})
+				}}
 			</p>
 			<AreaLegend
 				v-if="layersInView.length > 0"
@@ -196,11 +202,17 @@ useMapClick([EDGE_LAYER, LINE_LAYER, AREA_FILL_LAYER], (feature) => {
 				</template>
 				<template v-if="feedbackBy">
 					<p class="flex flex-wrap items-center gap-2 text-small">
-						<span class="size-3 rounded-sm bg-(--map-feedback-bad)" aria-hidden="true" />
+						<span
+							class="size-3 rounded-sm bg-(--map-feedback-bad)"
+							aria-hidden="true"
+						/>
 						{{ t('graph.feedbackScale.bad') }}
 						<span class="size-3 rounded-sm bg-(--map-score-low)" aria-hidden="true" />
 						{{ t('graph.feedbackScale.mixed') }}
-						<span class="size-3 rounded-sm bg-(--map-feedback-good)" aria-hidden="true" />
+						<span
+							class="size-3 rounded-sm bg-(--map-feedback-good)"
+							aria-hidden="true"
+						/>
 						{{ t('graph.feedbackScale.good') }}
 					</p>
 					<p class="text-small text-graphite">{{ t('graph.feedbackScale.how') }}</p>

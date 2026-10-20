@@ -177,7 +177,17 @@ describe('review votes on the map', () => {
 		expect(feedbackColor('running', colors)).toEqual([
 			'case',
 			['has', 'feedback:running'],
-			['interpolate', ['linear'], ['get', 'feedback:running'], -1, 'brown', 0, 'grey', 1, 'green'],
+			[
+				'interpolate',
+				['linear'],
+				['get', 'feedback:running'],
+				-1,
+				'brown',
+				0,
+				'grey',
+				1,
+				'green',
+			],
 			'black',
 		])
 	})

@@ -55,7 +55,9 @@ const list = (activities: string[]) => activities.join(', ') || t('graph.edge.no
 
 		<div>
 			<h4 class="font-semibold">{{ t('graph.edge.feedback') }}</h4>
-			<p v-if="feedback.length === 0" class="text-graphite">{{ t('graph.edge.noFeedback') }}</p>
+			<p v-if="feedback.length === 0" class="text-graphite">
+				{{ t('graph.edge.noFeedback') }}
+			</p>
 			<template v-for="{ activity, topics } in feedback" :key="activity">
 				<h5 class="mt-1 text-graphite">{{ activity }}</h5>
 				<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
