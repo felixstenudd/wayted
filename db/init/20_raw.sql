@@ -12,6 +12,35 @@ CREATE TABLE raw.fetched_tiles (
     CONSTRAINT fetched_tiles_expires_after_fetched_check CHECK (expires_at > fetched_at)
 );
 
+-- Tiles waiting to be fetched and mapped, row is deleted once its tile is mapped.
+CREATE TABLE raw.pending_tiles (
+    layer           text        NOT NULL REFERENCES ref.source_layers (code),
+    z               smallint    NOT NULL CHECK (z BETWEEN 0 AND 22),
+    x               int         NOT NULL,
+    y               int         NOT NULL,
+    requested_at    timestamptz NOT NULL DEFAULT now(),
+    status          text        NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'running', 'failed')),
+    attempts        smallint    NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz NOT NULL DEFAULT now(),
+    last_status     text,
+    last_message    text,
+    PRIMARY KEY (layer, z, x, y),
+    CONSTRAINT pending_tiles_xy_in_zoom_check CHECK (x >= 0 AND x < (1 << z) AND y >= 0 AND y < (1 << z))
+);
+
+-- Wakes the worker.
+CREATE FUNCTION raw.notify_pending_tiles() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    NOTIFY pending_tiles;
+    RETURN NULL;
+END
+$$;
+
+CREATE TRIGGER pending_tiles_notify
+    AFTER INSERT ON raw.pending_tiles
+    FOR EACH STATEMENT EXECUTE FUNCTION raw.notify_pending_tiles();
+
 -- OSM elements as Overpass returns them, shared by every OSM layer. Which layer a row belongs to
 -- is decided by its tags when it is read. Only node coordinates are converted, to a point.
 CREATE TABLE raw.osm_nodes (

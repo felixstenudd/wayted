@@ -5,6 +5,8 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+	// VITE_ variables sit in the repository's .env, next to the compose files.
+	envDir: fileURLToPath(new URL('..', import.meta.url)),
 	plugins: [vue(), tailwindcss()],
 	resolve: {
 		alias: {

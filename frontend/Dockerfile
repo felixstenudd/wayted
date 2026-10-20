@@ -12,8 +12,28 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
 FROM deps AS build
 
+# Vite reads it while building.
+ARG VITE_MAP_STYLE_URL
+ENV VITE_MAP_STYLE_URL=$VITE_MAP_STYLE_URL
+
 COPY . .
 RUN npm run build
+
+FROM deps AS dev-panel-build
+
+# Vite reads it while building.
+ARG VITE_MAP_STYLE_URL
+ENV VITE_MAP_STYLE_URL=$VITE_MAP_STYLE_URL
+
+COPY . .
+RUN npm run build:panel
+
+FROM nginx:1.29-alpine AS dev-panel-prod
+
+COPY nginx.dev-panel.conf /etc/nginx/conf.d/default.conf
+COPY --from=dev-panel-build /app/dist-dev-panel /usr/share/nginx/html
+
+EXPOSE 80
 
 FROM nginx:1.29-alpine AS prod
 

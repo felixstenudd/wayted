@@ -10,6 +10,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
       WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
       WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -31,8 +32,97 @@ services:
       WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
       WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
       WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       API_DOCS_ENABLED: "true"
+      # Dev runs on plain http, where Safari drops Secure cookies even on localhost.
+      COOKIE_SECURE: "false"
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Internal dev tools, no login.
+  dev-api:
+    build:
+      context: ./backend
+      target: dev
+    command: ["uvicorn", "app.dev.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports: ["127.0.0.1:8001:8000"]
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      # app/config.py reads every variable at import, so the dev API needs them all.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # The dev panel, a second app in ./frontend.
+  dev-panel:
+    build:
+      context: ./frontend
+      target: dev
+    command: ["npm", "run", "dev:panel", "--", "--host", "0.0.0.0"]
+    ports: ["127.0.0.1:5174:5174"]
+    environment:
+      DEV_API_PROXY_TARGET: http://dev-api:8000
+      VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-https://tiles.openfreemap.org/styles/positron}
+    volumes:
+      - ./frontend:/app
+      # Keeps the container's Linux node_modules separate from the host's.
+      - /app/node_modules
+    depends_on:
+      - dev-api
+
+  # Fetches and maps the tiles queued in raw.pending_tiles. Nothing reloads it: restart the
+  # service after changing backend code.
+  worker:
+    build:
+      context: ./backend
+      target: dev
+    command: ["python", "-m", "app.worker"]
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      # app/config.py reads every variable at import, so the worker needs the API's too.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Scores the edges the worker maps. Nothing reloads it: restart the service after changing
+  # backend code.
+  enricher:
+    build:
+      context: ./backend
+      target: dev
+    command: ["python", "-m", "app.enrichment.worker"]
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      # app/config.py reads every variable at import, so the enricher needs them all.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
     volumes:
       - ./backend/app:/app/app
     depends_on:
@@ -46,6 +136,7 @@ services:
     ports: ["5173:5173"]
     environment:
       API_PROXY_TARGET: http://backend:8000
+      VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-https://tiles.openfreemap.org/styles/positron}
     volumes:
       - ./frontend:/app
       # Keeps the container's Linux node_modules separate from the host's.

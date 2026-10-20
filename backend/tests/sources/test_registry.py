@@ -5,7 +5,7 @@ from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 from psycopg_pool import AsyncConnectionPool
 
-from app.sources.registry import mark_fetched
+from app.sources.registry import fetched_tiles, mark_fetched
 from app.sources.tiles import Tile, TileRect
 
 pytestmark = pytest.mark.db
@@ -67,3 +67,55 @@ async def test_concurrent_marks_in_opposite_orders_do_not_deadlock(
 
     for _ in range(3):
         await asyncio.gather(mark(tiles), mark(tiles[::-1]))
+
+
+async def test_fetched_tiles_come_oldest_first(
+    admin_conn: AsyncConnection[TupleRow],
+    downloader_pool: AsyncConnectionPool[AsyncConnection[TupleRow]],
+    api_pool: AsyncConnectionPool[AsyncConnection[TupleRow]],
+) -> None:
+    west, east = sorted(TILES, key=lambda t: t.x)
+    async with downloader_pool.connection() as conn:
+        await mark_fetched(conn, "roads", {west, east})
+        await mark_fetched(conn, "parks", {west})
+    await admin_conn.execute(
+        "UPDATE raw.fetched_tiles SET fetched_at = fetched_at - interval '1 day' WHERE x = %s",
+        (east.x,),
+    )
+
+    async with api_pool.connection() as conn:
+        fetched = await fetched_tiles(conn)
+
+    assert [(f.layer, f.tile) for f in fetched] == [
+        ("roads", east),
+        ("parks", west),
+        ("roads", west),
+    ]
+    assert fetched[0].fetched_at < fetched[1].fetched_at
+    assert all(f.expires_at > f.fetched_at for f in fetched)
+
+
+async def test_fetched_tiles_include_expired_ones(
+    admin_conn: AsyncConnection[TupleRow],
+    downloader_pool: AsyncConnectionPool[AsyncConnection[TupleRow]],
+    api_pool: AsyncConnectionPool[AsyncConnection[TupleRow]],
+) -> None:
+    async with downloader_pool.connection() as conn:
+        await mark_fetched(conn, "roads", TILES)
+    await admin_conn.execute(
+        """
+        UPDATE raw.fetched_tiles
+        SET fetched_at = now() - interval '2 months', expires_at = now() - interval '1 month'
+        """
+    )
+
+    async with api_pool.connection() as conn:
+        assert {f.tile for f in await fetched_tiles(conn)} == TILES
+
+
+async def test_fetched_tiles_of_an_empty_registry(
+    admin_conn: AsyncConnection[TupleRow],
+    api_pool: AsyncConnectionPool[AsyncConnection[TupleRow]],
+) -> None:
+    async with api_pool.connection() as conn:
+        assert await fetched_tiles(conn) == []

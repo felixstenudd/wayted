@@ -14,7 +14,16 @@ const featureInternals = { element: { type: 'feature', fileInternalPath: '!index
 const to = (...types) => types.map((type) => ({ to: { element: { type } } }))
 
 export default defineConfigWithVueTs(
-	{ ignores: ['dist/**', 'node_modules/**', 'coverage/**'] },
+	{
+		ignores: [
+			'dist/**',
+			'dist-dev-panel/**',
+			'node_modules/**',
+			'coverage/**',
+			'src/dev-panel/dev-api/schema.d.ts',
+			'src/shared/api/schema.d.ts',
+		],
+	},
 
 	js.configs.recommended,
 	pluginVue.configs['flat/recommended'],
@@ -52,6 +61,7 @@ export default defineConfigWithVueTs(
 			'boundaries/include': ['src/**/*'],
 			'boundaries/elements': [
 				{ type: 'app', pattern: 'src/app' },
+				{ type: 'dev-panel', pattern: 'src/dev-panel' },
 				{ type: 'pages', pattern: 'src/pages' },
 				{ type: 'feature', pattern: 'src/features/*', capture: ['featureName'] },
 				{ type: 'shared', pattern: 'src/shared' },
@@ -70,6 +80,10 @@ export default defineConfigWithVueTs(
 							allow: to('app', 'pages', 'feature', 'shared', 'assets'),
 						},
 						{
+							from: [{ element: { type: 'dev-panel' } }],
+							allow: to('dev-panel', 'feature', 'shared', 'assets'),
+						},
+						{
 							from: [{ element: { type: 'pages' } }],
 							allow: to('pages', 'feature', 'shared', 'assets'),
 						},
@@ -84,6 +98,7 @@ export default defineConfigWithVueTs(
 						{
 							from: [
 								{ element: { type: 'app' } },
+								{ element: { type: 'dev-panel' } },
 								{ element: { type: 'pages' } },
 								anyFeature,
 							],

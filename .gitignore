@@ -8,6 +8,7 @@ __pycache__/
 # Node
 node_modules/
 dist/
+dist-dev-panel/
 build/
 
 # Env
@@ -16,3 +17,5 @@ build/
 # Editor
 .vscode/
 .idea/
+
+frontend/dist-dev-panel/

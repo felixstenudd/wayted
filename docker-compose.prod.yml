@@ -10,6 +10,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
       WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD:?WAYTED_DOWNLOADER_PASSWORD is required}
       WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD:?WAYTED_MAPPER_PASSWORD is required}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD:?WAYTED_ENRICHER_PASSWORD is required}
       WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD:?WAYTED_API_PASSWORD is required}
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -31,6 +32,83 @@ services:
       WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
       WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
       WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Internal dev tools, no login. Published on the server's loopback only.
+  dev-api:
+    build:
+      context: ./backend
+      target: prod
+    command: ["uvicorn", "app.dev.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    ports: ["127.0.0.1:8001:8000"]
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      # app/config.py reads every variable at import, so the dev API needs them all.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # The dev panel: internal, no login. On the server's loopback unless DEV_PANEL_BIND is set.
+  dev-panel:
+    build:
+      context: ./frontend
+      target: dev-panel-prod
+      args:
+        VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-https://tiles.openfreemap.org/styles/positron}
+    restart: unless-stopped
+    ports: ["${DEV_PANEL_BIND:-127.0.0.1}:8002:80"]
+    depends_on:
+      - dev-api
+
+  # Fetches and maps the tiles queued in raw.pending_tiles.
+  worker:
+    build:
+      context: ./backend
+      target: prod
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      # app/config.py reads every variable at import, so the worker needs the API's too.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Scores the edges the worker maps.
+  enricher:
+    build:
+      context: ./backend
+      target: prod
+    command: ["python", "-m", "app.enrichment.worker"]
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      # app/config.py reads every variable at import, so the enricher needs them all.
+      WAYTED_API_PASSWORD: ${WAYTED_API_PASSWORD}
+      WAYTED_DOWNLOADER_PASSWORD: ${WAYTED_DOWNLOADER_PASSWORD}
+      WAYTED_MAPPER_PASSWORD: ${WAYTED_MAPPER_PASSWORD}
+      WAYTED_ENRICHER_PASSWORD: ${WAYTED_ENRICHER_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
     depends_on:
       db:
@@ -40,6 +118,8 @@ services:
     build:
       context: ./frontend
       target: prod
+      args:
+        VITE_MAP_STYLE_URL: ${VITE_MAP_STYLE_URL:-https://tiles.openfreemap.org/styles/positron}
     restart: unless-stopped
     ports: ["${HTTP_PORT:-80}:80"]
     depends_on:

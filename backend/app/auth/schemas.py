@@ -12,18 +12,15 @@ class LoginIn(BaseModel):
     password: str
 
 
-class RefreshIn(BaseModel):
-    refresh_token: str
-
-
 class ChangePasswordIn(BaseModel):
     current_password: str
     new_password: str
 
 
-class TokensOut(BaseModel):
+class AccessTokenOut(BaseModel):
+    """The refresh token is not part of the body; it is set as an httpOnly cookie."""
+
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
 
 
