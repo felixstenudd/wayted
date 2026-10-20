@@ -4,8 +4,18 @@ rebuilds the affected features and rescores the edges near them. Runs in its own
 """
 
 from .attributes import AreaShare, Attribute
-from .definitions import ATTRIBUTES, GREEN, LAYERS, NATURAL_LAND, NATURE, PARKS
+from .definitions import (
+    ATTRIBUTES,
+    GREEN,
+    LAYERS,
+    NATURAL_LAND,
+    NATURE,
+    PARKS,
+    WATER_AREAS,
+    WATER_LINES,
+)
 from .enricher import BatchResult, EnrichResult, enrich_pending
+from .layers import LineLayer
 
 __all__ = [
     "ATTRIBUTES",
@@ -14,9 +24,12 @@ __all__ = [
     "NATURAL_LAND",
     "NATURE",
     "PARKS",
+    "WATER_AREAS",
+    "WATER_LINES",
     "AreaShare",
     "Attribute",
     "BatchResult",
     "EnrichResult",
+    "LineLayer",
     "enrich_pending",
 ]

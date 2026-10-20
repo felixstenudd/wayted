@@ -39,5 +39,5 @@ GRANT SELECT, INSERT, UPDATE ON raw.pending_tiles TO wayted_api;
 
 -- For the dev API: the built features and what the enricher has left to do.
 GRANT USAGE ON SCHEMA enrich TO wayted_api;
-GRANT SELECT ON enrich.areas, enrich.pending_ways, enrich.pending_relations, enrich.pending_nodes
+GRANT SELECT ON enrich.areas, enrich.lines, enrich.pending_ways, enrich.pending_relations, enrich.pending_nodes
     TO wayted_api;

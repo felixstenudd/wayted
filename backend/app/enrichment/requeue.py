@@ -21,6 +21,7 @@ REQUEUE_WAYS = """
     INSERT INTO enrich.pending_ways (way_id)
     SELECT id FROM raw.osm_ways WHERE tags @> ANY(%(match)s::jsonb[])
     UNION SELECT osm_id FROM enrich.areas WHERE osm_type = 'way'
+    UNION SELECT osm_id FROM enrich.lines
 """
 
 REQUEUE_RELATIONS = """
