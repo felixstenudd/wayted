@@ -7,8 +7,8 @@ import type { LonLat } from '../geometry'
 
 const props = defineProps<{
 	lonLat: LonLat
-	/** What the marker stands for, read out by screen readers. */
-	label: string
+	/** What the marker stands for, read out by screen readers. Without one it is decoration. */
+	label?: string
 	draggable?: boolean
 }>()
 const emit = defineEmits<{ move: [to: LonLat] }>()
@@ -47,7 +47,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-	<div ref="element" role="img" :aria-label="props.label">
+	<div
+		ref="element"
+		:role="props.label ? 'img' : undefined"
+		:aria-label="props.label"
+		:aria-hidden="props.label ? undefined : 'true'"
+	>
 		<slot />
 	</div>
 </template>

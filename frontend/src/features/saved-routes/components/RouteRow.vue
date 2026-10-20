@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { RouterLink } from 'vue-router'
 
 import { formatDistanceKm, formatSavedOn } from '../format'
 import { useSavedRoutesStore } from '../store'
@@ -33,17 +34,22 @@ function unhighlight(): void {
 </script>
 
 <template>
-	<li
-		class="-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition-[background-color] duration-150 ease-out"
-		:class="{ 'bg-sunken': isHighlighted }"
-		@pointerenter="highlight"
-		@pointerleave="unhighlight"
-	>
-		<RouteSilhouette :coordinates="route.geometry.coordinates" />
-		<div class="min-w-0 flex-1">
-			<p class="truncate font-semibold">{{ route.name }}</p>
-			<p class="text-small text-graphite">{{ details }}</p>
-		</div>
-		<p class="shrink-0 font-semibold">{{ distance }}</p>
+	<li>
+		<RouterLink
+			:to="{ name: 'route', params: { id: route.id } }"
+			class="-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition-[background-color] duration-150 ease-out"
+			:class="{ 'bg-sunken': isHighlighted }"
+			@pointerenter="highlight"
+			@pointerleave="unhighlight"
+			@focus="highlight"
+			@blur="unhighlight"
+		>
+			<RouteSilhouette :coordinates="route.geometry.coordinates" />
+			<span class="min-w-0 flex-1">
+				<span class="block truncate font-semibold">{{ route.name }}</span>
+				<span class="block text-small text-graphite">{{ details }}</span>
+			</span>
+			<span class="shrink-0 font-semibold">{{ distance }}</span>
+		</RouterLink>
 	</li>
 </template>

@@ -83,7 +83,7 @@
 		"menu": "Account menu for {name}",
 		"planRoute": "Plan a route",
 		"notAvailableYet": "Not available yet",
-		"savedRoutes": "Saved routes",
+		"savedRoutes": "Your routes",
 		"myReviews": "My reviews",
 		"publicReviews": "Public reviews",
 		"writeReview": "Write a review",
@@ -234,6 +234,50 @@
 		"row": {
 			"details": "{activity}, {date}",
 			"distanceKm": "{km} km"
+		},
+		"finish": "Finish",
+		"shape": {
+			"loop": "loop",
+			"point_to_point": "A to B"
+		},
+		"detail": {
+			"title": "Route",
+			"details": "{activity}, {shape}, {km} km, saved {date}",
+			"more": "More for this route",
+			"loading": "Loading the route…",
+			"missingTitle": "Route not found",
+			"missing": "This route doesn't exist or was deleted.",
+			"loadFailed": "The route could not be loaded. Check your connection, then try again."
+		},
+		"profile": {
+			"title": "Route profile",
+			"empty": "This area hasn't been scored yet, so there is nothing to show.",
+			"wanted": "You wanted: {weight}",
+			"known": "Known for {percent}%",
+			"spoken": ", {percent} percent of the route, known for {known} percent",
+			"words": {
+				"none": "None",
+				"aLittle": "A little",
+				"some": "Some",
+				"aLot": "A lot",
+				"mostly": "Mostly"
+			}
+		},
+		"rename": {
+			"start": "Rename",
+			"label": "Route name",
+			"save": "Save name",
+			"saving": "Saving name…",
+			"cancel": "Cancel",
+			"empty": "Give the route a name.",
+			"failed": "The route was not renamed. Check your connection, then try again."
+		},
+		"delete": {
+			"question": "Delete {name}? Your stretch reviews are kept and still count.",
+			"confirm": "Delete route",
+			"deleting": "Deleting route…",
+			"keep": "Keep route",
+			"failed": "The route was not deleted. Check your connection, then try again."
 		}
 	}
 }

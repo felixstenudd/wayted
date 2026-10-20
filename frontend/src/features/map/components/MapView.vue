@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import { useTemplateRef } from 'vue'
+import { useTemplateRef, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { useMap, type MapViewOptions } from '../composables/useMap'
@@ -11,14 +11,19 @@ const props = defineProps<
 	MapViewOptions & {
 		/** Lifts the bottom controls above something covering the map, such as a sheet. */
 		controlsBottomPx?: number
+		/** How far something covers the map from the left, such as a floating panel. */
+		coveredLeftPx?: number
 	}
 >()
 
 const { t } = useI18n()
 const container = useTemplateRef<HTMLElement>('container')
-const { hasBaseMapFailed } = useMapContext()
+const { hasBaseMapFailed, coveredPx } = useMapContext()
 
 useMap(container, props)
+watchEffect(() => {
+	coveredPx.value = { left: props.coveredLeftPx ?? 0, bottom: props.controlsBottomPx ?? 0 }
+})
 </script>
 
 <template>

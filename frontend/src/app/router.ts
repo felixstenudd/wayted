@@ -28,6 +28,12 @@ const routes: RouteRecordRaw[] = [
 		component: MapPage,
 	},
 	{
+		path: '/routes/:id(\\d+)',
+		name: 'route',
+		meta: { access: 'signed-in' },
+		component: MapPage,
+	},
+	{
 		path: '/sign-in',
 		name: 'sign-in',
 		meta: { access: 'signed-out' },

@@ -6,15 +6,17 @@ import { useRoute } from 'vue-router'
 import { AccountMenu } from '@/features/auth'
 import { MapView, provideMap } from '@/features/map'
 import { PlannerEssentials, PlannerPanel, PointMarkers } from '@/features/route-planner'
-import { RouteLines, RoutesPanel } from '@/features/saved-routes'
+import { RouteCourse, RouteDetailPanel, RouteLines, RoutesPanel } from '@/features/saved-routes'
 import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { BottomSheet } from '@/shared/ui/bottom-sheet'
 import { SegmentedNav } from '@/shared/ui/segmented-nav'
 
-type Section = 'plan' | 'routes'
+type Section = 'plan' | 'routes' | 'route'
 
 interface SectionParts {
 	titleKey: string
+	/** Where the switch at the top stands. */
+	nav: 'plan' | 'routes'
 	/** Takes layout: 'panel' beside the map, 'sheet' in the bottom sheet. */
 	panel: Component
 	/** What a phone shows at the sheet's lowest stop, under the navigation. */
@@ -27,12 +29,22 @@ interface SectionParts {
 const SECTIONS: Record<Section, SectionParts> = {
 	plan: {
 		titleKey: 'planner.title',
+		nav: 'plan',
 		panel: PlannerPanel,
 		peek: PlannerEssentials,
 		map: PointMarkers,
 	},
-	routes: { titleKey: 'savedRoutes.title', panel: RoutesPanel, map: RouteLines },
+	routes: { titleKey: 'savedRoutes.title', nav: 'routes', panel: RoutesPanel, map: RouteLines },
+	route: {
+		titleKey: 'savedRoutes.detail.title',
+		nav: 'routes',
+		panel: RouteDetailPanel,
+		map: RouteCourse,
+	},
 }
+
+// The floating panel: left-4 plus w-90, in rem.
+const PANEL_REACH_REM = 23.5
 
 // Central Stockholm until the user places a start. The URL takes over once the map has moved.
 const START = { center: { lon: 18.0686, lat: 59.3293 }, zoom: 13 }
@@ -44,8 +56,19 @@ const hasRoomForPanel = useMediaQuery('(min-width: 48rem)')
 const sheetStop = ref(0)
 const sheetHeightPx = ref(0)
 
-const section = computed<Section>(() => (route.name === 'routes' ? 'routes' : 'plan'))
+const section = computed<Section>(() =>
+	route.name === 'routes' || route.name === 'route' ? route.name : 'plan',
+)
 const parts = computed(() => SECTIONS[section.value])
+// What the section's parts need from the URL.
+const sectionProps = computed(() =>
+	section.value === 'route' ? { routeId: Number(route.params.id) } : {},
+)
+const panelReachPx = computed(() =>
+	hasRoomForPanel.value
+		? PANEL_REACH_REM * parseFloat(getComputedStyle(document.documentElement).fontSize)
+		: 0,
+)
 const navItems = computed(() => [
 	{ value: 'plan' as const, label: t('nav.plan'), to: { name: 'planner' } },
 	{ value: 'routes' as const, label: t('nav.routes'), to: { name: 'routes' } },
@@ -69,9 +92,9 @@ provideMap()
 				class="pointer-events-auto max-h-full overflow-y-auto overscroll-contain rounded-lg bg-paper shadow-float"
 			>
 				<div class="px-5 pt-5">
-					<SegmentedNav :label="t('nav.label')" :items="navItems" :current="section" />
+					<SegmentedNav :label="t('nav.label')" :items="navItems" :current="parts.nav" />
 				</div>
-				<component :is="parts.panel" layout="panel" />
+				<component :is="parts.panel" layout="panel" v-bind="sectionProps" />
 			</aside>
 		</div>
 		<BottomSheet
@@ -85,11 +108,11 @@ provideMap()
 		>
 			<template #header>
 				<div class="flex flex-col gap-4">
-					<SegmentedNav :label="t('nav.label')" :items="navItems" :current="section" />
-					<component :is="parts.peek" v-if="parts.peek" />
+					<SegmentedNav :label="t('nav.label')" :items="navItems" :current="parts.nav" />
+					<component :is="parts.peek" v-if="parts.peek" v-bind="sectionProps" />
 				</div>
 			</template>
-			<component :is="parts.panel" layout="sheet" />
+			<component :is="parts.panel" layout="sheet" v-bind="sectionProps" />
 		</BottomSheet>
 		<MapView
 			:center="START.center"
@@ -97,7 +120,8 @@ provideMap()
 			keep-view-in-url
 			zoom-buttons-position="bottom-right"
 			:controls-bottom-px="hasRoomForPanel ? 0 : sheetHeightPx"
+			:covered-left-px="panelReachPx"
 		/>
-		<component :is="parts.map" />
+		<component :is="parts.map" v-bind="sectionProps" />
 	</main>
 </template>
