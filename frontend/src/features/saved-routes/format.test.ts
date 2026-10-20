@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatDistanceKm, formatSavedOn } from './format'
+import { formatDistanceKm, formatSavedOn, joinLabels } from './format'
 
 const NOW = new Date('2026-10-20T12:00:00Z')
 
@@ -19,5 +19,14 @@ describe('formatDistanceKm', () => {
 		expect(formatDistanceKm(6420, 'en')).toBe('6.4')
 		expect(formatDistanceKm(11800, 'sv')).toBe('11,8')
 		expect(formatDistanceKm(5000, 'en')).toBe('5.0')
+	})
+})
+
+describe('joinLabels', () => {
+	it('joins labels into one sentence', () => {
+		expect(joinLabels(['Nice greenery'], 'en')).toBe('Nice greenery')
+		expect(joinLabels(['Nice greenery', 'Lots to see', 'Quiet streets'], 'en')).toBe(
+			'Nice greenery, lots to see, and quiet streets',
+		)
 	})
 })

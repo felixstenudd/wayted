@@ -21,11 +21,17 @@ export function reasonsBySide(reasons: readonly ReviewReason[]) {
 	}
 }
 
-/** How many good and bad things a review says. */
-export function voteCounts(codes: readonly string[], reasons: readonly ReviewReason[]) {
-	const sentiments = codes.map((code) => reasons.find((r) => r.code === code)?.sentiment)
-	return {
-		up: sentiments.filter((s) => s === 1).length,
-		down: sentiments.filter((s) => s === -1).length,
-	}
+/** What a review says was good and what was bad, each in the order the reasons are listed. */
+export function reviewSides(codes: readonly string[], reasons: readonly ReviewReason[]) {
+	const said = (sentiment: number) =>
+		reasons
+			.filter((r) => r.sentiment === sentiment && codes.includes(r.code))
+			.map((r) => r.code)
+	return { good: said(1), bad: said(-1) }
+}
+
+/** One word for a review on the map: it was good, bad, or some of each. */
+export function reviewTone({ good, bad }: { good: readonly string[]; bad: readonly string[] }) {
+	if (good.length > 0 && bad.length > 0) return 'mixed'
+	return bad.length > 0 ? 'bad' : 'good'
 }

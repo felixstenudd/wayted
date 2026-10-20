@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { chevronsAlong } from './chevrons'
+import { chevronsAlong, lineEnds } from './chevrons'
 
 describe('chevronsAlong', () => {
 	it('places marks at even steps along the line, pointing the way it runs', () => {
@@ -29,5 +29,26 @@ describe('chevronsAlong', () => {
 				500,
 			),
 		).toEqual([])
+	})
+})
+
+describe('lineEnds', () => {
+	it('gives both ends with the way the line runs there', () => {
+		const ends = lineEnds([
+			[20, 63.8],
+			[20, 63.8],
+			[20.001, 63.8],
+			[20.001, 63.801],
+		])
+
+		expect(ends.map((end) => end.at)).toEqual([
+			{ lon: 20, lat: 63.8 },
+			{ lon: 20.001, lat: 63.801 },
+		])
+		expect(ends.map((end) => Math.round(end.bearingDeg))).toEqual([90, 0])
+	})
+
+	it('has no ends for a line without length', () => {
+		expect(lineEnds([[20, 63.8]])).toEqual([])
 	})
 })

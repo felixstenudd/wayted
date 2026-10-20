@@ -46,3 +46,22 @@ export function chevronsAlong(
 	}
 	return marks
 }
+
+/**
+ * Both ends of a line with the way it runs there, for the ticks that close a bracket. A point
+ * repeated at an end is skipped, as it has no direction.
+ */
+export function lineEnds(coordinates: readonly (readonly number[])[]): Chevron[] {
+	const points = coordinates.map(([lon, lat]) => ({ lon: lon ?? 0, lat: lat ?? 0 }))
+	const first = points[0]
+	const last = points.at(-1)
+	if (!first || !last) return []
+	const same = (a: LonLat, b: LonLat) => a.lon === b.lon && a.lat === b.lat
+	const second = points.find((point) => !same(point, first))
+	const beforeLast = [...points].reverse().find((point) => !same(point, last))
+	if (!second || !beforeLast) return []
+	return [
+		{ at: first, bearingDeg: bearingDeg(first, second) },
+		{ at: last, bearingDeg: bearingDeg(beforeLast, last) },
+	]
+}

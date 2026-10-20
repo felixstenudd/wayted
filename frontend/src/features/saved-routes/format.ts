@@ -15,3 +15,14 @@ export function formatDistanceKm(distanceM: number, locale: string): string {
 		maximumFractionDigits: 1,
 	}).format(distanceM / 1000)
 }
+
+/**
+ * Labels joined as one sentence: "Nice greenery and lots to see". Each label is written to stand
+ * alone with a capital, so the ones after the first lose it.
+ */
+export function joinLabels(labels: readonly string[], locale: string): string {
+	const inSentence = labels.map((label, i) =>
+		i === 0 ? label : label.charAt(0).toLocaleLowerCase(locale) + label.slice(1),
+	)
+	return new Intl.ListFormat(locale, { type: 'conjunction' }).format(inSentence)
+}

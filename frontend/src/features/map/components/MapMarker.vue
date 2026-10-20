@@ -9,6 +9,8 @@ const props = defineProps<{
 	lonLat: LonLat
 	/** What the marker stands for, read out by screen readers. Without one it is decoration. */
 	label?: string
+	/** The content is a control that names itself, such as a button; the marker adds no role. */
+	control?: boolean
 	draggable?: boolean
 }>()
 const emit = defineEmits<{ move: [to: LonLat] }>()
@@ -51,7 +53,7 @@ onBeforeUnmount(() => {
 		ref="element"
 		:role="props.label ? 'img' : undefined"
 		:aria-label="props.label"
-		:aria-hidden="props.label ? undefined : 'true'"
+		:aria-hidden="props.label || props.control ? undefined : 'true'"
 	>
 		<slot />
 	</div>

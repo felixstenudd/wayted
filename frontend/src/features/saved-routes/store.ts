@@ -13,6 +13,8 @@ export const useSavedRoutesStore = defineStore('saved-routes', () => {
 	const highlightedId = ref<number | null>(null)
 	// which of the route's stretch reviews the list points at
 	const highlightedReviewId = ref<number | null>(null)
+	// a review picked on the map, whose row the list brings into view
+	const revealedReviewId = ref<number | null>(null)
 
 	// A stretch review in progress: first its ends are picked, then what it was like is said.
 	const stretchEnds = ref<StretchEnds | null>(null)
@@ -20,6 +22,12 @@ export const useSavedRoutesStore = defineStore('saved-routes', () => {
 	// set when an existing review is changed; its stretch stays as it was
 	const editingReviewId = ref<number | null>(null)
 	const isPickingStretch = computed(() => stretchEnds.value !== null)
+
+	/** A review picked on the map: it is highlighted, and the list brings its row into view. */
+	function revealReview(reviewId: number): void {
+		highlightedReviewId.value = reviewId
+		revealedReviewId.value = reviewId
+	}
 
 	function startPickingStretch(): void {
 		stretchEnds.value = { start: null, end: null }
@@ -55,6 +63,8 @@ export const useSavedRoutesStore = defineStore('saved-routes', () => {
 	return {
 		highlightedId,
 		highlightedReviewId,
+		revealedReviewId,
+		revealReview,
 		stretchEnds,
 		stretchStage,
 		editingReviewId,

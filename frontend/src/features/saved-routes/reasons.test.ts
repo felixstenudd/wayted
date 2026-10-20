@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { reasonsBySide, toggleReason, voteCounts, type ReviewReason } from './reasons'
+import { reasonsBySide, reviewSides, reviewTone, toggleReason, type ReviewReason } from './reasons'
 
 const REASONS: ReviewReason[] = [
 	{ code: 'green_good', topic: 'green', sentiment: 1, attribute: 'green' },
@@ -30,8 +30,19 @@ describe('reasonsBySide', () => {
 	})
 })
 
-describe('voteCounts', () => {
-	it('counts good and bad reasons of a review', () => {
-		expect(voteCounts(['green_good', 'access_bad'], REASONS)).toEqual({ up: 1, down: 1 })
+describe('reviewSides', () => {
+	it('splits a review into good and bad, in list order', () => {
+		expect(reviewSides(['access_bad', 'green_good'], REASONS)).toEqual({
+			good: ['green_good'],
+			bad: ['access_bad'],
+		})
+	})
+})
+
+describe('reviewTone', () => {
+	it('says good, bad, or mixed', () => {
+		expect(reviewTone({ good: ['green_good'], bad: [] })).toBe('good')
+		expect(reviewTone({ good: [], bad: ['access_bad'] })).toBe('bad')
+		expect(reviewTone({ good: ['green_good'], bad: ['access_bad'] })).toBe('mixed')
 	})
 })

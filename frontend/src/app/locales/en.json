@@ -362,8 +362,16 @@
 			"more": "More for the stretch {where}",
 			"edit": "Edit",
 			"delete": "Delete",
+			"deleteQuestion": "Delete your review of the stretch {where}? It stops counting for these streets.",
+			"deleteConfirm": "Delete stretch review",
+			"deleting": "Deleting stretch review…",
+			"keep": "Keep",
 			"deleteFailed": "The stretch review was not deleted. Check your connection, then try again.",
-			"votes": "{up} good, {down} bad"
+			"pill": {
+				"good": "You liked the stretch {where}. Show it in your stretch reviews",
+				"bad": "You didn't like the stretch {where}. Show it in your stretch reviews",
+				"mixed": "Some good and some bad on the stretch {where}. Show it in your stretch reviews"
+			}
 		},
 		"reasons": {
 			"green_good": "Nice greenery",
