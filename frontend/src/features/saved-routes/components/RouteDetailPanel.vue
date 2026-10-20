@@ -15,8 +15,12 @@ import {
 
 import { useSavedRoute } from '../api'
 import { formatDistanceKm, formatSavedOn } from '../format'
+import type { PreferenceChange } from '../review'
 import DeleteRoute from './DeleteRoute.vue'
+import ReviewSavedNotice from './ReviewSavedNotice.vue'
 import RouteName from './RouteName.vue'
+import RouteReviewForm from './RouteReviewForm.vue'
+import RouteReviewSummary from './RouteReviewSummary.vue'
 import ScoreProfile from './ScoreProfile.vue'
 
 const props = defineProps<{
@@ -35,13 +39,31 @@ const isMissing = computed(
 )
 const isRenaming = ref(false)
 const isDeleting = ref(false)
+const isReviewing = ref(false)
+// What the last saved review did to the user's weights, until they move on.
+const savedChanges = ref<PreferenceChange[] | null>(null)
 watch(
 	() => props.routeId,
 	() => {
 		isRenaming.value = false
 		isDeleting.value = false
+		isReviewing.value = false
+		savedChanges.value = null
 	},
 )
+// A review answers attributes the route has scores for; without any there is nothing to ask.
+const canReview = computed(() => Object.keys(route.value?.scores ?? {}).length > 0)
+
+function startReview(): void {
+	savedChanges.value = null
+	isDeleting.value = false
+	isReviewing.value = true
+}
+
+function reviewSaved(changes: PreferenceChange[]): void {
+	isReviewing.value = false
+	savedChanges.value = changes
+}
 
 const details = computed(() => {
 	if (!route.value) return ''
@@ -69,7 +91,7 @@ const details = computed(() => {
 				<ChevronLeft class="size-4" aria-hidden="true" />
 				{{ t('savedRoutes.title') }}
 			</RouterLink>
-			<DropdownMenu v-if="route">
+			<DropdownMenu v-if="route && !isReviewing">
 				<DropdownMenuTrigger as-child>
 					<Button
 						variant="ghost"
@@ -118,12 +140,30 @@ const details = computed(() => {
 			</Button>
 		</div>
 
+		<RouteReviewForm
+			v-else-if="route && isReviewing"
+			:route="route"
+			:heading-id="HEADING_ID"
+			@saved="reviewSaved"
+			@cancel="isReviewing = false"
+		/>
+
 		<template v-else-if="route">
 			<div class="flex flex-col gap-1">
 				<RouteName v-model:editing="isRenaming" :route="route" :heading-id="HEADING_ID" />
 				<p class="text-small text-graphite">{{ details }}</p>
 			</div>
+			<ReviewSavedNotice v-if="savedChanges" :changes="savedChanges" />
 			<ScoreProfile :route="route" />
+			<RouteReviewSummary v-if="route.review" :route="route" @edit="startReview" />
+			<template v-else>
+				<Button v-if="canReview" @click="startReview">{{
+					t('savedRoutes.review.start')
+				}}</Button>
+				<p v-else class="text-small text-graphite">
+					{{ t('savedRoutes.review.nothingToReview') }}
+				</p>
+			</template>
 			<DeleteRoute v-if="isDeleting" :route="route" @keep="isDeleting = false" />
 		</template>
 	</section>

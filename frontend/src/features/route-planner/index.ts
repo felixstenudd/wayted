@@ -4,5 +4,5 @@ export { default as PlannerEssentials } from './components/PlannerEssentials.vue
 export { default as PlannerPanel } from './components/PlannerPanel.vue'
 export { default as PointMarkers } from './components/PointMarkers.vue'
 export { useRouteAttributes } from './api'
-export { humanizeKey, weightMessage } from './attributes'
+export { humanizeKey, weightMessage, weightWord } from './attributes'
 export { default as AttributeSymbol } from './components/AttributeSymbol.vue'

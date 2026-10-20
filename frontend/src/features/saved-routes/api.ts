@@ -3,10 +3,13 @@ import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/features/auth'
 
-import type { RouteSummary, SavedRoute } from './types'
+import type { Answer } from './review'
+import type { RouteSummary, SavedRoute, SavedRouteReview } from './types'
 
 export const savedRoutesKey = ['logbook', 'routes'] as const
 const savedRouteKey = (id: number) => [...savedRoutesKey, id] as const
+// The user's default weights, which a route review nudges.
+const preferencesKey = ['logbook', 'preferences'] as const
 
 /** The user's saved routes, newest first. */
 export function useSavedRoutes() {
@@ -52,6 +55,30 @@ export function useDeleteRoute(id: MaybeRefOrGetter<number>) {
 		onSuccess: () => {
 			queryClient.removeQueries({ queryKey: savedRouteKey(toValue(id)) })
 			void queryClient.invalidateQueries({ queryKey: savedRoutesKey, exact: true })
+		},
+	})
+}
+
+export interface RouteReviewInput {
+	answers: Record<string, Answer>
+	comment: string | null
+}
+
+/** Creates or replaces the review; the answer says which of the user's weights moved. */
+export function useSaveRouteReview(id: MaybeRefOrGetter<number>) {
+	const auth = useAuthStore()
+	const queryClient = useQueryClient()
+	return useMutation({
+		mutationFn: (review: RouteReviewInput) =>
+			auth.authedRequest<SavedRouteReview>(`/logbook/routes/${toValue(id)}/review`, {
+				method: 'PUT',
+				body: review,
+			}),
+		onSuccess: (saved) => {
+			queryClient.setQueryData<SavedRoute>(savedRouteKey(toValue(id)), (route) =>
+				route ? { ...route, review: saved.review } : route,
+			)
+			void queryClient.invalidateQueries({ queryKey: preferencesKey })
 		},
 	})
 }

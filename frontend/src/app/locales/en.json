@@ -278,6 +278,42 @@
 			"deleting": "Deleting route…",
 			"keep": "Keep route",
 			"failed": "The route was not deleted. Check your connection, then try again."
+		},
+		"review": {
+			"start": "Review route",
+			"title": "Review route",
+			"editTitle": "Edit review",
+			"lead": "How did {name} compare with what you wanted?",
+			"answers": {
+				"less": "Less",
+				"aboutRight": "About right",
+				"more": "More"
+			},
+			"said": {
+				"less": "Wanted less",
+				"aboutRight": "About right",
+				"more": "Wanted more"
+			},
+			"comment": "Comment (optional)",
+			"commentHint": "Only you can see this.",
+			"commentCount": "{count} of {max}",
+			"unanswered": "Answer at least one row, or cancel.",
+			"failed": "Your review was not saved. Check your connection, then save again.",
+			"save": "Save review",
+			"saveChanges": "Save changes",
+			"saving": "Saving review…",
+			"cancel": "Cancel",
+			"yours": "Your review",
+			"edit": "Edit review",
+			"nothingToReview": "Reviews need scores along the route, and this area has none yet.",
+			"notice": {
+				"title": "Review saved",
+				"raised": "{name} raised",
+				"lowered": "{name} lowered",
+				"atEnd": "{name} already at {weight}",
+				"unchanged": "Your preferences stay as they are.",
+				"openPlanner": "Open in planner"
+			}
 		}
 	}
 }

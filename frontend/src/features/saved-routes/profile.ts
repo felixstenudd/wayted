@@ -26,24 +26,34 @@ export function scoreWord(mean: number): ScoreWord {
 export const needsCoverageNote = (coverage: number) => coverage < COVERAGE_NOTE_BELOW
 
 /**
- * One row per scored attribute. What the route was planned for comes first, so it reads against
- * the weights that produced it; within each part, attributes keep the planner's order.
+ * Attribute keys with what the route was planned for first, so a route reads against the weights
+ * that produced it; within each part, keys keep the planner's order.
  */
+export function plannedFirst(
+	keys: readonly string[],
+	preferences: Record<string, number>,
+	order: readonly string[],
+): string[] {
+	const isWanted = (key: string) => Number((preferences[key] ?? 0) !== 0)
+	const position = (key: string) => {
+		const index = order.indexOf(key)
+		return index === -1 ? order.length : index
+	}
+	return [...keys].sort(
+		(a, b) => isWanted(b) - isWanted(a) || position(a) - position(b) || a.localeCompare(b),
+	)
+}
+
+/** One row per scored attribute, in plannedFirst order. */
 export function profileRows(
 	scores: Record<string, AttributeScore>,
 	preferences: Record<string, number>,
 	order: readonly string[],
 ): ProfileRow[] {
-	const position = (key: string) => {
-		const index = order.indexOf(key)
-		return index === -1 ? order.length : index
-	}
-	return Object.entries(scores)
-		.map(([key, score]) => ({ key, ...score, weight: preferences[key] ?? 0 }))
-		.sort(
-			(a, b) =>
-				Number(b.weight !== 0) - Number(a.weight !== 0) ||
-				position(a.key) - position(b.key) ||
-				a.key.localeCompare(b.key),
-		)
+	return plannedFirst(Object.keys(scores), preferences, order).map((key) => ({
+		key,
+		mean: scores[key]?.mean ?? 0,
+		coverage: scores[key]?.coverage ?? 0,
+		weight: preferences[key] ?? 0,
+	}))
 }
