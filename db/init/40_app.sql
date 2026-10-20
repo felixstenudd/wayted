@@ -49,11 +49,14 @@ CREATE INDEX routes_user_id_idx ON app.routes (user_id, created_at DESC);
 -- No foreign key to graph.edges here or in segment_review_edges: a reimport can split or delete
 -- an edge, and that must not delete user data.
 CREATE TABLE app.route_edges (
-    route_id bigint  NOT NULL REFERENCES app.routes (id) ON DELETE CASCADE,
-    seq      integer NOT NULL CHECK (seq >= 0),
-    edge_id  bigint  NOT NULL,
+    route_id   bigint  NOT NULL REFERENCES app.routes (id) ON DELETE CASCADE,
+    seq        integer NOT NULL CHECK (seq >= 0),
+    edge_id    bigint  NOT NULL,
     -- whether the route runs from source to target
-    forward  boolean NOT NULL,
+    forward    boolean NOT NULL,
+    length_m   double precision NOT NULL CHECK (length_m >= 0),
+    -- index in routes.geom of the point the edge ends at; it starts where the edge before ends
+    last_point integer NOT NULL CHECK (last_point >= 1),
     PRIMARY KEY (route_id, seq)
 );
 
