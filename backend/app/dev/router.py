@@ -126,6 +126,7 @@ async def graph(db_conn: Conn, west: Lon, south: Lat, east: Lon, north: Lat) -> 
                         forward=edge.forward,
                         backward=edge.backward,
                         scores=edge.scores,
+                        feedback=edge.feedback,
                         tags=edge.tags,
                     ),
                 )
