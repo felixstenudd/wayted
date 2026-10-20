@@ -76,10 +76,10 @@ describe('preference weights', () => {
 	it('reset one or all', () => {
 		const planner = usePlannerStore()
 		planner.setWeight('green', 0.5)
-		planner.setWeight('gravel', -1)
+		planner.setWeight('prepared', -1)
 
 		planner.resetWeight('green')
-		expect(planner.preferenceWeights).toEqual({ gravel: -1 })
+		expect(planner.preferenceWeights).toEqual({ prepared: -1 })
 		planner.resetWeights()
 		expect(planner.setWeightCount).toBe(0)
 	})

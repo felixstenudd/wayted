@@ -3,8 +3,8 @@ import pytest
 from app.enrichment import enrich_pending
 from app.enrichment.requeue import requeue
 
-from ..graph.raw_data import Conn, add_way
-from .area_data import Pool, add_road, add_square, areas, run
+from ..graph.raw_data import Conn, add_line, add_way
+from .area_data import Pool, add_road, add_square, areas, lines, run
 
 pytestmark = pytest.mark.db
 
@@ -66,3 +66,19 @@ async def test_requeue_features_includes_features_that_no_longer_match(
     await enrich_pending(enricher_pool.connection)
 
     assert await areas(admin_conn) == []
+
+
+async def test_requeue_features_includes_lines_that_no_longer_match(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_line(admin_conn, 101, [(1, 0, 0), (2, 10, 0)], {"waterway": "river"})
+    await run(mapper_pool, enricher_pool)
+    await admin_conn.execute("ALTER TABLE raw.osm_ways DISABLE TRIGGER USER")
+    await add_way(admin_conn, 101, [1, 2], {"waterway": "stream"})
+    await admin_conn.execute("ALTER TABLE raw.osm_ways ENABLE TRIGGER USER")
+
+    async with enricher_pool.connection() as conn:
+        assert await requeue(conn, features=True) == (0, 1)
+    await enrich_pending(enricher_pool.connection)
+
+    assert await lines(admin_conn) == []

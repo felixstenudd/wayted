@@ -83,8 +83,10 @@ describe('colorScale', () => {
 		expect(isFixedScale('green')).toBe(true)
 	})
 
-	it('runs from 0 to 1 for nature too', () => {
+	it('runs from 0 to 1 for nature, water and prepared too', () => {
 		expect(isFixedScale('nature')).toBe(true)
+		expect(isFixedScale('water')).toBe(true)
+		expect(isFixedScale('prepared')).toBe(true)
 	})
 
 	it('runs over the values in view for other scores', () => {
@@ -133,6 +135,8 @@ describe('scoreToken', () => {
 	it('ends a share in the colour of the layer it measures', () => {
 		expect(scoreToken('green')).toBe('--map-park')
 		expect(scoreToken('nature')).toBe('--map-nature')
+		expect(scoreToken('water')).toBe('--map-water')
+		expect(scoreToken('prepared')).toBe('--map-score-high')
 		expect(scoreToken('quiet')).toBe('--map-score-high')
 	})
 })

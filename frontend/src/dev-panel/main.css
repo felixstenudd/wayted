@@ -16,8 +16,9 @@
 	--map-score-low: oklch(65.5% 0.013 259.8);
 	--map-score-high: oklch(51.5% 0.123 147.4);
 	--map-outline: oklch(20.4% 0.007 258.4);
-	/* Area layers: mown lawn for parks, spruce for natural land, slate for a layer without its own. */
+	/* Area layers: mown lawn for parks, spruce for natural land, lake blue for water, slate for a layer without its own. */
 	--map-park: oklch(62% 0.16 135);
 	--map-nature: oklch(46% 0.09 165);
+	--map-water: oklch(52% 0.13 245);
 	--map-area: oklch(48.7% 0.014 259.8);
 }

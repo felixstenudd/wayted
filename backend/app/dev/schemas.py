@@ -28,6 +28,11 @@ class Polygon(BaseModel):
     coordinates: list[list[Position]]
 
 
+class MultiLineString(BaseModel):
+    type: Literal["MultiLineString"]
+    coordinates: list[list[Position]]
+
+
 class MultiPolygon(BaseModel):
     type: Literal["MultiPolygon"]
     coordinates: list[list[list[Position]]]

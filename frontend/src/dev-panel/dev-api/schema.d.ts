@@ -101,6 +101,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lines
+         * @description The line features that intersect the box, whole.
+         */
+        get: operations["lines_lines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pending": {
         parameters: {
             query?: never;
@@ -248,6 +268,17 @@ export interface components {
             /** Features */
             features: components["schemas"]["Feature_LineString_EdgeOut_"][];
         };
+        /** FeatureCollection[MultiLineString, AreaOut] */
+        FeatureCollection_MultiLineString_AreaOut_: {
+            /**
+             * Type
+             * @default FeatureCollection
+             * @constant
+             */
+            type: "FeatureCollection";
+            /** Features */
+            features: components["schemas"]["Feature_MultiLineString_AreaOut_"][];
+        };
         /** FeatureCollection[MultiPolygon, AreaOut] */
         FeatureCollection_MultiPolygon_AreaOut_: {
             /**
@@ -302,6 +333,17 @@ export interface components {
             type: "Feature";
             geometry: components["schemas"]["LineString"];
             properties: components["schemas"]["EdgeOut"];
+        };
+        /** Feature[MultiLineString, AreaOut] */
+        Feature_MultiLineString_AreaOut_: {
+            /**
+             * Type
+             * @default Feature
+             * @constant
+             */
+            type: "Feature";
+            geometry: components["schemas"]["MultiLineString"];
+            properties: components["schemas"]["AreaOut"];
         };
         /** Feature[MultiPolygon, AreaOut] */
         Feature_MultiPolygon_AreaOut_: {
@@ -394,6 +436,16 @@ export interface components {
             ways: number;
             /** Nodes */
             nodes: number;
+        };
+        /** MultiLineString */
+        MultiLineString: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "MultiLineString";
+            /** Coordinates */
+            coordinates: components["schemas"]["Position"][][];
         };
         /** MultiPolygon */
         MultiPolygon: {
@@ -616,6 +668,49 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeatureCollection_MultiPolygon_AreaOut_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lines_lines_get: {
+        parameters: {
+            query: {
+                west: number;
+                south: number;
+                east: number;
+                north: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureCollection_MultiLineString_AreaOut_"];
                 };
             };
             /** @description Bad Request */

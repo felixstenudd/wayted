@@ -3,7 +3,9 @@ INSERT INTO ref.source_layers (code, zoom, ttl) VALUES
     ('roads', 14, '1 month'),
     ('green_areas', 14, '1 month'),
     ('parks', 14, '1 month'),
-    ('nature', 14, '1 month');
+    ('nature', 14, '1 month'),
+    ('water', 14, '1 month'),
+    ('water_lines', 14, '1 month');
 
 INSERT INTO ref.activities (code, access_key, oneway_key, follows_oneway) VALUES
     ('running', 'foot', 'oneway:foot', false),
