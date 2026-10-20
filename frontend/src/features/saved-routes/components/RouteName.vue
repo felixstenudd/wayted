@@ -32,6 +32,8 @@ watch(isEditing, async (editing) => {
 })
 
 async function save(): Promise<void> {
+	// A second press while the first is on its way would send it twice.
+	if (rename.isPending.value) return
 	const name = draft.value.trim()
 	if (name === '') {
 		problem.value = 'empty'

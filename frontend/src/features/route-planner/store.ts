@@ -115,6 +115,12 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		if (defaultWeights.value) preferenceWeights.value = { ...defaultWeights.value }
 	}
 
+	/** Drops the weights a signed-in user brought, so whoever comes next starts clean. */
+	function forgetDefaults(): void {
+		defaultWeights.value = null
+		preferenceWeights.value = {}
+	}
+
 	return {
 		activity: readonly(activity),
 		shape,
@@ -136,5 +142,6 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		resetWeights,
 		receiveDefaults,
 		backToDefaults,
+		forgetDefaults,
 	}
 })

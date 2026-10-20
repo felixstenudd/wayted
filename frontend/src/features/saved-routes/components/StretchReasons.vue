@@ -67,17 +67,19 @@ const overlapsEarlier = computed(() => {
 
 async function submit(): Promise<void> {
 	const stretch = pick.stretch.value
-	if (!stretch) return
+	// A second press while the first is on its way would save the review twice.
+	if (!stretch || save.isPending.value) return
 	if (selected.value.length === 0) {
 		problem.value = 'nothing'
 		return
 	}
 	problem.value = null
 	const body = { reasons: selected.value, comment: comment.value.trim() || null }
+	const { fromSeq, toSeq } = edgeRange(stretch)
 	try {
 		await save.mutateAsync(
 			store.editingReviewId === null
-				? { ...body, reviewId: null, ...edgeRange(stretch) }
+				? { ...body, reviewId: null, from_seq: fromSeq, to_seq: toSeq }
 				: { ...body, reviewId: store.editingReviewId },
 		)
 		store.stopPickingStretch()

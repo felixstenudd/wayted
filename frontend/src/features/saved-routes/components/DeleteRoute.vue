@@ -22,6 +22,7 @@ const question = useTemplateRef<HTMLElement>('question')
 onMounted(() => question.value?.focus())
 
 async function confirm(): Promise<void> {
+	if (remove.isPending.value) return
 	hasFailed.value = false
 	try {
 		await remove.mutateAsync()

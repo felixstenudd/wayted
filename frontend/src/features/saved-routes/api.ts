@@ -2,15 +2,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/features/auth'
+import { storedPreferencesKey } from '@/features/route-planner'
 
 import type { ReviewReason } from './reasons'
-import type { Answer } from './review'
-import type { RouteSummary, SavedRoute, SavedRouteReview, SegmentReview } from './types'
+import type {
+	NewStretchReview,
+	RouteReviewInput,
+	RouteSummary,
+	SavedRoute,
+	SavedRouteReview,
+	SegmentReview,
+	StretchReviewChange,
+} from './types'
 
 export const savedRoutesKey = ['logbook', 'routes'] as const
 const savedRouteKey = (id: number) => [...savedRoutesKey, id] as const
-// The user's default weights, which a route review nudges.
-const preferencesKey = ['logbook', 'preferences'] as const
 
 /** The user's saved routes, newest first. */
 export function useSavedRoutes() {
@@ -60,11 +66,6 @@ export function useDeleteRoute(id: MaybeRefOrGetter<number>) {
 	})
 }
 
-export interface RouteReviewInput {
-	answers: Record<string, Answer>
-	comment: string | null
-}
-
 /** Creates or replaces the review; the answer says which of the user's weights moved. */
 export function useSaveRouteReview(id: MaybeRefOrGetter<number>) {
 	const auth = useAuthStore()
@@ -79,7 +80,8 @@ export function useSaveRouteReview(id: MaybeRefOrGetter<number>) {
 			queryClient.setQueryData<SavedRoute>(savedRouteKey(toValue(id)), (route) =>
 				route ? { ...route, review: saved.review } : route,
 			)
-			void queryClient.invalidateQueries({ queryKey: preferencesKey })
+			// The review nudged the user's default weights, which the planner starts from.
+			void queryClient.invalidateQueries({ queryKey: storedPreferencesKey })
 		},
 	})
 }
@@ -110,30 +112,23 @@ export function useSegmentReviews(routeId: MaybeRefOrGetter<number>) {
 	})
 }
 
-export interface StretchReviewInput {
-	reasons: string[]
-	comment: string | null
-}
-
 /** Creates a stretch review, or changes one when given its id; the stretch of one never changes. */
 export function useSaveSegmentReview(routeId: MaybeRefOrGetter<number>) {
 	const auth = useAuthStore()
 	const queryClient = useQueryClient()
 	return useMutation({
 		mutationFn: (
-			input: StretchReviewInput &
-				({ reviewId: number } | { reviewId: null; fromSeq: number; toSeq: number }),
+			input:
+				| ({ reviewId: null } & NewStretchReview)
+				| ({ reviewId: number } & StretchReviewChange),
 		) => {
-			const body = { reasons: input.reasons, comment: input.comment }
-			return input.reviewId === null
+			const { reviewId, ...body } = input
+			return reviewId === null
 				? auth.authedRequest<SegmentReview>(
 						`/logbook/routes/${toValue(routeId)}/segment-reviews`,
-						{
-							method: 'POST',
-							body: { ...body, from_seq: input.fromSeq, to_seq: input.toSeq },
-						},
+						{ method: 'POST', body },
 					)
-				: auth.authedRequest<SegmentReview>(`/logbook/segment-reviews/${input.reviewId}`, {
+				: auth.authedRequest<SegmentReview>(`/logbook/segment-reviews/${reviewId}`, {
 						method: 'PATCH',
 						body,
 					})

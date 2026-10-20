@@ -306,6 +306,7 @@
 			"commentHint": "Only you can see this.",
 			"commentCount": "{count} of {max}",
 			"unanswered": "Answer at least one row, or cancel.",
+			"questionsFailed": "The questions could not be loaded. Check your connection, then try again.",
 			"failed": "Your review was not saved. Check your connection, then save again.",
 			"save": "Save review",
 			"saveChanges": "Save changes",

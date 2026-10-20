@@ -53,6 +53,8 @@ watch(
 )
 
 async function submit(): Promise<void> {
+	// A second press while the first is on its way would nudge the weights twice over.
+	if (save.isPending.value) return
 	const answered = answeredOnly(answers.value)
 	if (Object.keys(answered).length === 0) {
 		problem.value = 'unanswered'
@@ -84,6 +86,19 @@ async function submit(): Promise<void> {
 
 		<div v-if="attributes.isPending.value" class="flex flex-col gap-4" aria-hidden="true">
 			<span v-for="row in 3" :key="row" class="h-14 rounded-md bg-sunken" />
+		</div>
+		<div
+			v-else-if="attributes.isError.value"
+			role="alert"
+			class="flex flex-col items-start gap-2"
+		>
+			<p class="flex gap-1.5 text-small text-contour">
+				<CircleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+				{{ t('savedRoutes.review.questionsFailed') }}
+			</p>
+			<Button type="button" variant="secondary" size="sm" @click="attributes.refetch()">
+				{{ t('savedRoutes.tryAgain') }}
+			</Button>
 		</div>
 		<ul v-else class="flex flex-col gap-4">
 			<li v-for="row in rows" :key="row.key" class="flex flex-col gap-1.5">
@@ -130,7 +145,12 @@ async function submit(): Promise<void> {
 		</p>
 
 		<div class="flex gap-2">
-			<Button type="submit" class="flex-1" :aria-busy="save.isPending.value">
+			<Button
+				v-if="!attributes.isError.value"
+				type="submit"
+				class="flex-1"
+				:aria-busy="save.isPending.value"
+			>
 				<template v-if="save.isPending.value">{{
 					t('savedRoutes.review.saving')
 				}}</template>

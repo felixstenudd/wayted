@@ -23,14 +23,14 @@ export function useFindRoutes() {
 	})
 }
 
-// Shared with route reviews, which nudge these weights and mark them stale.
-const preferencesKey = ['logbook', 'preferences'] as const
+// Exported for route reviews, which nudge these weights and mark them stale.
+export const storedPreferencesKey = ['logbook', 'preferences'] as const
 
 /** The user's stored weights, which the planner starts from. */
 export function useStoredPreferences() {
 	const auth = useAuthStore()
 	return useQuery({
-		queryKey: preferencesKey,
+		queryKey: storedPreferencesKey,
 		queryFn: () => auth.authedRequest<StoredPreferences>('/logbook/preferences'),
 	})
 }
@@ -44,6 +44,6 @@ export function useSaveDefaults() {
 				method: 'PUT',
 				body: { weights },
 			}),
-		onSuccess: (saved) => queryClient.setQueryData(preferencesKey, saved),
+		onSuccess: (saved) => queryClient.setQueryData(storedPreferencesKey, saved),
 	})
 }

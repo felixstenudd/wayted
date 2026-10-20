@@ -197,6 +197,17 @@ describe('stored defaults', () => {
 		expect(planner.preferenceWeights).toEqual({ green: 0.5 })
 	})
 
+	it('are forgotten with what was moved, so the next user starts from their own', () => {
+		const planner = usePlannerStore()
+		planner.receiveDefaults({ green: 0.5 })
+		planner.setWeight('water', 1)
+
+		planner.forgetDefaults()
+		planner.receiveDefaults({ quiet_streets: 0.3 })
+
+		expect(planner.preferenceWeights).toEqual({ quiet_streets: 0.3 })
+	})
+
 	it('are not there to differ from before they have loaded', () => {
 		const planner = usePlannerStore()
 		planner.setWeight('green', 1)
