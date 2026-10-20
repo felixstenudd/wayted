@@ -3,7 +3,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { authRedirect, useAuthStore } from '@/features/auth'
 import CreateAccountPage from '@/pages/CreateAccountPage.vue'
 import LandingPage from '@/pages/LandingPage.vue'
-import PlannerPage from '@/pages/PlannerPage.vue'
+import MapPage from '@/pages/MapPage.vue'
 import SignInPage from '@/pages/SignInPage.vue'
 
 import { pinia } from './plugins/pinia'
@@ -19,7 +19,13 @@ const routes: RouteRecordRaw[] = [
 		path: '/plan',
 		name: 'planner',
 		meta: { access: 'signed-in' },
-		component: PlannerPage,
+		component: MapPage,
+	},
+	{
+		path: '/routes',
+		name: 'routes',
+		meta: { access: 'signed-in' },
+		component: MapPage,
 	},
 	{
 		path: '/sign-in',

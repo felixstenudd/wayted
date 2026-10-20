@@ -124,16 +124,156 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/logbook/test": {
+    "/logbook/routes": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Test */
-        get: operations["test_logbook_test_get"];
+        /**
+         * List Routes
+         * @description The user's routes, newest first.
+         */
+        get: operations["list_routes_logbook_routes_get"];
         put?: never;
+        /**
+         * Create Route
+         * @description Save a route given as edges in order. The edges must connect and allow the activity.
+         */
+        post: operations["create_route_logbook_routes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/logbook/routes/{route_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Route */
+        get: operations["get_route_logbook_routes__route_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Route */
+        delete: operations["delete_route_logbook_routes__route_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Route */
+        patch: operations["rename_route_logbook_routes__route_id__patch"];
+        trace?: never;
+    };
+    "/logbook/routes/{route_id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Review
+         * @description Create or replace the review. Each answer that changed moves the user's weight for that
+         *     attribute by 0.1 per step; the response lists those changes.
+         */
+        put: operations["save_review_logbook_routes__route_id__review_put"];
+        post?: never;
+        /**
+         * Delete Review
+         * @description Delete the review. The weights it moved are kept.
+         */
+        delete: operations["delete_review_logbook_routes__route_id__review_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/logbook/review-reasons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reasons
+         * @description What a stretch review can say.
+         */
+        get: operations["list_reasons_logbook_review_reasons_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/logbook/routes/{route_id}/segment-reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Reviews
+         * @description The user's stretch reviews on this route, in route order.
+         */
+        get: operations["list_reviews_logbook_routes__route_id__segment_reviews_get"];
+        put?: never;
+        /**
+         * Create Review
+         * @description Review the stretch from edge from_seq to edge to_seq of the route.
+         */
+        post: operations["create_review_logbook_routes__route_id__segment_reviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/logbook/segment-reviews/{review_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Review */
+        delete: operations["delete_review_logbook_segment_reviews__review_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Change Review
+         * @description Replace the reasons and the comment. The stretch cannot change.
+         */
+        patch: operations["change_review_logbook_segment_reviews__review_id__patch"];
+        trace?: never;
+    };
+    "/logbook/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Preferences
+         * @description The weights the planner starts from. Attributes left out are "don't mind".
+         */
+        get: operations["get_preferences_logbook_preferences_get"];
+        /**
+         * Save Preferences
+         * @description Replace the default weights.
+         */
+        put: operations["save_preferences_logbook_preferences_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -243,6 +383,10 @@ export interface components {
              */
             token_type: string;
         };
+        /** @enum {string} */
+        Activity: "running" | "cycling";
+        /** @enum {integer} */
+        Answer: -1 | 0 | 1;
         /** AttributeOut */
         AttributeOut: {
             /** Key */
@@ -251,6 +395,13 @@ export interface components {
             /** Scored */
             scored: boolean;
         };
+        /** AttributeScoreOut */
+        AttributeScoreOut: {
+            /** Mean */
+            mean: number;
+            /** Coverage */
+            coverage: number;
+        };
         /** ChangePasswordIn */
         ChangePasswordIn: {
             /** Current Password */
@@ -258,12 +409,29 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /** EdgeStepIn */
+        EdgeStepIn: {
+            /** Edge Id */
+            edge_id: number;
+            /** Forward */
+            forward: boolean;
+        };
         /** @enum {string} */
         Group: "surroundings" | "streets" | "sights" | "surface";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LineString */
+        LineString: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "LineString";
+            /** Coordinates */
+            coordinates: components["schemas"]["Position"][];
         };
         /** LoginIn */
         LoginIn: {
@@ -279,6 +447,47 @@ export interface components {
             /** Lat */
             lat: number;
         };
+        Position: [
+            number,
+            number
+        ];
+        /** PreferenceChangeOut */
+        PreferenceChangeOut: {
+            /** Attribute */
+            attribute: string;
+            /** Before */
+            before: number;
+            /** After */
+            after: number;
+        };
+        /** PreferencesIn */
+        PreferencesIn: {
+            /** Weights */
+            weights: {
+                [key: string]: number;
+            };
+        };
+        /** PreferencesOut */
+        PreferencesOut: {
+            /** Weights */
+            weights: {
+                [key: string]: number;
+            };
+        };
+        /** ReasonOut */
+        ReasonOut: {
+            /** Code */
+            code: string;
+            /** Topic */
+            topic: string;
+            /**
+             * Sentiment
+             * @enum {integer}
+             */
+            sentiment: -1 | 1;
+            /** Attribute */
+            attribute: string | null;
+        };
         /** RegisterIn */
         RegisterIn: {
             /** Email */
@@ -287,6 +496,73 @@ export interface components {
             name: string;
             /** Password */
             password: string;
+        };
+        /** RenameIn */
+        RenameIn: {
+            /** Name */
+            name: string;
+        };
+        /** RouteEdgeOut */
+        RouteEdgeOut: {
+            /** Seq */
+            seq: number;
+            /** Length M */
+            length_m: number;
+            /** Last Point */
+            last_point: number;
+        };
+        /** RouteIn */
+        RouteIn: {
+            /** Name */
+            name: string;
+            activity: components["schemas"]["Activity"];
+            shape: components["schemas"]["Shape"];
+            /** Target Distance M */
+            target_distance_m: number;
+            /**
+             * Preferences
+             * @default {}
+             */
+            preferences: {
+                [key: string]: number;
+            };
+            /** Edges */
+            edges: components["schemas"]["EdgeStepIn"][];
+        };
+        /** RouteOut */
+        RouteOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            activity: components["schemas"]["Activity"];
+            shape: components["schemas"]["Shape"];
+            /** Target Distance M */
+            target_distance_m: number;
+            /** Preferences */
+            preferences: {
+                [key: string]: number;
+            };
+            /** Distance M */
+            distance_m: number;
+            /** Scores */
+            scores: {
+                [key: string]: components["schemas"]["AttributeScoreOut"];
+            };
+            geometry: components["schemas"]["LineString"];
+            /** Edges */
+            edges: components["schemas"]["RouteEdgeOut"][];
+            review: components["schemas"]["RouteReviewOut"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** RouteRequestIn */
         RouteRequestIn: {
@@ -312,6 +588,107 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** RouteReviewIn */
+        RouteReviewIn: {
+            /** Answers */
+            answers: {
+                [key: string]: components["schemas"]["Answer"];
+            };
+            /** Comment */
+            comment?: string | null;
+        };
+        /** RouteReviewOut */
+        RouteReviewOut: {
+            /** Answers */
+            answers: {
+                [key: string]: components["schemas"]["Answer"];
+            };
+            /** Comment */
+            comment: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** RouteSummaryOut */
+        RouteSummaryOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            activity: components["schemas"]["Activity"];
+            shape: components["schemas"]["Shape"];
+            /** Distance M */
+            distance_m: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            geometry: components["schemas"]["LineString"];
+        };
+        /** SavedRouteReviewOut */
+        SavedRouteReviewOut: {
+            review: components["schemas"]["RouteReviewOut"];
+            /** Preference Changes */
+            preference_changes: components["schemas"]["PreferenceChangeOut"][];
+        };
+        /**
+         * SegmentReviewChangeIn
+         * @description Replaces the reasons and the comment; the stretch stays.
+         */
+        SegmentReviewChangeIn: {
+            /** Reasons */
+            reasons: string[];
+            /** Comment */
+            comment?: string | null;
+        };
+        /** SegmentReviewIn */
+        SegmentReviewIn: {
+            /** From Seq */
+            from_seq: number;
+            /** To Seq */
+            to_seq: number;
+            /** Reasons */
+            reasons: string[];
+            /** Comment */
+            comment?: string | null;
+        };
+        /** SegmentReviewOut */
+        SegmentReviewOut: {
+            /** Id */
+            id: number;
+            /** Route Id */
+            route_id: number | null;
+            /** From Seq */
+            from_seq: number | null;
+            /** To Seq */
+            to_seq: number | null;
+            activity: components["schemas"]["Activity"];
+            geometry: components["schemas"]["LineString"];
+            /** Reasons */
+            reasons: string[];
+            /** Comment */
+            comment: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** @enum {string} */
+        Shape: "loop" | "point_to_point";
         /** UserOut */
         UserOut: {
             /** Email */
@@ -520,7 +897,7 @@ export interface operations {
             };
         };
     };
-    test_logbook_test_get: {
+    list_routes_logbook_routes_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -535,9 +912,465 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["RouteSummaryOut"][];
+                };
+            };
+        };
+    };
+    create_route_logbook_routes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_route_logbook_routes__route_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteOut"];
+                };
+            };
+            /** @description No such route among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_route_logbook_routes__route_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such route among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_route_logbook_routes__route_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RouteSummaryOut"];
+                };
+            };
+            /** @description No such route among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_review_logbook_routes__route_id__review_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RouteReviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedRouteReviewOut"];
+                };
+            };
+            /** @description No such route among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_review_logbook_routes__route_id__review_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The route has no review by the user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reasons_logbook_review_reasons_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReasonOut"][];
+                };
+            };
+        };
+    };
+    list_reviews_logbook_routes__route_id__segment_reviews_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentReviewOut"][];
+                };
+            };
+            /** @description No such route among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_review_logbook_routes__route_id__segment_reviews_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SegmentReviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentReviewOut"];
+                };
+            };
+            /** @description No such route among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_review_logbook_segment_reviews__review_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such review among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_review_logbook_segment_reviews__review_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SegmentReviewChangeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentReviewOut"];
+                };
+            };
+            /** @description No such review among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_preferences_logbook_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferencesOut"];
+                };
+            };
+        };
+    };
+    save_preferences_logbook_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferencesIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferencesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

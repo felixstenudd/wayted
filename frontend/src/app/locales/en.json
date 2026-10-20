@@ -213,5 +213,27 @@
 			"expand": "Show more of the planner",
 			"collapse": "Show less of the planner"
 		}
+	},
+	"nav": {
+		"label": "Sections",
+		"plan": "Plan",
+		"routes": "Your routes"
+	},
+	"savedRoutes": {
+		"title": "Your routes",
+		"loading": "Loading your routes…",
+		"loadFailed": "Your routes could not be loaded. Check your connection, then try again.",
+		"tryAgain": "Try again",
+		"empty": "Routes you save while planning show up here.",
+		"planRoute": "Plan a route",
+		"start": "Start",
+		"activity": {
+			"running": "Run",
+			"cycling": "Ride"
+		},
+		"row": {
+			"details": "{activity}, {date}",
+			"distanceKm": "{km} km"
+		}
 	}
 }
