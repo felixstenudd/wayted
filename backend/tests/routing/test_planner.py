@@ -1,3 +1,4 @@
+import math
 from typing import Any
 
 import psycopg
@@ -216,7 +217,7 @@ async def test_evaluation_measures_a_via_as_the_route_will_pass_it(
     async with api_pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT (e).length_m, (e).overlap_m,
+            SELECT (e).length_m, (e).doubled_m,
                    (SELECT sum(length_m) FROM graph.edges)
             FROM routing.evaluate(
                      routing.make_profile('running'), NULL, 1000,
@@ -227,10 +228,10 @@ async def test_evaluation_measures_a_via_as_the_route_will_pass_it(
         row = await cur.fetchone()
 
     assert row is not None
-    length_m, overlap_m, network_m = row
+    length_m, doubled_m, network_m = row
     # Out to 2 and back would be shortest, but the route goes on and round by the road.
     assert length_m == pytest.approx(network_m)
-    assert overlap_m == 0
+    assert doubled_m == 0
 
 
 async def test_candidate_that_must_turn_round_at_a_via_scores_as_missing_the_target(
@@ -286,6 +287,74 @@ async def test_route_goes_round_instead_of_taking_a_hairpin(
 
     assert shortest == [10, 11]
     assert ways == [10, 12]
+
+
+async def test_bow_leaves_at_a_right_angle_and_stays_beside_the_way(api_pool: Pool) -> None:
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            WITH ends AS (
+                SELECT ST_Point(20, 63, 4326) AS a,
+                       ST_Project(ST_Point(20, 63, 4326)::geography, 1000, radians(90))::geometry
+                           AS b
+            )
+            SELECT f,
+                   ST_Distance(a::geography, p::geography) AS from_start_m,
+                   degrees(ST_Azimuth(a::geography, p::geography)) AS bearing
+            FROM ends, unnest(ARRAY[0.05, 0.5, 0.95]) f,
+                 routing.bow_point(a, b, routing.bow_height(2), 1, f) p
+            ORDER BY f
+            """
+        )
+        rows = await cur.fetchall()
+
+    # Twice as long as the 1 km east: up to the left, the middle about 760 m north of the way.
+    (_, near_m, near_bearing), (_, middle_m, middle_bearing), (_, end_m, end_bearing) = rows
+    assert near_bearing == pytest.approx(0, abs=10)
+    assert near_m < 200
+    assert middle_m * math.cos(math.radians(middle_bearing)) == pytest.approx(760, rel=0.02)
+    # Near the finish, beside the way but not past it.
+    assert 0 < end_bearing < 90
+    assert end_m * math.sin(math.radians(end_bearing)) <= 1_000
+
+
+async def test_doubled_counts_going_back_alongside_but_not_crossing(api_pool: Pool) -> None:
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT routing.doubled_m(ST_MakeLine(ARRAY[
+                       ST_Point(20, 63.8, 4326), ST_Point(20.01, 63.8, 4326),
+                       ST_Point(20.01, 63.8001, 4326), ST_Point(20, 63.8001, 4326)
+                   ])),
+                   routing.doubled_m(ST_MakeLine(ARRAY[
+                       ST_Point(20, 63.8, 4326), ST_Point(20.02, 63.8, 4326),
+                       ST_Point(20.02, 63.81, 4326), ST_Point(20.01, 63.81, 4326),
+                       ST_Point(20.01, 63.79, 4326)
+                   ]))
+            """
+        )
+        row = await cur.fetchone()
+
+    assert row is not None
+    back_alongside, crossing = row
+    # Out about 500 m and back 11 m beside it: all but the 300 m around the turn.
+    assert back_alongside == pytest.approx(700, rel=0.1)
+    assert crossing == 0
+
+
+async def test_route_to_a_finish_does_not_set_off_behind_the_start(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    # Twice the 12 blocks east of the start.
+    route = await plan(api_pool, "running", grid_point(6, 12), grid_point(18, 12), 2_750)
+
+    assert route["length_m"] == pytest.approx(2_750, rel=TOLERANCE)
+    start_lon = ORIGIN_LON + 6 * COLUMN_STEPS * STEP
+    finish_lon = ORIGIN_LON + 18 * COLUMN_STEPS * STEP
+    lons = [lon for lon, _ in route["geometry"]["coordinates"]]
+    assert start_lon <= min(lons) and max(lons) <= finish_lon
 
 
 async def test_target_below_the_direct_route_takes_it_with_a_warning(

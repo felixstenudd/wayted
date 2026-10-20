@@ -401,15 +401,87 @@ LANGUAGE sql AS $$
     WHERE c1 <> c2
 $$;
 
+-- How far a half ellipse over a chord of length 1 bulges (its semi-minor axis, the semi-major
+-- being 1/2) to be p_ratio long, by halving with Ramanujan's perimeter. 0 for a ratio of 1 or less.
+CREATE FUNCTION routing.bow_height(p_ratio double precision) RETURNS double precision
+LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE AS $$
+DECLARE
+    v_low  double precision := 0;
+    v_high double precision := p_ratio;
+    v_mid  double precision;
+BEGIN
+    IF p_ratio <= 1 THEN
+        RETURN 0;
+    END IF;
+    FOR i IN 1 .. 50 LOOP
+        v_mid := (v_low + v_high) / 2;
+        IF pi() / 2 * (3 * (0.5 + v_mid) - sqrt((1.5 + v_mid) * (0.5 + 3 * v_mid))) < p_ratio THEN
+            v_low := v_mid;
+        ELSE
+            v_high := v_mid;
+        END IF;
+    END LOOP;
+    RETURN v_mid;
+END
+$$;
+
+-- The point p_fraction of the way, by length, along a half ellipse from p_start to p_finish that
+-- bulges p_height times their distance to the left of the way from start to finish for p_side 1,
+-- and to the right for -1. It leaves the start at a right angle, and never goes behind the start
+-- or past the finish. The length is summed over 200 steps of the ellipse's angle.
+CREATE FUNCTION routing.bow_point(
+    p_start geometry,
+    p_finish geometry,
+    p_height double precision,
+    p_side integer,
+    p_fraction double precision
+) RETURNS geometry
+LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE AS $$
+DECLARE
+    v_steps CONSTANT integer := 200;
+    v_total double precision := 0;
+    v_along double precision := 0;
+    v_t     double precision;
+    -- In units of the distance from start to finish: x along the way, y to the left.
+    v_x     double precision;
+    v_y     double precision;
+BEGIN
+    FOR i IN 1 .. v_steps LOOP
+        v_t := pi() * (i - 0.5) / v_steps;
+        v_total := v_total + sqrt((0.5 * sin(v_t)) ^ 2 + (p_height * cos(v_t)) ^ 2);
+    END LOOP;
+    v_t := pi();
+    FOR i IN 1 .. v_steps LOOP
+        EXIT WHEN v_along >= p_fraction * v_total;
+        v_t := pi() * (1 - (i - 0.5) / v_steps);
+        v_along := v_along + sqrt((0.5 * sin(v_t)) ^ 2 + (p_height * cos(v_t)) ^ 2);
+    END LOOP;
+    v_x := 0.5 + 0.5 * cos(v_t);
+    v_y := p_side * p_height * sin(v_t);
+    RETURN ST_Project(
+        p_start::geography,
+        sqrt(v_x ^ 2 + v_y ^ 2) * ST_Distance(p_start::geography, p_finish::geography),
+        ST_Azimuth(p_start::geography, p_finish::geography) - atan2(v_y, v_x)
+    )::geometry;
+END
+$$;
+
 -- Routes of about p_goal_m from p_start to p_finish, picked by network distance from the start
 -- (d_start) and to the finish (d_finish):
 -- - the direct route;
--- - start -> c -> finish through vertices with d_start + d_finish just under the goal, an
---   ellipse around both ends: the two most appealing from each fifth along it on each side;
--- - start -> c1 -> c2 -> finish, a parallelogram with c1 and c2 at the same bearing from the
---   start and the finish, (goal - direct) / 2 away, for goals far beyond the direct route, where
---   a single detour would come back the way it went. Corners are chosen by appeal, and every
---   shape tried at three sizes, as in routing.loop_candidates.
+-- - bows: the route follows half an ellipse from start to finish, on either side, as long as the
+--   goal: a flat bow for a goal a little beyond the direct route, a tall U for a long one. It
+--   never goes behind the start or past the finish. Streets wind, so the bow is shortened by the
+--   ratio of the direct route to the straight line. Its vias are spread evenly along it, one to
+--   three, about two legs per multiple of the direct route, so the route keeps to the curve; each
+--   is the most appealing vertex within a third of the spacing of its point (the nearest when
+--   there is none);
+-- - start -> c -> finish through the two most appealing vertices on each side with d_start +
+--   d_finish just under the goal, beside the middle half of the way from start to finish, so
+--   that c is neither behind the start nor past the finish;
+-- - for a goal four times the direct route or more, where a bow would be a tall narrow U, the
+--   loops of routing.loop_candidates, ending at the finish instead of back at the start.
+-- Every shape is tried at three sizes, as in routing.loop_candidates.
 CREATE FUNCTION routing.detour_candidates(
     p_profile routing.profile,
     p_area geometry,
@@ -419,7 +491,8 @@ CREATE FUNCTION routing.detour_candidates(
 ) RETURNS SETOF routing.candidate
 LANGUAGE sql AS $$
     WITH ends AS (
-        SELECT s.geom AS start_geom, f.geom AS finish_geom, ST_Azimuth(s.geom, f.geom) AS axis
+        SELECT s.geom AS start_geom, f.geom AS finish_geom,
+               ST_Distance(s.geom::geography, f.geom::geography) AS straight_m
         FROM graph.vertices s, graph.vertices f
         WHERE s.id = p_start AND f.id = p_finish
     ),
@@ -441,89 +514,154 @@ LANGUAGE sql AS $$
     direct AS (
         SELECT distance_m FROM to_finish WHERE vertex = p_start
     ),
-    -- Only vertices some shape could use; the stats are read for these alone.
+    -- Vertices on some route of at most the largest goal; the stats are read for these alone.
     near AS MATERIALIZED (
         SELECT s.vertex, s.distance_m AS d_start, f.distance_m AS d_finish
         FROM from_start s JOIN to_finish f USING (vertex)
         WHERE s.vertex NOT IN (p_start, p_finish)
-          AND (s.distance_m + f.distance_m BETWEEN 0.9 * 0.85 * p_goal_m AND 1.15 * p_goal_m
-               OR s.distance_m <= 1.1 * 1.15 * p_goal_m / 2
-               OR f.distance_m <= 1.1 * 1.15 * p_goal_m / 2)
+          AND s.distance_m + f.distance_m <= 1.15 * p_goal_m
     ),
     reach AS MATERIALIZED (
-        SELECT
-            n.vertex,
-            n.d_start,
-            n.d_finish,
-            ST_Azimuth(ends.start_geom, v.geom) AS from_start,
-            ST_Azimuth(ends.finish_geom, v.geom) AS from_finish,
-            ends.axis,
-            st.appeal
+        SELECT n.vertex, n.d_start, n.d_finish, v.geom, a.from_start, a.axis,
+               -- How far along the way from start to finish the vertex lies, from 0 to 1.
+               ST_Distance(ends.start_geom::geography, v.geom::geography)
+                   * cos(a.from_start - a.axis) / ends.straight_m AS along,
+               st.appeal
         FROM near n
         JOIN routing.vertex_stats(p_profile, ARRAY(SELECT vertex FROM near)) st USING (vertex)
         JOIN graph.vertices v ON v.id = n.vertex
         CROSS JOIN ends
-        WHERE st.degree > 1
+        -- On the ellipsoid: in degrees, east and west are stretched by 1 / cos(latitude).
+        CROSS JOIN LATERAL (
+            SELECT ST_Azimuth(ends.start_geom::geography, ends.finish_geom::geography) AS axis,
+                   ST_Azimuth(ends.start_geom::geography, v.geom::geography) AS from_start
+        ) a
+        WHERE st.degree > 1 AND ends.straight_m > 0
+    ),
+    bows AS (
+        -- Shortened by direct / straight and measured against the straight distance, the bow is
+        -- goal / direct times as long as that.
+        SELECT g.goal_m, side, routing.bow_height(g.goal_m / direct.distance_m) AS height,
+               least(4, greatest(2, round(2 * g.goal_m / direct.distance_m)))::int AS legs,
+               g.goal_m / direct.distance_m * ends.straight_m AS length_m
+        FROM goals g, direct, ends, unnest(ARRAY[1, -1]) side
+        WHERE g.goal_m > direct.distance_m AND ends.straight_m > 0
+    ),
+    -- Materialized, so each point is worked out once, not again for every vertex it is compared
+    -- with.
+    bow_points AS MATERIALIZED (
+        SELECT b.goal_m, b.side, k,
+               routing.bow_point(
+                   ends.start_geom, ends.finish_geom, b.height, b.side, k::float8 / b.legs
+               ) AS point,
+               b.length_m / b.legs / 3 AS radius_m
+        FROM bows b CROSS JOIN ends CROSS JOIN LATERAL generate_series(1, b.legs - 1) k
+    ),
+    bow_vias AS (
+        SELECT p.goal_m, p.side, p.k,
+               (SELECT r.vertex FROM reach r
+                ORDER BY NOT ST_DWithin(r.geom::geography, p.point::geography, p.radius_m),
+                         r.appeal DESC,
+                         r.geom <-> p.point
+                LIMIT 1) AS vertex
+        FROM bow_points p
+    ),
+    bow_routes AS (
+        SELECT array_agg(vertex ORDER BY k) AS vias
+        FROM bow_vias
+        GROUP BY goal_m, side
+        HAVING count(vertex) = count(*)
     ),
     single AS (
         SELECT reach.vertex, row_number() OVER (
-            PARTITION BY goals.goal_m,
-                         width_bucket(d_start / (d_start + d_finish), 0, 1, 5),
-                         sign(sin(from_start - axis))
+            PARTITION BY goals.goal_m, sign(sin(from_start - axis))
             ORDER BY appeal DESC, abs(d_start + d_finish - 0.95 * goals.goal_m)
         ) AS rank
         FROM reach JOIN goals ON d_start + d_finish BETWEEN 0.9 * goal_m AND goal_m
-    ),
-    side AS (
-        SELECT (goals.goal_m - direct.distance_m) / 2 AS r
-        FROM direct, goals
-        WHERE direct.distance_m < goals.goal_m / 2
-    ),
-    parallelograms AS (
-        SELECT
-            (SELECT vertex FROM reach
-             WHERE d_start BETWEEN 0.9 * side.r AND 1.1 * side.r
-             ORDER BY routing.angle_between(from_start, axis + b.turn) > radians(15), appeal DESC,
-                      routing.angle_between(from_start, axis + b.turn)
-             LIMIT 1) AS c1,
-            (SELECT vertex FROM reach
-             WHERE d_finish BETWEEN 0.9 * side.r AND 1.1 * side.r
-             ORDER BY routing.angle_between(from_finish, axis + b.turn) > radians(15), appeal DESC,
-                      routing.angle_between(from_finish, axis + b.turn)
-             LIMIT 1) AS c2
-        FROM (SELECT radians(d) AS turn FROM unnest(ARRAY[-120, -90, -60, 60, 90, 120]) d) b,
-             side
+        WHERE along BETWEEN 0.25 AND 0.75
     )
     SELECT ROW(ARRAY[p_start, p_finish])::routing.candidate
     UNION
+    SELECT ROW(p_start || vias || p_finish)::routing.candidate FROM bow_routes
+    UNION
     SELECT ROW(ARRAY[p_start, vertex, p_finish])::routing.candidate FROM single WHERE rank <= 2
     UNION
-    SELECT ROW(ARRAY[p_start, c1, c2, p_finish])::routing.candidate
-    FROM parallelograms
-    WHERE c1 <> c2
+    SELECT ROW(l.vias[1 : cardinality(l.vias) - 1] || p_finish)::routing.candidate
+    FROM direct, routing.loop_candidates(p_profile, p_area, p_start, p_goal_m) l
+    WHERE p_goal_m >= 4 * direct.distance_m
+$$;
+
+-- How much of p_line, in metres, runs within about 25 to 50 m of a part of itself at least 300 m
+-- further along: going back over the same streets, but also out and back on a road and the cycle
+-- path beside it, or round a lollipop. Points every 20 m at most are put in 25 m cells, and a
+-- point is doubled when a far one is in its cell or a neighbouring one. Only runs of doubled points
+-- at least 100 m long count, so that crossing the route, which makes shorter ones, does not. A
+-- closed line is measured round the loop, so its end is not taken for a return to its start.
+CREATE FUNCTION routing.doubled_m(p_line geometry) RETURNS double precision
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+    WITH pts AS (
+        SELECT (dp).path[1] AS i, (dp).geom AS p
+        FROM ST_DumpPoints(ST_Segmentize(p_line::geography, 20)::geometry) dp
+    ),
+    steps AS (
+        SELECT i, p, coalesce(ST_Distance(lag(p) OVER (ORDER BY i)::geography, p::geography), 0)
+            AS step_m
+        FROM pts
+    ),
+    -- 25 m cells: a degree of latitude is 111.3 km, one of longitude that times cos(latitude).
+    cells AS (
+        SELECT i, step_m, sum(step_m) OVER (ORDER BY i) AS along_m,
+               floor(ST_Y(p) * 111320 / 25)::bigint AS cy,
+               floor(ST_X(p) * 111320 * cos(radians(ST_Y(p))) / 25)::bigint AS cx
+        FROM steps
+    ),
+    total AS (
+        SELECT max(along_m) AS length_m, ST_IsClosed(p_line) AS closed FROM cells
+    ),
+    doubled AS (
+        SELECT DISTINCT a.i
+        FROM cells a
+        CROSS JOIN generate_series(-1, 1) dx
+        CROSS JOIN generate_series(-1, 1) dy
+        JOIN cells b ON b.cx = a.cx + dx AND b.cy = a.cy + dy
+        CROSS JOIN total t
+        WHERE CASE WHEN t.closed
+                   THEN least(abs(a.along_m - b.along_m), t.length_m - abs(a.along_m - b.along_m))
+                   ELSE abs(a.along_m - b.along_m)
+              END > 300
+    ),
+    -- Consecutive doubled points share a run: their index less their rank is the same.
+    runs AS (
+        SELECT d.i - row_number() OVER (ORDER BY d.i) AS run, c.step_m
+        FROM doubled d JOIN cells c USING (i)
+    )
+    SELECT coalesce(sum(run_m), 0)
+    FROM (SELECT sum(step_m) AS run_m FROM runs GROUP BY run) r
+    WHERE run_m >= 100
 $$;
 
 -- How well a route of p_length_m fits, lower is better: the share by which it misses the target,
--- 0.3 per unit of length-weighted preference below 1, and half the share travelled twice.
+-- 0.3 per unit of length-weighted preference below 1, and twice the share that is doubled (see
+-- routing.doubled_m), so that going out and back scores worse than missing the target by as much.
 CREATE FUNCTION routing.score(
     p_target_m   double precision,
     p_length_m   double precision,
     p_preference double precision,
-    p_overlap_m  double precision
+    p_doubled_m  double precision
 ) RETURNS double precision
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT abs(p_length_m - p_target_m) / p_target_m
         + 0.3 * (1 - coalesce(p_preference, 0))
-        + 0.5 * coalesce(p_overlap_m / nullif(p_length_m, 0), 0)
+        + 2 * coalesce(p_doubled_m / nullif(p_length_m, 0), 0)
 $$;
 
--- A candidate as pgRouting routes it: its length, length-weighted preference, length on edges it
--- uses more than once, and a score where lower is better.
+-- A candidate as pgRouting routes it: its length, length-weighted preference, length that is
+-- doubled (see routing.doubled_m), and a score where lower is better.
 CREATE TYPE routing.evaluation AS (
     vias       bigint[],
     length_m   double precision,
     preference double precision,
-    overlap_m  double precision,
+    doubled_m  double precision,
     score      double precision
 );
 
@@ -533,9 +671,10 @@ CREATE TYPE routing.evaluation AS (
 -- back sharply (more than 120 degrees, where a hairpin starts to cost) from the way the last leg
 -- came in, it is found again from that arc, in one more call for all such legs, as
 -- routing.route_edges will route it. The score is routing.score, plus 1 when the route still has
--- to turn back at a via (one at the end of a spur, or where every way on is a hairpin), which
--- only a route with no other candidate takes. Legs are evaluated without the reuse penalty that the final route gets, so retracing
--- counts for less than it appears. Candidates with a leg that cannot be travelled are left out.
+-- to turn back at a via (one at the end of a spur, or where every way on is a hairpin), or turns
+-- round there over the 150 m either side, which only a route with no other candidate takes.
+-- Legs are evaluated without the reuse penalty that the final route gets, so a leg may double
+-- back where the route will not. Candidates with a leg that cannot be travelled are left out.
 CREATE FUNCTION routing.evaluate(
     p_profile routing.profile,
     p_area geometry,
@@ -637,29 +776,79 @@ LANGUAGE sql AS $$
             SELECT 1 FROM ends e WHERE e.source = l.source AND e.target = l.target
         ))
     ),
-    leg_edges AS (
-        SELECT l.n, p.arc / 2 AS edge
+    -- Every leg's arcs in order: redone where it turned back, otherwise as first found.
+    leg_arcs AS (
+        SELECT l.n, l.i, p.path_seq AS seq, p.arc
         FROM legs l
         JOIN paths p ON p.source = l.source AND p.target = l.target
         WHERE NOT EXISTS (SELECT 1 FROM turning t WHERE t.n = l.n AND t.i = l.i)
         UNION ALL
-        SELECT t.n, r.arc / 2
+        SELECT t.n, t.i, r.path_seq, r.arc
         FROM turning t
         JOIN redone r ON r.from_arc = t.from_arc AND r.target = t.target
     ),
-    uses AS (
-        SELECT l.n, l.edge, count(*) AS times
-        FROM leg_edges l
+    steps AS MATERIALIZED (
+        SELECT a.n, a.i, a.seq,
+               CASE WHEN a.arc % 2 = 0 THEN e.source ELSE e.target END AS tail,
+               CASE WHEN a.arc % 2 = 0 THEN e.target ELSE e.source END AS head,
+               sum(e.length_m) OVER (PARTITION BY a.n, a.i ORDER BY a.seq) AS done_m,
+               sum(e.length_m) OVER (PARTITION BY a.n, a.i ORDER BY a.seq DESC) AS left_m
+        FROM leg_arcs a JOIN graph.edges e ON e.id = a.arc / 2
+    ),
+    -- Where each leg is 150 m before its end and after its start, or at its other end when it is
+    -- shorter.
+    leg_reach AS (
+        SELECT b.n, b.i, b.tail AS before_end, a.head AS after_start
+        FROM (
+            SELECT DISTINCT ON (n, i) n, i, tail FROM steps
+            ORDER BY n, i, left_m < 150, CASE WHEN left_m >= 150 THEN left_m ELSE -left_m END
+        ) b
+        JOIN (
+            SELECT DISTINCT ON (n, i) n, i, head FROM steps
+            ORDER BY n, i, done_m < 150, CASE WHEN done_m >= 150 THEN done_m ELSE -done_m END
+        ) a USING (n, i)
+    ),
+    -- Vias the route turns round at over the 150 m either side, as round a block, though no
+    -- single turn there is sharp and the ways back are too far apart to count as doubled.
+    spikes AS (
+        SELECT DISTINCT f.n
+        FROM follows f
+        JOIN legs l ON l.n = f.n AND l.i = f.before
+        JOIN leg_reach rb ON rb.n = f.n AND rb.i = f.before
+        JOIN leg_reach ra ON ra.n = f.n AND ra.i = f.after
+        JOIN graph.vertices p ON p.id = rb.before_end
+        JOIN graph.vertices v ON v.id = l.target
+        JOIN graph.vertices q ON q.id = ra.after_start
+        WHERE p.id <> v.id AND q.id <> v.id
+          AND routing.angle_between(
+                  ST_Azimuth(p.geom::geography, v.geom::geography),
+                  ST_Azimuth(v.geom::geography, q.geom::geography)
+              ) > radians(150)
+    ),
+    -- Each candidate's line in travel order, for measuring how much of it is doubled.
+    lines AS (
+        SELECT l.n,
+               ST_MakeLine(
+                   CASE WHEN l.arc % 2 = 0 THEN e.geom ELSE ST_Reverse(e.geom) END
+                   ORDER BY l.i, l.seq
+               ) AS line
+        FROM leg_arcs l
         JOIN complete USING (n)
-        GROUP BY l.n, l.edge
+        JOIN graph.edges e ON e.id = l.arc / 2
+        GROUP BY l.n
+    ),
+    uses AS (
+        SELECT l.n, l.arc / 2 AS edge, count(*) AS times
+        FROM leg_arcs l
+        JOIN complete USING (n)
+        GROUP BY l.n, l.arc / 2
     ),
     totals AS (
         SELECT
             u.n,
             sum(e.length_m * u.times) AS length_m,
             sum(e.length_m * u.times * routing.preference(p_profile.weights, e.scores))
-                AS preferred_m,
-            sum(e.length_m * (u.times - 1)) AS overlap_m
+                AS preferred_m
         FROM uses u JOIN graph.edges e ON e.id = u.edge
         GROUP BY u.n
     )
@@ -667,47 +856,67 @@ LANGUAGE sql AS $$
         c.vias,
         t.length_m,
         t.preferred_m / nullif(t.length_m, 0),
-        t.overlap_m,
-        routing.score(p_target_m, t.length_m, t.preferred_m / nullif(t.length_m, 0), t.overlap_m)
-            + CASE WHEN r.n IS NULL THEN 0 ELSE 1 END
+        d.doubled_m,
+        routing.score(p_target_m, t.length_m, t.preferred_m / nullif(t.length_m, 0), d.doubled_m)
+            + CASE WHEN r.n IS NULL AND s.n IS NULL THEN 0 ELSE 1 END
     )::routing.evaluation
     FROM totals t
     JOIN candidates c USING (n)
+    JOIN lines l USING (n)
+    CROSS JOIN LATERAL (SELECT routing.doubled_m(l.line) AS doubled_m) d
     LEFT JOIN turning_round r USING (n)
+    LEFT JOIN spikes s USING (n)
 $$;
 
 -- The edges of the route through p_vias in travel order, with the vertex each is entered from.
 -- Legs are routed one after another on routing.turns_sql's network, each with the edges before it
 -- in p_used, so the reuse penalty keeps a leg off the streets the route has already taken where
 -- it can. Each leg after the first starts from the arc the last one arrived by, so the turn at a
--- via costs what any other turn does and the route does not double back there.
+-- via costs what any other turn does and the route does not double back there. A leg is routed
+-- in a corridor first, half as wide as its vias are apart and at least 300 m, which holds far
+-- fewer edges than the whole area; only when it has no way through is the whole area searched.
 -- Raises no_data_found (detail unreachable) when a leg cannot be travelled.
 CREATE FUNCTION routing.route_edges(
     p_profile routing.profile, p_area geometry, p_vias bigint[]
 ) RETURNS TABLE (step integer, vertex bigint, edge_id bigint)
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_used bigint[] := '{}';
+    v_used     bigint[] := '{}';
     -- The departure node of the first leg, then the arc each leg arrived by.
-    v_from bigint := routing.departure(p_vias[1]);
-    v_arcs bigint[];
-    v_step integer := 0;
+    v_from     bigint := routing.departure(p_vias[1]);
+    v_arcs     bigint[];
+    v_step     integer := 0;
+    v_corridor geometry;
+    v_leg_area geometry;
 BEGIN
     FOR i IN 1 .. cardinality(p_vias) - 1 LOOP
         CONTINUE WHEN p_vias[i] = p_vias[i + 1];
-        SELECT array_agg(d.node ORDER BY d.seq) INTO v_arcs
-        FROM pgr_dijkstra(
-            routing.turns_sql(
-                routing.cost_sql(p_profile, p_area, v_used),
-                p_profile.turn_m,
-                CASE WHEN i = 1 THEN ARRAY[p_vias[1]] END,
-                ARRAY[p_vias[i + 1]]
-            ),
-            v_from,
-            routing.arrival(p_vias[i + 1])
-        ) d
-        -- The arc the leg starts from was travelled by the leg before.
-        WHERE d.node >= 0 AND d.node <> v_from;
+        SELECT ST_Buffer(
+                   ST_MakeLine(a.geom, b.geom)::geography,
+                   greatest(ST_Distance(a.geom::geography, b.geom::geography) / 2, 300)
+               )::geometry
+        INTO v_corridor
+        FROM graph.vertices a, graph.vertices b
+        WHERE a.id = p_vias[i] AND b.id = p_vias[i + 1];
+        IF p_area IS NOT NULL THEN
+            v_corridor := ST_Intersection(v_corridor, p_area);
+        END IF;
+        FOREACH v_leg_area IN ARRAY ARRAY[v_corridor, p_area] LOOP
+            SELECT array_agg(d.node ORDER BY d.seq) INTO v_arcs
+            FROM pgr_dijkstra(
+                routing.turns_sql(
+                    routing.cost_sql(p_profile, v_leg_area, v_used),
+                    p_profile.turn_m,
+                    CASE WHEN i = 1 THEN ARRAY[p_vias[1]] END,
+                    ARRAY[p_vias[i + 1]]
+                ),
+                v_from,
+                routing.arrival(p_vias[i + 1])
+            ) d
+            -- The arc the leg starts from was travelled by the leg before.
+            WHERE d.node >= 0 AND d.node <> v_from;
+            EXIT WHEN v_arcs IS NOT NULL;
+        END LOOP;
         IF v_arcs IS NULL THEN
             RAISE EXCEPTION 'no path from vertex % to %', p_vias[i], p_vias[i + 1]
                 USING ERRCODE = 'no_data_found', DETAIL = 'unreachable';
@@ -773,8 +982,8 @@ $$;
 
 -- Plans a route of about p_target_m for p_activity from p_start to p_finish, or back to p_start
 -- when p_finish is NULL, weighting edge scores by p_weights (see routing.make_profile). Options:
--- alpha, reuse_penalty and turn_m (see routing.profile), tolerance (0.07: how far the length may miss the
--- target) and snap_m (200: how far a point may be from the road it starts on).
+-- alpha, reuse_penalty and turn_m (see routing.profile), tolerance (0.07: how far the length may
+-- miss the target) and snap_m (200: how far a point may be from the road it starts on).
 -- Candidates are generated and scored in bulk; if the best misses the tolerance, the goal is
 -- scaled by how much it missed and candidates are tried once more. Evaluation leaves out the
 -- reuse penalty, so a route can come out otherwise than evaluated; when it misses the tolerance,
@@ -906,7 +1115,7 @@ BEGIN
             p_target_m,
             v_length_m,
             routing.preference(v_profile.weights, v_routed -> 'scores'),
-            (v_routed ->> 'reused_m')::double precision
+            routing.doubled_m(ST_GeomFromGeoJSON(v_routed -> 'geometry'))
         );
         IF v_route IS NULL OR v_score < v_best_score THEN
             v_route := v_routed;
