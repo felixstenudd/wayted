@@ -5,6 +5,9 @@ import {
 	junctions,
 	nearestJunction,
 	orderedStretch,
+	overlaps,
+	pointAlong,
+	reviewStretch,
 	stretchLengthM,
 	stretchLine,
 } from './stretch'
@@ -81,5 +84,27 @@ describe('the stretch itself', () => {
 
 	it('measures the edges it covers', () => {
 		expect(stretchLengthM(all, { from: 1, to: 2 })).toBe(40)
+	})
+})
+
+describe('reviewed stretches', () => {
+	it('turn the edges a review covers back into junctions', () => {
+		expect(reviewStretch({ from_seq: 1, to_seq: 2 })).toEqual({ from: 1, to: 3 })
+		expect(reviewStretch({ from_seq: null, to_seq: null })).toBeNull()
+	})
+
+	it('overlap when they share an edge, not just a junction', () => {
+		expect(overlaps({ from: 0, to: 2 }, { from: 1, to: 3 })).toBe(true)
+		expect(overlaps({ from: 0, to: 2 }, { from: 2, to: 3 })).toBe(false)
+	})
+
+	it('have a middle halfway along their line', () => {
+		const middle = pointAlong([
+			[20, 0],
+			[20.002, 0],
+			[20.002, 0.002],
+		])
+		expect(middle?.lon).toBeCloseTo(20.002, 6)
+		expect(middle?.lat).toBeCloseTo(0, 6)
 	})
 })

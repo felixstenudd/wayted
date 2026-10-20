@@ -19,6 +19,7 @@ import { CourseSymbol } from '@/shared/ui/course-symbol'
 import { useSavedRoute } from '../api'
 import { chevronsAlong } from '../chevrons'
 import { useSavedRoutesStore } from '../store'
+import ReviewedStretches from './ReviewedStretches.vue'
 import StretchLayers from './StretchLayers.vue'
 
 const props = defineProps<{ routeId: number }>()
@@ -92,6 +93,7 @@ watch(
 
 <template>
 	<StretchLayers v-if="store.isPickingStretch" :route-id="routeId" />
+	<ReviewedStretches v-else :route-id="routeId" />
 	<MapMarker
 		v-for="(chevron, index) in chevrons"
 		:key="`${routeId}-${index}`"

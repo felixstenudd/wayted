@@ -24,6 +24,8 @@ import RouteReviewForm from './RouteReviewForm.vue'
 import RouteReviewSummary from './RouteReviewSummary.vue'
 import ScoreProfile from './ScoreProfile.vue'
 import StretchPicker from './StretchPicker.vue'
+import StretchReasons from './StretchReasons.vue'
+import StretchReviewList from './StretchReviewList.vue'
 
 const props = defineProps<{
 	/** panel: floating beside the map. sheet: inside a bottom sheet, which brings its own padding. */
@@ -45,6 +47,7 @@ const isReviewing = ref(false)
 const store = useSavedRoutesStore()
 // What the last saved review did to the user's weights, until they move on.
 const savedChanges = ref<PreferenceChange[] | null>(null)
+const isStretchJustSaved = ref(false)
 watch(
 	() => props.routeId,
 	() => {
@@ -52,6 +55,7 @@ watch(
 		isDeleting.value = false
 		isReviewing.value = false
 		savedChanges.value = null
+		isStretchJustSaved.value = false
 		store.stopPickingStretch()
 	},
 )
@@ -68,6 +72,7 @@ function startReview(): void {
 
 function startStretch(): void {
 	savedChanges.value = null
+	isStretchJustSaved.value = false
 	isDeleting.value = false
 	store.startPickingStretch()
 }
@@ -95,7 +100,11 @@ const details = computed(() => {
 		class="flex flex-col gap-5"
 		:class="layout === 'panel' ? 'p-5' : 'border-t border-line pt-4'"
 	>
-		<div class="flex items-center justify-between">
+		<!-- Hidden while a review is written: the review has its own way back. -->
+		<div
+			v-if="!isReviewing && !store.isPickingStretch"
+			class="flex items-center justify-between"
+		>
 			<RouterLink
 				:to="{ name: 'routes' }"
 				class="-ml-1 flex items-center gap-1 rounded-sm text-small font-semibold text-graphite transition-[color] duration-150 ease-out hover:text-ink"
@@ -103,7 +112,7 @@ const details = computed(() => {
 				<ChevronLeft class="size-4" aria-hidden="true" />
 				{{ t('savedRoutes.title') }}
 			</RouterLink>
-			<DropdownMenu v-if="route && !isReviewing && !store.isPickingStretch">
+			<DropdownMenu v-if="route">
 				<DropdownMenuTrigger as-child>
 					<Button
 						variant="ghost"
@@ -153,9 +162,15 @@ const details = computed(() => {
 		</div>
 
 		<StretchPicker
+			v-else-if="route && store.isPickingStretch && store.stretchStage === 'pick'"
+			:route="route"
+			:heading-id="HEADING_ID"
+		/>
+		<StretchReasons
 			v-else-if="route && store.isPickingStretch"
 			:route="route"
 			:heading-id="HEADING_ID"
+			@saved="isStretchJustSaved = true"
 		/>
 
 		<RouteReviewForm
@@ -185,6 +200,7 @@ const details = computed(() => {
 					{{ t('savedRoutes.stretch.start') }}
 				</Button>
 			</div>
+			<StretchReviewList :route="route" :just-saved="isStretchJustSaved" />
 			<DeleteRoute v-if="isDeleting" :route="route" @keep="isDeleting = false" />
 		</template>
 	</section>

@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, type Component } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 
 import { AccountMenu } from '@/features/auth'
 import { MapView, provideMap } from '@/features/map'
 import { PlannerEssentials, PlannerPanel, PointMarkers } from '@/features/route-planner'
-import { RouteCourse, RouteDetailPanel, RouteLines, RoutesPanel } from '@/features/saved-routes'
+import {
+	RouteCourse,
+	RouteDetailPanel,
+	RouteLines,
+	RoutesPanel,
+	useSavedRoutesStore,
+} from '@/features/saved-routes'
 import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { BottomSheet } from '@/shared/ui/bottom-sheet'
 import { SegmentedNav } from '@/shared/ui/segmented-nav'
@@ -73,6 +79,16 @@ const navItems = computed(() => [
 	{ value: 'plan' as const, label: t('nav.plan'), to: { name: 'planner' } },
 	{ value: 'routes' as const, label: t('nav.routes'), to: { name: 'routes' } },
 ])
+
+// Picking a stretch needs the map, so the sheet steps down; saying what it was like needs the sheet.
+const savedRoutes = useSavedRoutesStore()
+watch(
+	() => (savedRoutes.isPickingStretch ? savedRoutes.stretchStage : null),
+	(stage) => {
+		if (stage === 'pick') sheetStop.value = 0
+		else if (stage === 'reasons') sheetStop.value = 1
+	},
+)
 
 provideMap()
 </script>

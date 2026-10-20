@@ -13,11 +13,15 @@ import {
 } from '@/features/map'
 
 import { useStretchPick } from '../composables/useStretchPick'
+import { useSavedRoutesStore } from '../store'
 
 const props = defineProps<{ routeId: number }>()
 
 const { t } = useI18n()
 const pick = useStretchPick(() => props.routeId)
+const store = useSavedRoutesStore()
+// Once the review is being written, the stretch stays put.
+const canMove = computed(() => store.stretchStage === 'pick')
 
 const stretchLine = computed<MapData>(() =>
 	pick.line.value.length > 1
@@ -68,7 +72,9 @@ useMapSource('saved-route-stretch', stretchLine, [
 		},
 	},
 ])
-useMapClickAt((at) => pick.placeAt(at))
+useMapClickAt((at) => {
+	if (canMove.value) pick.placeAt(at)
+})
 </script>
 
 <template>
@@ -81,7 +87,7 @@ useMapClickAt((at) => pick.placeAt(at))
 			class="block size-3.5 rounded-full border-[2.5px] border-overprint-contrast bg-overprint"
 		/>
 	</MapMarker>
-	<template v-if="fromPoint && toPoint">
+	<template v-if="canMove && fromPoint && toPoint">
 		<MapMarker
 			:key="`from-${drops}`"
 			:lon-lat="fromPoint"

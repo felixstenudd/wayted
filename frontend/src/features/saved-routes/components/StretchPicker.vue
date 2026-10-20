@@ -92,6 +92,13 @@ const length = computed(() =>
 		</div>
 
 		<div class="flex gap-2">
+			<Button
+				class="flex-1"
+				:disabled="!pick.stretch.value"
+				@click="store.toStretchReasons()"
+			>
+				{{ t('savedRoutes.stretch.next') }}
+			</Button>
 			<Button variant="ghost" @click="store.stopPickingStretch()">
 				{{ t('savedRoutes.stretch.cancel') }}
 			</Button>
