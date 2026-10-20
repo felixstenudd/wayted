@@ -33,6 +33,12 @@ GRANT SELECT ON ALL TABLES IN SCHEMA ref, graph TO wayted_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO wayted_api;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA app TO wayted_api;
 
+-- The route planner runs as the caller, so its view and functions read graph through the grants
+-- above; pgRouting functions live in public and need nothing more.
+GRANT USAGE ON SCHEMA routing TO wayted_api;
+GRANT SELECT ON ALL TABLES IN SCHEMA routing TO wayted_api;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA routing TO wayted_api;
+
 GRANT USAGE ON SCHEMA raw TO wayted_api;
 GRANT SELECT ON raw.fetched_tiles TO wayted_api;
 GRANT SELECT, INSERT, UPDATE ON raw.pending_tiles TO wayted_api;

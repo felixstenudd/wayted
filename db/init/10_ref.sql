@@ -24,3 +24,13 @@ CREATE TABLE ref.activity_highways (
     highway  text NOT NULL,
     PRIMARY KEY (activity, highway)
 );
+
+-- How much more a highway class costs per metre than the best one for the activity, when routing.
+-- Keyed by activity only, not ref.activity_highways: an access tag can open a way whose class the
+-- activity does not use by default, e.g. a footway with bicycle=yes. Missing classes cost 1.
+CREATE TABLE ref.activity_highway_factors (
+    activity text             NOT NULL REFERENCES ref.activities (code),
+    highway  text             NOT NULL,
+    factor   double precision NOT NULL CHECK (factor >= 1),
+    PRIMARY KEY (activity, highway)
+);
