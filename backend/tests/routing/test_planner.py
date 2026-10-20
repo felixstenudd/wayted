@@ -8,7 +8,7 @@ from psycopg_pool import AsyncConnectionPool
 from app.graph import map_pending
 
 from ..enrichment.area_data import add_square, run
-from ..graph.raw_data import ORIGIN_LAT, ORIGIN_LON, STEP, Conn
+from ..graph.raw_data import ORIGIN_LAT, ORIGIN_LON, STEP, Conn, add_line
 from .network_data import COLUMN_STEPS, add_grid, grid_point, node_id
 
 pytestmark = pytest.mark.db
@@ -54,6 +54,30 @@ def coordinates(column: int, row: int) -> object:
 async def grid(conn: Conn, mapper_pool: Pool, one_way_rows: frozenset[int] = frozenset()) -> None:
     await add_grid(conn, STREET, one_way_rows)
     await map_pending(mapper_pool.connection)
+
+
+async def route_ways(
+    pool: Pool, vias: list[int], weights: dict[str, float] | None = None, turn_m: float = 60
+) -> list[int]:
+    """Way ids of routing.route_edges through vias, one per edge, in travel order."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT e.way_id
+            FROM routing.route_edges(
+                     routing.make_profile('running', %s, p_turn_m => %s), NULL, %s::bigint[]
+                 ) r
+            JOIN graph.edges e ON e.id = r.edge_id
+            ORDER BY r.step
+            """,
+            (Jsonb(weights or {}), turn_m, vias),
+        )
+        return [way_id for (way_id,) in await cur.fetchall()]
+
+
+def turns(ways: list[int]) -> int:
+    """How often a route on the grid changes street, which is a turn there."""
+    return sum(a != b for a, b in zip(ways, ways[1:], strict=False))
 
 
 @pytest.mark.parametrize("target_m", [2_000, 4_000, 6_000])
@@ -118,6 +142,150 @@ async def test_long_route_to_a_near_finish_does_not_retrace(
 
     assert route["length_m"] == pytest.approx(3_500, rel=TOLERANCE)
     assert route["reused_m"] < 0.05 * route["length_m"]
+
+
+async def test_route_takes_the_way_with_fewest_turns(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    # A staircase north-east, a little greener than the streets around it.
+    steps = [(node_id(4 + k, 4 + k), node_id(5 + k, 4 + k)) for k in range(8)] + [
+        (node_id(5 + k, 4 + k), node_id(5 + k, 5 + k)) for k in range(8)
+    ]
+    await admin_conn.execute(
+        """
+        UPDATE graph.edges SET scores = '{"green": 0.2}'
+        WHERE (source, target) IN (SELECT * FROM unnest(%s::bigint[], %s::bigint[]))
+        """,
+        ([a for a, _ in steps], [b for _, b in steps]),
+    )
+    vias = [node_id(4, 4), node_id(12, 12)]
+
+    free = await route_ways(api_pool, vias, {"green": 1}, turn_m=0)
+    paid = await route_ways(api_pool, vias, {"green": 1})
+
+    assert turns(free) == 15
+    # As long, but 14 turns fewer for a little less green.
+    assert (len(paid), turns(paid)) == (16, 1)
+
+
+async def path_and_road(conn: Conn, mapper_pool: Pool) -> None:
+    """A path 1 -> 2 -> 3 of 2 x 114 m, and a road of 450 m from 3 back round to 1. 2 is where
+    the path is split, so going back from there is shorter than going on, but not by what
+    turning round costs."""
+    path = {"highway": "footway"}
+    await add_line(conn, 10, [(1, 0, 0), (2, 2, 0)], path)
+    await add_line(conn, 11, [(2, 2, 0), (3, 4, 0)], path)
+    await add_line(conn, 12, [(3, 4, 0), (4, 4, 1), (5, 0, 1), (1, 0, 0)], STREET)
+    await map_pending(mapper_pool.connection)
+
+
+async def test_route_carries_on_past_a_via_instead_of_doubling_back(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await path_and_road(admin_conn, mapper_pool)
+
+    async with api_pool.connection() as conn:
+        # Routed from b alone, with the path behind it already used, the way back is shortest.
+        cur = await conn.execute(
+            """
+            SELECT e.way_id
+            FROM pgr_dijkstra(
+                     routing.cost_sql(
+                         routing.make_profile('running'), NULL,
+                         ARRAY(SELECT id FROM graph.edges WHERE way_id = 10)
+                     ),
+                     2, 1
+                 ) d
+            JOIN graph.edges e ON e.id = d.edge
+            """
+        )
+        alone = [way_id for (way_id,) in await cur.fetchall()]
+
+    ways = await route_ways(api_pool, [1, 2, 1])
+
+    assert alone == [10]
+    assert ways == [10, 11, 12]
+
+
+async def test_evaluation_measures_a_via_as_the_route_will_pass_it(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await path_and_road(admin_conn, mapper_pool)
+
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT (e).length_m, (e).overlap_m,
+                   (SELECT sum(length_m) FROM graph.edges)
+            FROM routing.evaluate(
+                     routing.make_profile('running'), NULL, 1000,
+                     ARRAY[ROW('{1, 2, 1}')]::routing.candidate[]
+                 ) e
+            """
+        )
+        row = await cur.fetchone()
+
+    assert row is not None
+    length_m, overlap_m, network_m = row
+    # Out to 2 and back would be shortest, but the route goes on and round by the road.
+    assert length_m == pytest.approx(network_m)
+    assert overlap_m == 0
+
+
+async def test_candidate_that_must_turn_round_at_a_via_scores_as_missing_the_target(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    # A path 1 -> 2 -> 3 that ends at 3: from 2 there is no way on that does not come back.
+    path = {"highway": "footway"}
+    await add_line(admin_conn, 10, [(1, 0, 0), (2, 2, 0)], path)
+    await add_line(admin_conn, 11, [(2, 2, 0), (3, 4, 0)], path)
+    await map_pending(mapper_pool.connection)
+
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT (e).length_m, (e).score
+            FROM routing.evaluate(
+                     routing.make_profile('running'), NULL, 228,
+                     ARRAY[ROW('{1, 2, 1}')]::routing.candidate[]
+                 ) e
+            """
+        )
+        row = await cur.fetchone()
+
+    assert row is not None
+    length_m, score = row
+    # Out and back is the target exactly; only turning round costs.
+    assert length_m == pytest.approx(228, rel=0.01)
+    assert score > 1
+
+
+async def test_route_goes_round_instead_of_taking_a_hairpin(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    # A road east to 2, where a path of 254 m forks back at about 155 degrees to 3, and the road
+    # goes on round to 3 the long way, 567 m.
+    await add_line(admin_conn, 10, [(1, 0, 0), (2, 4, 0)], STREET)
+    await add_line(admin_conn, 11, [(2, 4, 0), (3, 0, 1)], {"highway": "footway"})
+    await add_line(admin_conn, 12, [(2, 4, 0), (4, 6, 0), (5, 6, 1), (3, 0, 1)], STREET)
+    await map_pending(mapper_pool.connection)
+
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT e.way_id
+            FROM pgr_dijkstra(routing.cost_sql(routing.make_profile('running'), NULL), 1, 3) d
+            JOIN graph.edges e ON e.id = d.edge
+            ORDER BY d.seq
+            """
+        )
+        shortest = [way_id for (way_id,) in await cur.fetchall()]
+
+    ways = await route_ways(api_pool, [1, 3])
+
+    assert shortest == [10, 11]
+    assert ways == [10, 12]
 
 
 async def test_target_below_the_direct_route_takes_it_with_a_warning(
@@ -203,7 +371,13 @@ async def test_unreachable_finish_is_an_error(
 
 @pytest.mark.parametrize(
     ("target_m", "options"),
-    [(0, {}), (3_000, {"tolerance": 0}), (3_000, {"snap": 50}), (3_000, {"snap_m": -1})],
+    [
+        (0, {}),
+        (3_000, {"tolerance": 0}),
+        (3_000, {"snap": 50}),
+        (3_000, {"snap_m": -1}),
+        (3_000, {"turn_m": -1}),
+    ],
 )
 async def test_bad_target_or_options_are_rejected(
     api_pool: Pool, target_m: float, options: dict[str, float]

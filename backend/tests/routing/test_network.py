@@ -127,7 +127,7 @@ async def test_profile_scales_weights_and_drops_zeros(api_pool: Pool) -> None:
     async with api_pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT (p).activity, (p).weights, (p).alpha, (p).reuse_penalty
+            SELECT (p).activity, (p).weights, (p).alpha, (p).reuse_penalty, (p).turn_m
             FROM routing.make_profile('cycling', %s) p
             """,
             (Jsonb({"green": 1, "nature": -0.5, "water": 0}),),
@@ -135,21 +135,22 @@ async def test_profile_scales_weights_and_drops_zeros(api_pool: Pool) -> None:
         row = await cur.fetchone()
 
     assert row is not None
-    activity, weights, alpha, reuse_penalty = row
+    activity, weights, alpha, reuse_penalty, turn_m = row
     assert activity == "cycling"
     assert weights == pytest.approx({"green": 2 / 3, "nature": -1 / 3})
-    assert (alpha, reuse_penalty) == (0.7, 4)
+    assert (alpha, reuse_penalty, turn_m) == (0.7, 4, 60)
 
 
 @pytest.mark.parametrize(
-    ("activity", "weights", "alpha", "reuse_penalty", "message"),
+    ("activity", "weights", "alpha", "reuse_penalty", "turn_m", "message"),
     [
-        ("swimming", {}, 0.7, 4, "unknown activity"),
-        ("running", [], 0.7, 4, "weights must be an object"),
-        ("running", {"green": 1.5}, 0.7, 4, "weights must be numbers"),
-        ("running", {"green": "a lot"}, 0.7, 4, "weights must be numbers"),
-        ("running", {}, 1, 4, "alpha"),
-        ("running", {}, 0.7, 0.5, "reuse_penalty"),
+        ("swimming", {}, 0.7, 4, 60, "unknown activity"),
+        ("running", [], 0.7, 4, 60, "weights must be an object"),
+        ("running", {"green": 1.5}, 0.7, 4, 60, "weights must be numbers"),
+        ("running", {"green": "a lot"}, 0.7, 4, 60, "weights must be numbers"),
+        ("running", {}, 1, 4, 60, "alpha"),
+        ("running", {}, 0.7, 0.5, 60, "reuse_penalty"),
+        ("running", {}, 0.7, 4, -1, "turn_m"),
     ],
 )
 async def test_profile_rejects_bad_input(
@@ -158,13 +159,14 @@ async def test_profile_rejects_bad_input(
     weights: object,
     alpha: float,
     reuse_penalty: float,
+    turn_m: float,
     message: str,
 ) -> None:
     async with api_pool.connection() as conn:
         with pytest.raises(psycopg.errors.InvalidParameterValue, match=message):
             await conn.execute(
-                "SELECT routing.make_profile(%s, %s, %s, %s)",
-                (activity, Jsonb(weights), alpha, reuse_penalty),
+                "SELECT routing.make_profile(%s, %s, %s, %s, %s)",
+                (activity, Jsonb(weights), alpha, reuse_penalty, turn_m),
             )
 
 

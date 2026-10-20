@@ -33,7 +33,9 @@ CREATE TYPE routing.profile AS (
     -- how far preferences bend cost: an edge costs length * factor * (1 - alpha * preference)
     alpha         double precision,
     -- cost multiplier on edges the route already uses
-    reuse_penalty double precision
+    reuse_penalty double precision,
+    -- cost in metres of a right-angle turn at a junction (see routing.turns_sql)
+    turn_m        double precision
 );
 
 -- Weights run from -1 (avoid) to 1 (prefer) per edge score key, e.g. {"green": 1}. They are
@@ -44,7 +46,8 @@ CREATE FUNCTION routing.make_profile(
     p_activity      text,
     p_weights       jsonb            DEFAULT '{}',
     p_alpha         double precision DEFAULT 0.7,
-    p_reuse_penalty double precision DEFAULT 4
+    p_reuse_penalty double precision DEFAULT 4,
+    p_turn_m        double precision DEFAULT 60
 ) RETURNS routing.profile
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
@@ -70,6 +73,9 @@ BEGIN
         RAISE EXCEPTION 'reuse_penalty must be at least 1'
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
+    IF p_turn_m IS NULL OR p_turn_m < 0 THEN
+        RAISE EXCEPTION 'turn_m must be at least 0' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
 
     SELECT sum(abs(w.value::double precision)) INTO v_total FROM jsonb_each(p_weights) w;
     RETURN ROW(
@@ -81,7 +87,8 @@ BEGIN
             '{}'
         ),
         p_alpha,
-        p_reuse_penalty
+        p_reuse_penalty,
+        p_turn_m
     )::routing.profile;
 END
 $$;
@@ -190,6 +197,105 @@ CREATE FUNCTION routing.angle_between(p_a double precision, p_b double precision
 RETURNS double precision
 LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
     SELECT abs(atan2(sin(p_a - p_b), cos(p_a - p_b)))
+$$;
+
+-- Routes on routing.turns_sql's network run from a departure to an arrival node: virtual nodes
+-- for leaving and reaching a vertex in any direction. Edge travel there is by arc: 2 * id
+-- source -> target, 2 * id + 1 back.
+CREATE FUNCTION routing.departure(p_vertex bigint) RETURNS bigint
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+    SELECT -2 * p_vertex
+$$;
+
+CREATE FUNCTION routing.arrival(p_vertex bigint) RETURNS bigint
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+    SELECT -2 * p_vertex - 1
+$$;
+
+-- p_sql's network turned into one of arcs, so that a route pays for its turns: moving from one
+-- arc to the next costs the next one's cost plus p_turn_m for a right angle at a junction (a
+-- vertex where more than two edges meet), scaled linearly from nothing at 30 degrees off
+-- straight. Bends between two edges are free, since there is no other way to go. A hairpin looks
+-- like turning round however many edges meet there, so from 120 degrees on the cost climbs by up
+-- to 1000 m more at 180; turning back onto the edge just travelled counts as 180 degrees anywhere.
+-- That is more than the reuse penalty adds to most streets, so a route would rather go back over
+-- a street it has used than double back on the spot, and does that only when nothing else is
+-- left. The ways out of
+-- p_departures and into p_arrivals join their departure and arrival nodes; a route may also
+-- start from an arc, to carry on from where the last one arrived. The angles come from the ends
+-- of each edge's line.
+CREATE FUNCTION routing.turns_sql(
+    p_sql text, p_turn_m double precision, p_departures bigint[], p_arrivals bigint[]
+) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT format(
+        $sql$
+        WITH n AS (%1$s),
+        arcs AS MATERIALIZED (
+            SELECT 2 * n.id AS arc, n.id AS edge, n.source AS tail, n.target AS head, n.cost,
+                   ST_Azimuth(ST_PointN(e.geom, 1), ST_PointN(e.geom, 2)) AS leaving,
+                   ST_Azimuth(ST_PointN(e.geom, -2), ST_PointN(e.geom, -1)) AS arriving
+            FROM n JOIN graph.edges e USING (id)
+            WHERE n.cost >= 0
+            UNION ALL
+            SELECT 2 * n.id + 1, n.id, n.target, n.source, n.reverse_cost,
+                   ST_Azimuth(ST_PointN(e.geom, -1), ST_PointN(e.geom, -2)),
+                   ST_Azimuth(ST_PointN(e.geom, 2), ST_PointN(e.geom, 1))
+            FROM n JOIN graph.edges e USING (id)
+            WHERE n.reverse_cost >= 0
+        ),
+        junctions AS (
+            SELECT vertex FROM (
+                SELECT tail AS vertex, edge FROM arcs UNION SELECT head, edge FROM arcs
+            ) v
+            GROUP BY vertex
+            HAVING count(*) > 2
+        )
+        SELECT row_number() OVER () AS id, source, target, cost, -1::float8 AS reverse_cost
+        FROM (
+            SELECT m.source, m.target,
+                   m.cost + CASE WHEN m.turns THEN
+                       %2$s * greatest(m.angle - radians(30), 0) / radians(60)
+                           + 1000 * greatest(m.angle - radians(120), 0) / radians(60)
+                       ELSE 0
+                   END AS cost
+            FROM (
+                SELECT a.arc AS source, b.arc AS target, b.cost,
+                       a.edge = b.edge OR j.vertex IS NOT NULL AS turns,
+                       CASE WHEN a.edge = b.edge THEN pi()
+                            ELSE coalesce(routing.angle_between(a.arriving, b.leaving), 0)
+                       END AS angle
+                FROM arcs a
+                JOIN arcs b ON b.tail = a.head
+                LEFT JOIN junctions j ON j.vertex = a.head
+            ) m
+            UNION ALL
+            SELECT routing.departure(tail), arc, cost FROM arcs WHERE tail = ANY (%3$L::bigint[])
+            UNION ALL
+            SELECT arc, routing.arrival(head), 0 FROM arcs WHERE head = ANY (%4$L::bigint[])
+        ) t
+        $sql$,
+        p_sql,
+        p_turn_m,
+        coalesce(p_departures, '{}'),
+        coalesce(p_arrivals, '{}')
+    )
+$$;
+
+-- How far arc p_to turns from arc p_from where it follows it, in radians as routing.turns_sql
+-- counts it: pi for going back along the same edge.
+CREATE FUNCTION routing.turn_angle(p_from bigint, p_to bigint) RETURNS double precision
+LANGUAGE sql STABLE AS $$
+    SELECT CASE WHEN p_from / 2 = p_to / 2 THEN pi() ELSE coalesce(routing.angle_between(
+        (SELECT CASE WHEN p_from % 2 = 0
+                     THEN ST_Azimuth(ST_PointN(geom, -2), ST_PointN(geom, -1))
+                     ELSE ST_Azimuth(ST_PointN(geom, 2), ST_PointN(geom, 1)) END
+         FROM graph.edges WHERE id = p_from / 2),
+        (SELECT CASE WHEN p_to % 2 = 0
+                     THEN ST_Azimuth(ST_PointN(geom, 1), ST_PointN(geom, 2))
+                     ELSE ST_Azimuth(ST_PointN(geom, -1), ST_PointN(geom, -2)) END
+         FROM graph.edges WHERE id = p_to / 2)
+    ), 0) END
 $$;
 
 -- An edge's preference under weights scaled by routing.make_profile, in [-1, 1]. routing.cost_sql
@@ -397,6 +503,20 @@ LANGUAGE sql AS $$
     WHERE c1 <> c2
 $$;
 
+-- How well a route of p_length_m fits, lower is better: the share by which it misses the target,
+-- 0.3 per unit of length-weighted preference below 1, and half the share travelled twice.
+CREATE FUNCTION routing.score(
+    p_target_m   double precision,
+    p_length_m   double precision,
+    p_preference double precision,
+    p_overlap_m  double precision
+) RETURNS double precision
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT abs(p_length_m - p_target_m) / p_target_m
+        + 0.3 * (1 - coalesce(p_preference, 0))
+        + 0.5 * coalesce(p_overlap_m / nullif(p_length_m, 0), 0)
+$$;
+
 -- A candidate as pgRouting routes it: its length, length-weighted preference, length on edges it
 -- uses more than once, and a score where lower is better.
 CREATE TYPE routing.evaluation AS (
@@ -407,11 +527,15 @@ CREATE TYPE routing.evaluation AS (
     score      double precision
 );
 
--- Every candidate evaluated from one pgr_dijkstra call over the distinct legs of all of them. The
--- score adds the share by which the length misses the target, 0.3 per unit of preference below 1,
--- and half the share travelled twice. Legs are evaluated apart, without the reuse penalty that
--- the final route gets, so retracing counts for less than it appears. Candidates with a leg that
--- cannot be travelled are left out.
+-- Every candidate evaluated from one pgr_dijkstra call over the distinct legs of all of them, on
+-- routing.turns_sql's network so that turns count as they will on the route. Legs are found apart,
+-- so a leg does not know how the one before arrived; where its cheapest way out of the via turns
+-- back sharply (more than 120 degrees, where a hairpin starts to cost) from the way the last leg
+-- came in, it is found again from that arc, in one more call for all such legs, as
+-- routing.route_edges will route it. The score is routing.score, plus 1 when the route still has
+-- to turn back at a via (one at the end of a spur, or where every way on is a hairpin), which
+-- only a route with no other candidate takes. Legs are evaluated without the reuse penalty that the final route gets, so retracing
+-- counts for less than it appears. Candidates with a leg that cannot be travelled are left out.
 CREATE FUNCTION routing.evaluate(
     p_profile routing.profile,
     p_area geometry,
@@ -423,9 +547,15 @@ LANGUAGE sql AS $$
         SELECT c.vias, c.n FROM unnest(p_candidates) WITH ORDINALITY AS c(vias, n)
     ),
     legs AS (
-        SELECT c.n, c.vias[l.i] AS source, c.vias[l.i + 1] AS target
+        SELECT c.n, l.i, c.vias[l.i] AS source, c.vias[l.i + 1] AS target
         FROM candidates c, generate_series(1, cardinality(c.vias) - 1) AS l(i)
         WHERE c.vias[l.i] <> c.vias[l.i + 1]
+    ),
+    -- Each leg and the leg after it; vias repeated in a row are skipped.
+    follows AS (
+        SELECT a.n, a.i AS before, min(b.i) AS after
+        FROM legs a JOIN legs b ON b.n = a.n AND b.i > a.i
+        GROUP BY a.n, a.i
     ),
     pairs AS (
         SELECT coalesce(array_agg(source), '{}') AS sources,
@@ -433,29 +563,95 @@ LANGUAGE sql AS $$
         FROM (SELECT DISTINCT source, target FROM legs) d
     ),
     paths AS (
-        SELECT p.start_vid, p.end_vid, p.edge
+        SELECT -p.start_vid / 2 AS source, -(p.end_vid + 1) / 2 AS target, p.node AS arc,
+               p.path_seq
         FROM pairs, pgr_dijkstra(
-            routing.cost_sql(p_profile, p_area),
+            routing.turns_sql(
+                routing.cost_sql(p_profile, p_area), p_profile.turn_m, pairs.sources, pairs.targets
+            ),
             format(
-                'SELECT * FROM unnest(%L::bigint[], %L::bigint[]) AS c(source, target)',
+                $sql$
+                SELECT routing.departure(source) AS source, routing.arrival(target) AS target
+                FROM unnest(%L::bigint[], %L::bigint[]) AS c(source, target)
+                $sql$,
                 pairs.sources, pairs.targets
             )
         ) p
-        WHERE p.edge <> -1
+        -- Arc nodes; the departure and arrival nodes are negative.
+        WHERE p.node >= 0
+    ),
+    ends AS (
+        SELECT source, target,
+               (array_agg(arc ORDER BY path_seq))[1] AS first_arc,
+               (array_agg(arc ORDER BY path_seq DESC))[1] AS last_arc
+        FROM paths
+        GROUP BY source, target
+    ),
+    turning AS (
+        SELECT b.n, b.i, ea.last_arc AS from_arc, b.target
+        FROM follows f
+        JOIN legs a ON a.n = f.n AND a.i = f.before
+        JOIN legs b ON b.n = f.n AND b.i = f.after
+        JOIN ends ea ON ea.source = a.source AND ea.target = a.target
+        JOIN ends eb ON eb.source = b.source AND eb.target = b.target
+        WHERE routing.turn_angle(ea.last_arc, eb.first_arc) > radians(120)
+    ),
+    redone AS (
+        SELECT p.start_vid AS from_arc, -(p.end_vid + 1) / 2 AS target, p.node AS arc,
+               p.path_seq
+        FROM (
+            SELECT array_agg(from_arc) AS arcs, array_agg(target) AS targets
+            FROM (SELECT DISTINCT from_arc, target FROM turning) d
+            -- No row, and so no call, when no leg turns back.
+            HAVING count(*) > 0
+        ) t, pgr_dijkstra(
+            routing.turns_sql(
+                routing.cost_sql(p_profile, p_area), p_profile.turn_m, '{}', t.targets
+            ),
+            format(
+                $sql$
+                SELECT source, routing.arrival(target) AS target
+                FROM unnest(%L::bigint[], %L::bigint[]) AS c(source, target)
+                $sql$,
+                t.arcs, t.targets
+            )
+        ) p
+        -- The arc it starts from belongs to the leg before.
+        WHERE p.node >= 0 AND p.node <> p.start_vid
+    ),
+    -- Redone legs whose way on still turns back sharply.
+    turning_round AS (
+        SELECT DISTINCT t.n
+        FROM turning t
+        JOIN redone r ON r.from_arc = t.from_arc AND r.target = t.target
+        WHERE routing.turn_angle(t.from_arc, r.arc) > radians(120)
+          AND r.path_seq = (
+              SELECT min(x.path_seq) FROM redone x
+              WHERE x.from_arc = t.from_arc AND x.target = t.target
+          )
     ),
     complete AS (
         SELECT l.n FROM legs l
         GROUP BY l.n
         HAVING bool_and(EXISTS (
-            SELECT 1 FROM paths p WHERE p.start_vid = l.source AND p.end_vid = l.target
+            SELECT 1 FROM ends e WHERE e.source = l.source AND e.target = l.target
         ))
     ),
-    uses AS (
-        SELECT l.n, p.edge, count(*) AS times
+    leg_edges AS (
+        SELECT l.n, p.arc / 2 AS edge
         FROM legs l
+        JOIN paths p ON p.source = l.source AND p.target = l.target
+        WHERE NOT EXISTS (SELECT 1 FROM turning t WHERE t.n = l.n AND t.i = l.i)
+        UNION ALL
+        SELECT t.n, r.arc / 2
+        FROM turning t
+        JOIN redone r ON r.from_arc = t.from_arc AND r.target = t.target
+    ),
+    uses AS (
+        SELECT l.n, l.edge, count(*) AS times
+        FROM leg_edges l
         JOIN complete USING (n)
-        JOIN paths p ON p.start_vid = l.source AND p.end_vid = l.target
-        GROUP BY l.n, p.edge
+        GROUP BY l.n, l.edge
     ),
     totals AS (
         SELECT
@@ -472,42 +668,59 @@ LANGUAGE sql AS $$
         t.length_m,
         t.preferred_m / nullif(t.length_m, 0),
         t.overlap_m,
-        abs(t.length_m - p_target_m) / p_target_m
-            + 0.3 * (1 - coalesce(t.preferred_m / nullif(t.length_m, 0), 0))
-            + 0.5 * coalesce(t.overlap_m / nullif(t.length_m, 0), 0)
+        routing.score(p_target_m, t.length_m, t.preferred_m / nullif(t.length_m, 0), t.overlap_m)
+            + CASE WHEN r.n IS NULL THEN 0 ELSE 1 END
     )::routing.evaluation
-    FROM totals t JOIN candidates c USING (n)
+    FROM totals t
+    JOIN candidates c USING (n)
+    LEFT JOIN turning_round r USING (n)
 $$;
 
 -- The edges of the route through p_vias in travel order, with the vertex each is entered from.
--- Legs are routed one after another, each with the edges before it in p_used, so the reuse
--- penalty keeps a leg off the streets the route has already taken where it can.
+-- Legs are routed one after another on routing.turns_sql's network, each with the edges before it
+-- in p_used, so the reuse penalty keeps a leg off the streets the route has already taken where
+-- it can. Each leg after the first starts from the arc the last one arrived by, so the turn at a
+-- via costs what any other turn does and the route does not double back there.
 -- Raises no_data_found (detail unreachable) when a leg cannot be travelled.
 CREATE FUNCTION routing.route_edges(
     p_profile routing.profile, p_area geometry, p_vias bigint[]
 ) RETURNS TABLE (step integer, vertex bigint, edge_id bigint)
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_used  bigint[] := '{}';
-    v_nodes bigint[];
-    v_edges bigint[];
-    v_step  integer := 0;
+    v_used bigint[] := '{}';
+    -- The departure node of the first leg, then the arc each leg arrived by.
+    v_from bigint := routing.departure(p_vias[1]);
+    v_arcs bigint[];
+    v_step integer := 0;
 BEGIN
     FOR i IN 1 .. cardinality(p_vias) - 1 LOOP
         CONTINUE WHEN p_vias[i] = p_vias[i + 1];
-        SELECT array_agg(d.node ORDER BY d.seq), array_agg(d.edge ORDER BY d.seq)
-        INTO v_nodes, v_edges
-        FROM pgr_dijkstra(routing.cost_sql(p_profile, p_area, v_used), p_vias[i], p_vias[i + 1]) d
-        WHERE d.edge <> -1;
-        IF v_edges IS NULL THEN
+        SELECT array_agg(d.node ORDER BY d.seq) INTO v_arcs
+        FROM pgr_dijkstra(
+            routing.turns_sql(
+                routing.cost_sql(p_profile, p_area, v_used),
+                p_profile.turn_m,
+                CASE WHEN i = 1 THEN ARRAY[p_vias[1]] END,
+                ARRAY[p_vias[i + 1]]
+            ),
+            v_from,
+            routing.arrival(p_vias[i + 1])
+        ) d
+        -- The arc the leg starts from was travelled by the leg before.
+        WHERE d.node >= 0 AND d.node <> v_from;
+        IF v_arcs IS NULL THEN
             RAISE EXCEPTION 'no path from vertex % to %', p_vias[i], p_vias[i + 1]
                 USING ERRCODE = 'no_data_found', DETAIL = 'unreachable';
         END IF;
         RETURN QUERY
-            SELECT v_step + u.n::integer, u.node, u.edge
-            FROM unnest(v_nodes, v_edges) WITH ORDINALITY AS u(node, edge, n);
-        v_step := v_step + cardinality(v_edges);
-        v_used := v_used || v_edges;
+            SELECT v_step + u.n::integer,
+                   CASE WHEN u.arc % 2 = 0 THEN e.source ELSE e.target END,
+                   e.id
+            FROM unnest(v_arcs) WITH ORDINALITY AS u(arc, n)
+            JOIN graph.edges e ON e.id = u.arc / 2;
+        v_step := v_step + cardinality(v_arcs);
+        v_used := v_used || ARRAY(SELECT a / 2 FROM unnest(v_arcs) a);
+        v_from := v_arcs[cardinality(v_arcs)];
     END LOOP;
 END
 $$;
@@ -530,8 +743,9 @@ LANGUAGE sql AS $$
         FROM routing.route_edges(p_profile, p_area, p_vias) r
         JOIN graph.edges e ON e.id = r.edge_id
     ),
+    -- Summed in travel order, so the same route always has the same length to the last digit.
     total AS (
-        SELECT sum(length_m) AS length_m FROM path
+        SELECT sum(length_m ORDER BY step) AS length_m FROM path
     ),
     shares AS (
         SELECT coalesce(jsonb_object_agg(k.key, k.scored_m / nullif(total.length_m, 0)), '{}')
@@ -559,11 +773,14 @@ $$;
 
 -- Plans a route of about p_target_m for p_activity from p_start to p_finish, or back to p_start
 -- when p_finish is NULL, weighting edge scores by p_weights (see routing.make_profile). Options:
--- alpha and reuse_penalty (see routing.profile), tolerance (0.07: how far the length may miss the
+-- alpha, reuse_penalty and turn_m (see routing.profile), tolerance (0.07: how far the length may miss the
 -- target) and snap_m (200: how far a point may be from the road it starts on).
 -- Candidates are generated and scored in bulk; if the best misses the tolerance, the goal is
--- scaled by how much it missed and candidates are tried once more. Warnings: too_short (the
--- finish is farther than the target), target_missed (no candidate came within tolerance).
+-- scaled by how much it missed and candidates are tried once more. Evaluation leaves out the
+-- reuse penalty, so a route can come out otherwise than evaluated; when it misses the tolerance,
+-- the next best candidates are routed too, up to three in all, and the one whose route scores
+-- best is returned. Warnings, judged on that route: too_short (the finish is farther than the
+-- target), target_missed (it misses the target by more than the tolerance).
 -- Raises invalid_parameter_value for bad input, and no_data_found when there is no route; its
 -- detail says why, for the API to pass on: start_off_road or finish_off_road (no road within
 -- snap_m), unreachable (no way from the start to the finish) or no_loop (too few roads around
@@ -588,13 +805,22 @@ DECLARE
     -- All NULL until a candidate is found.
     v_best      routing.evaluation;
     v_retry     routing.evaluation;
-    v_warnings  text[] := '{}';
+    -- The best few of every attempt, to route when the best one comes out wrong.
+    v_ranked    routing.evaluation[] := '{}';
+    v_try       routing.evaluation;
+    v_routed    jsonb;
+    v_score     double precision;
+    v_route     jsonb;
+    v_vias      bigint[];
+    v_best_score double precision;
+    v_length_m  double precision;
 BEGIN
     IF jsonb_typeof(p_options) IS DISTINCT FROM 'object'
-        OR p_options - ARRAY['alpha', 'reuse_penalty', 'tolerance', 'snap_m'] <> '{}'
+        OR p_options - ARRAY['alpha', 'reuse_penalty', 'turn_m', 'tolerance', 'snap_m'] <> '{}'
         OR EXISTS (SELECT 1 FROM jsonb_each(p_options) o WHERE jsonb_typeof(o.value) <> 'number')
     THEN
-        RAISE EXCEPTION 'options may only be numbers named alpha, reuse_penalty, tolerance, snap_m'
+        RAISE EXCEPTION
+            'options may only be numbers named alpha, reuse_penalty, turn_m, tolerance, snap_m'
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
     v_tolerance := coalesce((p_options ->> 'tolerance')::double precision, 0.07);
@@ -609,7 +835,8 @@ BEGIN
         p_activity,
         p_weights,
         coalesce((p_options ->> 'alpha')::double precision, 0.7),
-        coalesce((p_options ->> 'reuse_penalty')::double precision, 4)
+        coalesce((p_options ->> 'reuse_penalty')::double precision, 4),
+        coalesce((p_options ->> 'turn_m')::double precision, 60)
     );
 
     v_area := routing.search_area(p_start, p_finish, p_target_m);
@@ -629,22 +856,25 @@ BEGIN
 
     v_goal_m := p_target_m;
     FOR attempt IN 1 .. 2 LOOP
-        SELECT * INTO v_retry
-        FROM routing.evaluate(
-            v_profile,
-            v_area,
-            p_target_m,
-            ARRAY(
-                SELECT c FROM routing.loop_candidates(v_profile, v_area, v_start, v_goal_m) c
-                WHERE v_start = v_finish
-                UNION ALL
-                SELECT c
-                FROM routing.detour_candidates(v_profile, v_area, v_start, v_finish, v_goal_m) c
-                WHERE v_start <> v_finish
-            )
-        ) e
-        ORDER BY e.score
-        LIMIT 1;
+        v_ranked := v_ranked || ARRAY(
+            SELECT e
+            FROM routing.evaluate(
+                v_profile,
+                v_area,
+                p_target_m,
+                ARRAY(
+                    SELECT c FROM routing.loop_candidates(v_profile, v_area, v_start, v_goal_m) c
+                    WHERE v_start = v_finish
+                    UNION ALL
+                    SELECT c
+                    FROM routing.detour_candidates(v_profile, v_area, v_start, v_finish, v_goal_m) c
+                    WHERE v_start <> v_finish
+                )
+            ) e
+            ORDER BY e.score
+            LIMIT 3
+        );
+        SELECT * INTO v_retry FROM unnest(v_ranked) e ORDER BY e.score LIMIT 1;
         IF FOUND AND (v_best.vias IS NULL OR v_retry.score < v_best.score) THEN
             v_best := v_retry;
         END IF;
@@ -663,12 +893,37 @@ BEGIN
         RAISE EXCEPTION 'the finish cannot be reached from the start'
             USING ERRCODE = 'no_data_found', DETAIL = 'unreachable';
     END IF;
-    IF abs(v_best.length_m - p_target_m) > v_tolerance * p_target_m THEN
-        v_warnings := v_warnings || CASE
-            WHEN cardinality(v_best.vias) = 2 AND v_best.length_m > p_target_m THEN 'too_short'
+    FOR v_try IN
+        SELECT d.* FROM (
+            SELECT DISTINCT ON (e.vias) e.* FROM unnest(v_ranked) e ORDER BY e.vias, e.score
+        ) d
+        ORDER BY d.score
+        LIMIT 3
+    LOOP
+        v_routed := routing.route_json(v_profile, v_area, v_try.vias, '{}');
+        v_length_m := (v_routed ->> 'length_m')::double precision;
+        v_score := routing.score(
+            p_target_m,
+            v_length_m,
+            routing.preference(v_profile.weights, v_routed -> 'scores'),
+            (v_routed ->> 'reused_m')::double precision
+        );
+        IF v_route IS NULL OR v_score < v_best_score THEN
+            v_route := v_routed;
+            v_vias := v_try.vias;
+            v_best_score := v_score;
+        END IF;
+        EXIT WHEN abs((v_route ->> 'length_m')::double precision - p_target_m)
+            <= v_tolerance * p_target_m;
+    END LOOP;
+
+    v_length_m := (v_route ->> 'length_m')::double precision;
+    IF abs(v_length_m - p_target_m) > v_tolerance * p_target_m THEN
+        v_route := jsonb_set(v_route, '{warnings}', to_jsonb(ARRAY[CASE
+            WHEN cardinality(v_vias) = 2 AND v_length_m > p_target_m THEN 'too_short'
             ELSE 'target_missed'
-        END;
+        END]));
     END IF;
-    RETURN routing.route_json(v_profile, v_area, v_best.vias, v_warnings);
+    RETURN v_route;
 END
 $$;
