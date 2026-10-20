@@ -1,5 +1,7 @@
 """Area fixtures written straight into raw, and readers for what the enricher built."""
 
+import math
+
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
@@ -23,6 +25,21 @@ async def add_square(
         await add_node(conn, first_node + offset, x, y)
     nodes = [first_node + offset for offset in range(4)]
     await add_way(conn, way_id, [*nodes, first_node], tags)
+
+
+async def add_node_m(conn: Conn, node_id: int, east_m: float, north_m: float) -> None:
+    """A node placed in metres from the grid origin, for distances finer than a grid step."""
+    lon = ORIGIN_LON + east_m / (111320 * math.cos(math.radians(ORIGIN_LAT)))
+    lat = ORIGIN_LAT + north_m / 110574
+    await conn.execute(
+        """
+        INSERT INTO raw.osm_nodes AS existing (id, tags, geom)
+        VALUES (%s, '{}', ST_Point(%s, %s, 4326))
+        ON CONFLICT (id) DO UPDATE SET geom = EXCLUDED.geom
+        WHERE existing.geom IS DISTINCT FROM EXCLUDED.geom
+        """,
+        (node_id, lon, lat),
+    )
 
 
 async def add_relation(
