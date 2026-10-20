@@ -359,9 +359,11 @@ CREATE TYPE routing.candidate AS (
 -- picked by network distance (a ring at 0.27 to 0.33 of the goal), so the length works out on
 -- any street pattern, at 12 bearings with c2 60 degrees after c1, which spreads the loops around
 -- the start. Each corner is the most appealing ring vertex within 15 degrees of its bearing (the
--- nearest bearing when there is none), so the preferences choose where the loop goes. Street
--- patterns stretch some directions more than others, so every loop is also tried 15 % smaller
--- and larger; routing.evaluate scores them all in the same call.
+-- nearest bearing when there is none), so the preferences choose where the loop goes; appeal is
+-- compared in steps of 0.2, and of corners alike in it the one nearest 0.3 of the goal away wins,
+-- or every size would take the same most appealing corners. Street patterns stretch some
+-- directions more than others, so every loop is also tried 15 % smaller and larger;
+-- routing.evaluate scores them all in the same call.
 CREATE FUNCTION routing.loop_candidates(
     p_profile routing.profile, p_area geometry, p_start bigint, p_goal_m double precision
 ) RETURNS SETOF routing.candidate
@@ -385,13 +387,15 @@ LANGUAGE sql AS $$
         SELECT
             (SELECT vertex FROM ring
              WHERE distance_m BETWEEN 0.27 * g.goal_m AND 0.33 * g.goal_m
-             ORDER BY routing.angle_between(azimuth, b.bearing) > radians(15), appeal DESC,
+             ORDER BY routing.angle_between(azimuth, b.bearing) > radians(15),
+                      round(appeal * 5) DESC, abs(distance_m - 0.3 * g.goal_m),
                       routing.angle_between(azimuth, b.bearing)
              LIMIT 1) AS c1,
             (SELECT vertex FROM ring
              WHERE distance_m BETWEEN 0.27 * g.goal_m AND 0.33 * g.goal_m
              ORDER BY routing.angle_between(azimuth, b.bearing + radians(60)) > radians(15),
-                      appeal DESC, routing.angle_between(azimuth, b.bearing + radians(60))
+                      round(appeal * 5) DESC, abs(distance_m - 0.3 * g.goal_m),
+                      routing.angle_between(azimuth, b.bearing + radians(60))
              LIMIT 1) AS c2
         FROM (SELECT radians(d) AS bearing FROM generate_series(0, 330, 30) d) b,
              (SELECT k * p_goal_m AS goal_m FROM unnest(ARRAY[0.85, 1, 1.15]) k) g
@@ -399,6 +403,52 @@ LANGUAGE sql AS $$
     SELECT DISTINCT ROW(ARRAY[p_start, c1, c2, p_start])::routing.candidate
     FROM corners
     WHERE c1 <> c2
+$$;
+
+-- The central angle, in radians, of a circular arc that is p_ratio times as long as its chord: the
+-- root of angle / (2 sin(angle / 2)) = p_ratio, found by halving. 0 for a ratio of 1 or less;
+-- it nears 2 pi, a full circle, as the ratio grows.
+CREATE FUNCTION routing.arc_angle(p_ratio double precision) RETURNS double precision
+LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE AS $$
+DECLARE
+    v_low  double precision := 0;
+    v_high double precision := 2 * pi();
+    v_mid  double precision;
+BEGIN
+    IF p_ratio <= 1 THEN
+        RETURN 0;
+    END IF;
+    FOR i IN 1 .. 50 LOOP
+        v_mid := (v_low + v_high) / 2;
+        IF v_mid / (2 * sin(v_mid / 2)) < p_ratio THEN
+            v_low := v_mid;
+        ELSE
+            v_high := v_mid;
+        END IF;
+    END LOOP;
+    RETURN v_mid;
+END
+$$;
+
+-- The point p_fraction of the way along a circular arc from p_start to p_finish with central
+-- angle p_angle, bulging to the left of the way from start to finish for p_side 1 and to the right
+-- for -1. The chord to it from the start is 2 R sin(f a / 2) long and turns (1 - f) a / 2 from the
+-- chord to the finish, which an inscribed angle gives.
+CREATE FUNCTION routing.arc_point(
+    p_start geometry,
+    p_finish geometry,
+    p_angle double precision,
+    p_side integer,
+    p_fraction double precision
+) RETURNS geometry
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+    SELECT ST_Project(
+        p_start::geography,
+        ST_Distance(p_start::geography, p_finish::geography) / (2 * sin(p_angle / 2))
+            * 2 * sin(p_fraction * p_angle / 2),
+        ST_Azimuth(p_start::geography, p_finish::geography)
+            - p_side * (1 - p_fraction) * p_angle / 2
+    )::geometry
 $$;
 
 -- How far a half ellipse over a chord of length 1 bulges (its semi-minor axis, the semi-major
@@ -479,8 +529,9 @@ $$;
 -- - start -> c -> finish through the two most appealing vertices on each side with d_start +
 --   d_finish just under the goal, beside the middle half of the way from start to finish, so
 --   that c is neither behind the start nor past the finish;
--- - for a goal four times the direct route or more, where a bow would be a tall narrow U, the
---   loops of routing.loop_candidates, ending at the finish instead of back at the start.
+-- - for a goal four times the direct route or more, where a bow would be a tall narrow U, a
+--   circle through start and finish, the long way round: a loop that passes the finish, not one
+--   that comes back to the start first. Its vias are chosen as a bow's, one per 72 degrees.
 -- Every shape is tried at three sizes, as in routing.loop_candidates.
 CREATE FUNCTION routing.detour_candidates(
     p_profile routing.profile,
@@ -538,38 +589,55 @@ LANGUAGE sql AS $$
         ) a
         WHERE st.degree > 1 AND ends.straight_m > 0
     ),
-    bows AS (
-        -- Shortened by direct / straight and measured against the straight distance, the bow is
-        -- goal / direct times as long as that.
-        SELECT g.goal_m, side, routing.bow_height(g.goal_m / direct.distance_m) AS height,
+    -- Bows, and circles for long goals: per shape and side, its points and how far apart.
+    shapes AS (
+        -- Streets wind: a shape is shortened by how much longer the direct route is than the
+        -- straight line. Measured against the straight distance, it is then goal / direct long.
+        SELECT g.goal_m, side, 'bow' AS kind,
+               routing.bow_height(g.goal_m / direct.distance_m) AS size,
                least(4, greatest(2, round(2 * g.goal_m / direct.distance_m)))::int AS legs,
                g.goal_m / direct.distance_m * ends.straight_m AS length_m
         FROM goals g, direct, ends, unnest(ARRAY[1, -1]) side
         WHERE g.goal_m > direct.distance_m AND ends.straight_m > 0
+        UNION ALL
+        -- A circle winds through the streets even where the direct route runs straight, so it is
+        -- shortened by 1.2 at least. Its vias are far apart, so its length jumps between sizes:
+        -- it gets two more.
+        SELECT g.goal_m, side, 'circle',
+               routing.arc_angle(g.goal_m / w.winding_m),
+               ceil(routing.arc_angle(g.goal_m / w.winding_m) / radians(72))::int,
+               g.goal_m / w.winding_m * ends.straight_m
+        FROM (SELECT k * p_goal_m AS goal_m FROM unnest(ARRAY[0.85, 0.92, 1, 1.08, 1.15]) k) g,
+             direct, ends, unnest(ARRAY[1, -1]) side,
+             LATERAL (SELECT greatest(direct.distance_m, 1.2 * ends.straight_m) AS winding_m) w
+        WHERE p_goal_m >= 4 * direct.distance_m AND ends.straight_m > 0
     ),
     -- Materialized, so each point is worked out once, not again for every vertex it is compared
     -- with.
-    bow_points AS MATERIALIZED (
-        SELECT b.goal_m, b.side, k,
-               routing.bow_point(
-                   ends.start_geom, ends.finish_geom, b.height, b.side, k::float8 / b.legs
-               ) AS point,
-               b.length_m / b.legs / 3 AS radius_m
-        FROM bows b CROSS JOIN ends CROSS JOIN LATERAL generate_series(1, b.legs - 1) k
+    shape_points AS MATERIALIZED (
+        SELECT sh.goal_m, sh.side, sh.kind, k,
+               CASE sh.kind
+                   WHEN 'bow' THEN routing.bow_point(
+                       ends.start_geom, ends.finish_geom, sh.size, sh.side, k::float8 / sh.legs)
+                   ELSE routing.arc_point(
+                       ends.start_geom, ends.finish_geom, sh.size, sh.side, k::float8 / sh.legs)
+               END AS point,
+               sh.length_m / sh.legs / 3 AS radius_m
+        FROM shapes sh CROSS JOIN ends CROSS JOIN LATERAL generate_series(1, sh.legs - 1) k
     ),
-    bow_vias AS (
-        SELECT p.goal_m, p.side, p.k,
+    shape_vias AS (
+        SELECT p.goal_m, p.side, p.kind, p.k,
                (SELECT r.vertex FROM reach r
                 ORDER BY NOT ST_DWithin(r.geom::geography, p.point::geography, p.radius_m),
                          r.appeal DESC,
                          r.geom <-> p.point
                 LIMIT 1) AS vertex
-        FROM bow_points p
+        FROM shape_points p
     ),
-    bow_routes AS (
+    shape_routes AS (
         SELECT array_agg(vertex ORDER BY k) AS vias
-        FROM bow_vias
-        GROUP BY goal_m, side
+        FROM shape_vias
+        GROUP BY goal_m, side, kind
         HAVING count(vertex) = count(*)
     ),
     single AS (
@@ -582,62 +650,90 @@ LANGUAGE sql AS $$
     )
     SELECT ROW(ARRAY[p_start, p_finish])::routing.candidate
     UNION
-    SELECT ROW(p_start || vias || p_finish)::routing.candidate FROM bow_routes
+    SELECT ROW(p_start || vias || p_finish)::routing.candidate FROM shape_routes
     UNION
     SELECT ROW(ARRAY[p_start, vertex, p_finish])::routing.candidate FROM single WHERE rank <= 2
-    UNION
-    SELECT ROW(l.vias[1 : cardinality(l.vias) - 1] || p_finish)::routing.candidate
-    FROM direct, routing.loop_candidates(p_profile, p_area, p_start, p_goal_m) l
-    WHERE p_goal_m >= 4 * direct.distance_m
 $$;
 
--- How much of p_line, in metres, runs within about 25 to 50 m of a part of itself at least 300 m
--- further along: going back over the same streets, but also out and back on a road and the cycle
--- path beside it, or round a lollipop. Points every 20 m at most are put in 25 m cells, and a
--- point is doubled when a far one is in its cell or a neighbouring one. Only runs of doubled points
--- at least 100 m long count, so that crossing the route, which makes shorter ones, does not. A
--- closed line is measured round the loop, so its end is not taken for a return to its start.
+-- How much of p_line, in metres, comes back alongside itself, heading the other way (more than
+-- 135 degrees apart), by the larger of two measures, a lobe counting half since it is not as bad
+-- as going back over the same way:
+-- - within 40 m of a part at least 300 m further along, for runs of 100 m or more, sampled every
+--   20 m at most: the same streets, a road and the cycle path beside it, a spike;
+-- - within 300 m of a part at least 1000 m further along, for runs of 300 m or more, sampled
+--   every 100 m at most, which a lobe does not need finer: out on one path and back on another.
+-- Where the line crosses itself, or two sides of a loop meet at a corner, they head apart, not
+-- back, and a round loop's sides are farther apart. Samples are put in cells as wide as the
+-- distance, so that a sample's matches are in its own cell or a neighbouring one. The line is
+-- measured in Web Mercator scaled by cos(latitude), which is true to well under a percent over a
+-- route. A closed line is measured round the loop, so its end is not taken for a return to its
+-- start.
 CREATE FUNCTION routing.doubled_m(p_line geometry) RETURNS double precision
 LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-    WITH pts AS (
-        SELECT (dp).path[1] AS i, (dp).geom AS p
-        FROM ST_DumpPoints(ST_Segmentize(p_line::geography, 20)::geometry) dp
+    WITH rules(rule, sample_m, within_m, apart_m, run_m, weight) AS (
+        VALUES (1, 20.0, 40.0, 300.0, 100.0, 1.0), (2, 100.0, 300.0, 1000.0, 300.0, 0.5)
+    ),
+    -- Materialized, like total below: inlined, it would be worked out again for every sample.
+    line AS MATERIALIZED (
+        SELECT ST_Transform(p_line, 3857) AS g, cos(radians(ST_Y(ST_Centroid(p_line)))) AS k
+    ),
+    pts AS (
+        SELECT r.rule, (dp).path[1] AS i, ST_X((dp).geom) * line.k AS x,
+               ST_Y((dp).geom) * line.k AS y
+        FROM rules r, line, ST_DumpPoints(ST_Segmentize(line.g, r.sample_m / line.k)) dp
     ),
     steps AS (
-        SELECT i, p, coalesce(ST_Distance(lag(p) OVER (ORDER BY i)::geography, p::geography), 0)
-            AS step_m
-        FROM pts
+        SELECT rule, i, x, y,
+               coalesce(sqrt((x - lag(x) OVER w) ^ 2 + (y - lag(y) OVER w) ^ 2), 0) AS step_m,
+               atan2(x - lag(x) OVER w, y - lag(y) OVER w) AS heading
+        FROM pts WINDOW w AS (PARTITION BY rule ORDER BY i)
     ),
-    -- 25 m cells: a degree of latitude is 111.3 km, one of longitude that times cos(latitude).
-    cells AS (
-        SELECT i, step_m, sum(step_m) OVER (ORDER BY i) AS along_m,
-               floor(ST_Y(p) * 111320 / 25)::bigint AS cy,
-               floor(ST_X(p) * 111320 * cos(radians(ST_Y(p))) / 25)::bigint AS cx
+    along AS (
+        SELECT rule, i, x, y, step_m, heading,
+               sum(step_m) OVER (PARTITION BY rule ORDER BY i) AS along_m
         FROM steps
     ),
-    total AS (
-        SELECT max(along_m) AS length_m, ST_IsClosed(p_line) AS closed FROM cells
+    -- Inlined, this would be summed again for every pair of samples compared.
+    total AS MATERIALIZED (
+        SELECT max(along_m) AS length_m, ST_IsClosed(p_line) AS closed FROM along
     ),
-    doubled AS (
-        SELECT DISTINCT a.i
-        FROM cells a
-        CROSS JOIN generate_series(-1, 1) dx
-        CROSS JOIN generate_series(-1, 1) dy
-        JOIN cells b ON b.cx = a.cx + dx AND b.cy = a.cy + dy
+    cells AS MATERIALIZED (
+        SELECT a.rule, r.within_m, r.apart_m, a.i, a.x, a.y, a.heading, a.along_m,
+               floor(a.x / r.within_m)::bigint AS cx, floor(a.y / r.within_m)::bigint AS cy
+        FROM along a JOIN rules r USING (rule)
+        WHERE a.step_m > 0
+    ),
+    -- Each sample with the nine cells to look in, so that the match is a join on equal keys,
+    -- which is hashed, rather than every sample against every other.
+    looks AS MATERIALIZED (
+        SELECT c.*, c.cx + dx AS kx, c.cy + dy AS ky
+        FROM cells c, generate_series(-1, 1) dx, generate_series(-1, 1) dy
+    ),
+    near AS (
+        SELECT DISTINCT a.rule, a.i
+        FROM looks a
+        JOIN cells b ON b.rule = a.rule AND b.cx = a.kx AND b.cy = a.ky
         CROSS JOIN total t
         WHERE CASE WHEN t.closed
                    THEN least(abs(a.along_m - b.along_m), t.length_m - abs(a.along_m - b.along_m))
                    ELSE abs(a.along_m - b.along_m)
-              END > 300
+              END > a.apart_m
+          AND (a.x - b.x) ^ 2 + (a.y - b.y) ^ 2 <= a.within_m ^ 2
+          AND routing.angle_between(a.heading, b.heading) > radians(135)
     ),
-    -- Consecutive doubled points share a run: their index less their rank is the same.
+    -- Consecutive samples share a run: their index less their rank is the same.
     runs AS (
-        SELECT d.i - row_number() OVER (ORDER BY d.i) AS run, c.step_m
-        FROM doubled d JOIN cells c USING (i)
+        SELECT n.rule, a.step_m, n.i - row_number() OVER (PARTITION BY n.rule ORDER BY n.i) AS run
+        FROM near n JOIN along a USING (rule, i)
+    ),
+    measures AS (
+        SELECT u.rule, r.weight * sum(u.run_m) AS doubled_m
+        FROM (SELECT rule, run, sum(step_m) AS run_m FROM runs GROUP BY rule, run) u
+        JOIN rules r USING (rule)
+        WHERE u.run_m >= r.run_m
+        GROUP BY u.rule, r.weight
     )
-    SELECT coalesce(sum(run_m), 0)
-    FROM (SELECT sum(step_m) AS run_m FROM runs GROUP BY run) r
-    WHERE run_m >= 100
+    SELECT coalesce(max(doubled_m), 0) FROM measures
 $$;
 
 -- How well a route of p_length_m fits, lower is better: the share by which it misses the target,
@@ -837,6 +933,10 @@ LANGUAGE sql AS $$
         JOIN graph.edges e ON e.id = l.arc / 2
         GROUP BY l.n
     ),
+    -- Measured once a candidate; the joins below could otherwise measure it again.
+    doubled AS MATERIALIZED (
+        SELECT n, routing.doubled_m(line) AS doubled_m FROM lines
+    ),
     uses AS (
         SELECT l.n, l.arc / 2 AS edge, count(*) AS times
         FROM leg_arcs l
@@ -862,8 +962,7 @@ LANGUAGE sql AS $$
     )::routing.evaluation
     FROM totals t
     JOIN candidates c USING (n)
-    JOIN lines l USING (n)
-    CROSS JOIN LATERAL (SELECT routing.doubled_m(l.line) AS doubled_m) d
+    JOIN doubled d USING (n)
     LEFT JOIN turning_round r USING (n)
     LEFT JOIN spikes s USING (n)
 $$;

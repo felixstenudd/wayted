@@ -318,7 +318,9 @@ async def test_bow_leaves_at_a_right_angle_and_stays_beside_the_way(api_pool: Po
     assert end_m * math.sin(math.radians(end_bearing)) <= 1_000
 
 
-async def test_doubled_counts_going_back_alongside_but_not_crossing(api_pool: Pool) -> None:
+async def test_doubled_counts_going_back_alongside_and_lobes_but_not_crossing(
+    api_pool: Pool,
+) -> None:
     async with api_pool.connection() as conn:
         cur = await conn.execute(
             """
@@ -330,16 +332,22 @@ async def test_doubled_counts_going_back_alongside_but_not_crossing(api_pool: Po
                        ST_Point(20, 63.8, 4326), ST_Point(20.02, 63.8, 4326),
                        ST_Point(20.02, 63.81, 4326), ST_Point(20.01, 63.81, 4326),
                        ST_Point(20.01, 63.79, 4326)
+                   ])),
+                   routing.doubled_m(ST_MakeLine(ARRAY[
+                       ST_Point(20, 63.8, 4326), ST_Point(20.04, 63.8, 4326),
+                       ST_Point(20.04, 63.80225, 4326), ST_Point(20, 63.80225, 4326)
                    ]))
             """
         )
         row = await cur.fetchone()
 
     assert row is not None
-    back_alongside, crossing = row
+    back_alongside, crossing, lobe = row
     # Out about 500 m and back 11 m beside it: all but the 300 m around the turn.
     assert back_alongside == pytest.approx(700, rel=0.1)
     assert crossing == 0
+    # Out 2 km and back 250 m beside it, counting half: all but the 1 km around the turn.
+    assert lobe == pytest.approx((4_250 - 1_000) / 2, rel=0.1)
 
 
 async def test_route_to_a_finish_does_not_set_off_behind_the_start(
