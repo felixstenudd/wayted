@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from uuid import UUID
 
 from psycopg import AsyncConnection
@@ -68,3 +69,35 @@ async def add_edges(conn: Conn, count: int) -> list[int]:
         await add_edge(conn, n, n + 1, [(20.0 + n * 0.001, 63.8), (20.001 + n * 0.001, 63.8)])
         for n in range(count)
     ]
+
+
+async def add_segment_review(
+    conn: Conn,
+    user_id: UUID,
+    route_id: int | None,
+    edge_ids: list[int],
+    reasons: list[str],
+    *,
+    activity: str = "running",
+    updated_at: datetime | None = None,
+) -> int:
+    cur = await conn.execute(
+        """
+        INSERT INTO app.segment_reviews (user_id, route_id, activity, geom, updated_at)
+        VALUES (%s, %s, %s, 'SRID=4326;LINESTRING(20 63.8, 20.002 63.8)', coalesce(%s, now()))
+        RETURNING id
+        """,
+        (user_id, route_id, activity, updated_at),
+    )
+    row = await cur.fetchone()
+    assert row is not None
+    review_id: int = row[0]
+    await conn.execute(
+        "INSERT INTO app.segment_review_edges (review_id, edge_id) SELECT %s, unnest(%s::bigint[])",
+        (review_id, edge_ids),
+    )
+    await conn.execute(
+        "INSERT INTO app.segment_review_reasons (review_id, reason) SELECT %s, unnest(%s::text[])",
+        (review_id, reasons),
+    )
+    return review_id

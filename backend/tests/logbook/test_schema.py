@@ -7,7 +7,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from app.routing.attributes import KEYS
 
-from .app_data import add_edges, add_user
+from .app_data import add_edges, add_segment_review, add_user
 
 pytestmark = pytest.mark.db
 
@@ -31,31 +31,6 @@ async def add_route(conn: Conn, user_id: UUID) -> int:
     assert row is not None
     route_id: int = row[0]
     return route_id
-
-
-async def add_segment_review(
-    conn: Conn, user_id: UUID, route_id: int | None, edge_ids: list[int], reasons: list[str]
-) -> int:
-    cur = await conn.execute(
-        """
-        INSERT INTO app.segment_reviews (user_id, route_id, activity, geom)
-        VALUES (%s, %s, 'running', %s)
-        RETURNING id
-        """,
-        (user_id, route_id, LINE),
-    )
-    row = await cur.fetchone()
-    assert row is not None
-    review_id: int = row[0]
-    await conn.execute(
-        "INSERT INTO app.segment_review_edges (review_id, edge_id) SELECT %s, unnest(%s::bigint[])",
-        (review_id, edge_ids),
-    )
-    await conn.execute(
-        "INSERT INTO app.segment_review_reasons (review_id, reason) SELECT %s, unnest(%s::text[])",
-        (review_id, reasons),
-    )
-    return review_id
 
 
 async def queued_edges(conn: Conn) -> set[int]:
