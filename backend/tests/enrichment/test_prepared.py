@@ -112,3 +112,17 @@ async def test_retagging_to_unknown_removes_the_score(
     await run(mapper_pool, enricher_pool)
 
     assert "prepared" not in (await scores(admin_conn))[1]
+
+
+async def test_rescoring_without_a_value_removes_an_old_score(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    # As after a definition change and a requeue: the edge keeps its scores, nothing resets them.
+    await add_line(admin_conn, 1, [(1, 0, 0), (2, 1, 0)], {"route": "ferry"})
+    await run(mapper_pool, enricher_pool)
+    await admin_conn.execute("UPDATE graph.edges SET scores = scores || '{\"prepared\": 1}'")
+    await admin_conn.execute("INSERT INTO graph.pending_edges (edge_id) SELECT id FROM graph.edges")
+
+    await run(mapper_pool, enricher_pool)
+
+    assert "prepared" not in (await scores(admin_conn))[1]

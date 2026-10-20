@@ -18,7 +18,7 @@ class BatchResult:
     nodes_claimed: int
     features_built: int
     features_deleted: int
-    features_skipped: int  # a missing member way or node, not closed, or empty
+    features_skipped: int  # a missing way or node, an open area, a line under two nodes, or empty
     edges_queued: int  # by changed features
     edges_scored: int
 

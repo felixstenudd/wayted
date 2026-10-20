@@ -51,7 +51,7 @@
 		"notLoaded": "Load the edges and areas of the current view.",
 		"empty": "No edges in this view. It may not be fetched yet.",
 		"counts": "{edges} edges, {vertices} vertices, {areas} areas and {lines} lines in the dashed box",
-		"scored": "{name}: {count} of {edges} edges scored",
+		"scored": "{name}: {count} of {edges} edges have a value",
 		"colorBy": "Colour edges by",
 		"noScores": "No scores yet",
 		"oneColor": "One colour",

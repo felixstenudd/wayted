@@ -150,10 +150,10 @@
 					"prefer": "Along water"
 				},
 				"prepared": {
-					"avoid": "Rough paths",
-					"ratherNot": "Mostly rough",
-					"niceToHave": "Mostly prepared",
-					"prefer": "Prepared only"
+					"avoid": "Rough where possible",
+					"ratherNot": "Rather rough",
+					"niceToHave": "Rather prepared",
+					"prefer": "Prepared where possible"
 				}
 			},
 			"groups": {

@@ -122,7 +122,7 @@ DROP_BUILT = "DROP TABLE built_features"
 class LayerResult:
     built: int
     deleted: int
-    skipped: int  # a missing member way or node, not closed, or empty
+    skipped: int  # a missing way or node, an open area, a line under two nodes, or empty
 
 
 @dataclass(frozen=True, slots=True)
