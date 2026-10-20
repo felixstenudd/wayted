@@ -2,7 +2,7 @@
 
 from app.sources import osm
 
-from .attributes import AreaShare, Attribute
+from .attributes import AreaShare, Attribute, Proximity
 from .layers import AreaLayer, FeatureLayer, LineLayer
 
 # Built from the tags they are downloaded by, so the two lists cannot drift apart.
@@ -14,6 +14,7 @@ WATER_LINES = LineLayer(code=osm.WATER_LINES.code, match=osm.WATER_LINES.tags)
 # Kept apart: parks suit a city run, natural land a trail run.
 GREEN = AreaShare(key="green", layers=(PARKS,), radius_m=25)
 NATURE = AreaShare(key="nature", layers=(NATURAL_LAND,), radius_m=25)
+WATER = Proximity(key="water", layers=(WATER_AREAS, WATER_LINES), radius_m=50, sample_m=10)
 
 LAYERS: tuple[FeatureLayer, ...] = (PARKS, NATURAL_LAND, WATER_AREAS, WATER_LINES)
-ATTRIBUTES: tuple[Attribute, ...] = (GREEN, NATURE)
+ATTRIBUTES: tuple[Attribute, ...] = (GREEN, NATURE, WATER)

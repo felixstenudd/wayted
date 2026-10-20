@@ -34,6 +34,42 @@ AREA_SHARE = """
     GROUP BY c.id, c.corridor
 """
 
+# Mean over points every sample_m along the edge of 1 - (d / radius_m)^2, d being the distance to
+# the nearest feature of the layers, areas or lines, in the edge's UTM zone. Concave: close to
+# the water scores nearly the same, the last metres fall fast. Features are clipped to the box
+# around the edge first, which keeps every distance under radius_m unchanged.
+PROXIMITY = """
+    WITH edges AS (
+        SELECT e.id,
+               enrich.utm_srid(e.geom) AS srid,
+               enrich.expand_m(e.geom, %(radius_m)s) AS box,
+               ST_Transform(e.geom, enrich.utm_srid(e.geom)) AS line
+        FROM claimed_edges c JOIN graph.edges e USING (id)
+    ),
+    samples AS (
+        SELECT e.id, ST_LineInterpolatePoint(e.line, (i - 0.5) / k.n) AS point
+        FROM edges e,
+             LATERAL (SELECT greatest(1, ceil(ST_Length(e.line) / %(sample_m)s))::int AS n) k,
+             LATERAL generate_series(1, k.n) AS i
+    ),
+    nearby AS (
+        SELECT e.id, ST_Collect(ST_Transform(ST_ClipByBox2D(f.geom, e.box), e.srid)) AS geom
+        FROM edges e
+        JOIN (
+            SELECT layer, geom FROM enrich.areas
+            UNION ALL
+            SELECT layer, geom FROM enrich.lines
+        ) f ON f.layer = ANY(%(layers)s) AND f.geom && e.box
+        GROUP BY e.id
+    )
+    SELECT s.id AS edge_id,
+           avg(CASE WHEN d.m < %(radius_m)s THEN 1 - (d.m / %(radius_m)s) ^ 2 ELSE 0 END) AS value
+    FROM samples s
+    LEFT JOIN nearby n USING (id),
+    LATERAL (SELECT coalesce(ST_Distance(s.point, n.geom), 'infinity') AS m) d
+    GROUP BY s.id
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class Attribute(ABC):
@@ -63,6 +99,23 @@ class AreaShare(Attribute):
     def score_query(self) -> tuple[str, dict[str, Any]]:
         return AREA_SHARE, {
             "radius_m": self.radius_m,
+            "layers": [layer.code for layer in self.layers],
+        }
+
+    @property
+    def reach_m(self) -> float:
+        return self.radius_m
+
+
+@dataclass(frozen=True, slots=True)
+class Proximity(Attribute):
+    radius_m: float
+    sample_m: float
+
+    def score_query(self) -> tuple[str, dict[str, Any]]:
+        return PROXIMITY, {
+            "radius_m": self.radius_m,
+            "sample_m": self.sample_m,
             "layers": [layer.code for layer in self.layers],
         }
 
