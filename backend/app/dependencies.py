@@ -16,4 +16,8 @@ async def api_conn() -> AsyncIterator[AsyncConnection[TupleRow]]:
         yield conn
 
 
-Conn: TypeAlias = Annotated[AsyncConnection[TupleRow], Depends(api_conn)]  # noqa: UP040
+# The connection commits when it goes back to the pool. scope="function" hands it back as the
+# endpoint returns, so a client never gets an answer for a write that is not stored yet.
+Conn: TypeAlias = Annotated[  # noqa: UP040
+    AsyncConnection[TupleRow], Depends(api_conn, scope="function")
+]

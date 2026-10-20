@@ -202,9 +202,7 @@ async def pending(db_conn: Conn) -> PendingOut:
 async def request_circle(body: AreaRequestIn, db_conn: Conn) -> AreaRequestOut:
     """Queue the tiles around a circle for the worker. Returns how many rows this call queued."""
     bounds = bounds_for_circle(body.lat, body.lon, body.radius_m)
-    # Commit before answering: the connection itself is released after the response is sent.
-    async with db_conn.transaction():
-        queued = await request_area(db_conn, bounds, body.refetch)
+    queued = await request_area(db_conn, bounds, body.refetch)
     return AreaRequestOut(
         queued=sum(queued.values()),
         queued_by_layer=queued,
