@@ -8,6 +8,7 @@ import {
 	MapMarker,
 	ringBounds,
 	tokenColor,
+	useMapPaint,
 	useMapSource,
 	useMapView,
 	type LonLat,
@@ -17,6 +18,8 @@ import { CourseSymbol } from '@/shared/ui/course-symbol'
 
 import { useSavedRoute } from '../api'
 import { chevronsAlong } from '../chevrons'
+import { useSavedRoutesStore } from '../store'
+import StretchLayers from './StretchLayers.vue'
 
 const props = defineProps<{ routeId: number }>()
 
@@ -28,6 +31,7 @@ const SAME_PLACE_M = 30
 
 const { t } = useI18n()
 const saved = useSavedRoute(() => props.routeId)
+const store = useSavedRoutesStore()
 const { bounds, showBounds } = useMapView()
 
 const coordinates = computed(() => saved.data.value?.geometry.coordinates ?? [])
@@ -69,6 +73,10 @@ useMapSource('saved-route-course', line, [
 	},
 ])
 
+// While a stretch is picked, the rest of the course steps back: a pale line without its edge.
+useMapPaint('saved-route-course-casing', 'line-opacity', () => (store.isPickingStretch ? 0 : 1))
+useMapPaint('saved-route-course', 'line-opacity', () => (store.isPickingStretch ? 0.45 : 1))
+
 // Fit each route once, when it and the map are both there; after that the map is the user's.
 let fittedId: number | null = null
 watch(
@@ -83,6 +91,7 @@ watch(
 </script>
 
 <template>
+	<StretchLayers v-if="store.isPickingStretch" :route-id="routeId" />
 	<MapMarker
 		v-for="(chevron, index) in chevrons"
 		:key="`${routeId}-${index}`"

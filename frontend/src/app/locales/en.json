@@ -314,6 +314,27 @@
 				"unchanged": "Your preferences stay as they are.",
 				"openPlanner": "Open in planner"
 			}
+		},
+		"stretch": {
+			"start": "Review a stretch",
+			"title": "Review a stretch",
+			"click": {
+				"start": "Click where the stretch starts.",
+				"end": "Click where the stretch ends."
+			},
+			"tap": {
+				"start": "Tap where the stretch starts.",
+				"end": "Tap where the stretch ends."
+			},
+			"adjust": "Drag the ends on the map, or use the sliders, to adjust.",
+			"length": "{km} km stretch",
+			"from": "Starts at",
+			"to": "Ends at",
+			"atKm": "{km} km along the route",
+			"startHere": "Stretch starts here",
+			"fromHandle": "Start of the stretch, drag to move",
+			"toHandle": "End of the stretch, drag to move",
+			"cancel": "Cancel"
 		}
 	}
 }

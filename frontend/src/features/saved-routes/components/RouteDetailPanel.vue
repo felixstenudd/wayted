@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronLeft, CircleAlert, Ellipsis, PenLine, Trash2 } from '@lucide/vue'
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
@@ -16,12 +16,14 @@ import {
 import { useSavedRoute } from '../api'
 import { formatDistanceKm, formatSavedOn } from '../format'
 import type { PreferenceChange } from '../review'
+import { useSavedRoutesStore } from '../store'
 import DeleteRoute from './DeleteRoute.vue'
 import ReviewSavedNotice from './ReviewSavedNotice.vue'
 import RouteName from './RouteName.vue'
 import RouteReviewForm from './RouteReviewForm.vue'
 import RouteReviewSummary from './RouteReviewSummary.vue'
 import ScoreProfile from './ScoreProfile.vue'
+import StretchPicker from './StretchPicker.vue'
 
 const props = defineProps<{
 	/** panel: floating beside the map. sheet: inside a bottom sheet, which brings its own padding. */
@@ -40,6 +42,7 @@ const isMissing = computed(
 const isRenaming = ref(false)
 const isDeleting = ref(false)
 const isReviewing = ref(false)
+const store = useSavedRoutesStore()
 // What the last saved review did to the user's weights, until they move on.
 const savedChanges = ref<PreferenceChange[] | null>(null)
 watch(
@@ -49,8 +52,11 @@ watch(
 		isDeleting.value = false
 		isReviewing.value = false
 		savedChanges.value = null
+		store.stopPickingStretch()
 	},
 )
+// Picking belongs to this route's page; leaving it ends the picking.
+onBeforeUnmount(() => store.stopPickingStretch())
 // A review answers attributes the route has scores for; without any there is nothing to ask.
 const canReview = computed(() => Object.keys(route.value?.scores ?? {}).length > 0)
 
@@ -58,6 +64,12 @@ function startReview(): void {
 	savedChanges.value = null
 	isDeleting.value = false
 	isReviewing.value = true
+}
+
+function startStretch(): void {
+	savedChanges.value = null
+	isDeleting.value = false
+	store.startPickingStretch()
 }
 
 function reviewSaved(changes: PreferenceChange[]): void {
@@ -91,7 +103,7 @@ const details = computed(() => {
 				<ChevronLeft class="size-4" aria-hidden="true" />
 				{{ t('savedRoutes.title') }}
 			</RouterLink>
-			<DropdownMenu v-if="route && !isReviewing">
+			<DropdownMenu v-if="route && !isReviewing && !store.isPickingStretch">
 				<DropdownMenuTrigger as-child>
 					<Button
 						variant="ghost"
@@ -140,6 +152,12 @@ const details = computed(() => {
 			</Button>
 		</div>
 
+		<StretchPicker
+			v-else-if="route && store.isPickingStretch"
+			:route="route"
+			:heading-id="HEADING_ID"
+		/>
+
 		<RouteReviewForm
 			v-else-if="route && isReviewing"
 			:route="route"
@@ -156,14 +174,17 @@ const details = computed(() => {
 			<ReviewSavedNotice v-if="savedChanges" :changes="savedChanges" />
 			<ScoreProfile :route="route" />
 			<RouteReviewSummary v-if="route.review" :route="route" @edit="startReview" />
-			<template v-else>
-				<Button v-if="canReview" @click="startReview">{{
-					t('savedRoutes.review.start')
-				}}</Button>
-				<p v-else class="text-small text-graphite">
-					{{ t('savedRoutes.review.nothingToReview') }}
-				</p>
-			</template>
+			<p v-else-if="!canReview" class="text-small text-graphite">
+				{{ t('savedRoutes.review.nothingToReview') }}
+			</p>
+			<div class="flex gap-2">
+				<Button v-if="!route.review && canReview" class="flex-1" @click="startReview">
+					{{ t('savedRoutes.review.start') }}
+				</Button>
+				<Button variant="secondary" class="flex-1" @click="startStretch">
+					{{ t('savedRoutes.stretch.start') }}
+				</Button>
+			</div>
 			<DeleteRoute v-if="isDeleting" :route="route" @keep="isDeleting = false" />
 		</template>
 	</section>
