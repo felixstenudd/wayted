@@ -8,6 +8,7 @@ import { Button } from '@/shared/ui/button'
 import { useRouteAttributes } from '../api'
 import { groupAttributes, humanizeKey } from '../attributes'
 import { usePlannerStore } from '../store'
+import PlannerDefaults from './PlannerDefaults.vue'
 import PreferenceRow from './PreferenceRow.vue'
 
 const HEADING_ID = 'preferences-heading'
@@ -58,6 +59,7 @@ const comingLater = computed(() => {
 				</Button>
 			</p>
 		</div>
+		<PlannerDefaults />
 
 		<div v-if="attributes.isPending.value" class="flex flex-col gap-4">
 			<span class="sr-only">{{ t('planner.preferences.loading') }}</span>

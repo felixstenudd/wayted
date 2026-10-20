@@ -212,6 +212,14 @@
 		"sheet": {
 			"expand": "Show more of the planner",
 			"collapse": "Show less of the planner"
+		},
+		"defaults": {
+			"save": "Save as my defaults",
+			"saving": "Saving as your defaults…",
+			"saved": "Saved as your defaults",
+			"back": "Back to my defaults",
+			"loadFailed": "Your saved preferences could not be loaded. You can still plan; try again to use them.",
+			"saveFailed": "Your defaults were not saved. Check your connection, then try again."
 		}
 	},
 	"nav": {

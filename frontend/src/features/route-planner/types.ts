@@ -17,3 +17,5 @@ export interface DistanceRange {
 
 /** Which point the user still has to place before routes can be found. */
 export type MissingPoint = 'start' | 'finish' | null
+
+export type StoredPreferences = components['schemas']['PreferencesOut']

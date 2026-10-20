@@ -156,3 +156,51 @@ describe('placeNextPoint', () => {
 		expect(planner.finish).toBeNull()
 	})
 })
+
+describe('stored defaults', () => {
+	it('become the weights while the sliders are untouched', () => {
+		const planner = usePlannerStore()
+
+		planner.receiveDefaults({ green: 0.5, water: -0.25 })
+
+		expect(planner.preferenceWeights).toEqual({ green: 0.5, water: -0.25 })
+		expect(planner.differsFromDefaults).toBe(false)
+	})
+
+	it('follow a later change, such as a nudge from a route review, if nothing was moved', () => {
+		const planner = usePlannerStore()
+		planner.receiveDefaults({ green: 0.5 })
+
+		planner.receiveDefaults({ green: 0.6 })
+
+		expect(planner.weightOf('green')).toBe(0.6)
+	})
+
+	it('never overwrite sliders the user moved', () => {
+		const planner = usePlannerStore()
+		planner.receiveDefaults({ green: 0.5 })
+		planner.setWeight('water', 1)
+
+		planner.receiveDefaults({ green: 0.6 })
+
+		expect(planner.preferenceWeights).toEqual({ green: 0.5, water: 1 })
+		expect(planner.differsFromDefaults).toBe(true)
+	})
+
+	it('can be gone back to', () => {
+		const planner = usePlannerStore()
+		planner.receiveDefaults({ green: 0.5 })
+		planner.resetWeights()
+
+		planner.backToDefaults()
+
+		expect(planner.preferenceWeights).toEqual({ green: 0.5 })
+	})
+
+	it('are not there to differ from before they have loaded', () => {
+		const planner = usePlannerStore()
+		planner.setWeight('green', 1)
+
+		expect(planner.differsFromDefaults).toBe(false)
+	})
+})

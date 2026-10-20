@@ -12,6 +12,12 @@ export const DISTANCE_RANGES: Record<Activity, DistanceRange> = {
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
+/** Whether two sets of weights say the same; a missing weight is "don't mind". */
+function sameWeights(a: Record<string, number>, b: Record<string, number>): boolean {
+	const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+	return [...keys].every((key) => (a[key] ?? 0) === (b[key] ?? 0))
+}
+
 /** The route the user is setting up, before any routes are found. */
 export const usePlannerStore = defineStore('route-planner', () => {
 	const activity = ref<Activity>('running')
@@ -22,9 +28,16 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	const targetDistanceKm = ref(DISTANCE_RANGES.running.defaultKm)
 	// Only weights other than 0 ("don't mind") are kept.
 	const preferenceWeights = ref<Record<string, number>>({})
+	// The user's stored weights, once loaded; the planner starts from them.
+	const defaultWeights = ref<Record<string, number> | null>(null)
 
 	const distanceRange = computed(() => DISTANCE_RANGES[activity.value])
 	const setWeightCount = computed(() => Object.keys(preferenceWeights.value).length)
+	const differsFromDefaults = computed(
+		() =>
+			defaultWeights.value !== null &&
+			!sameWeights(preferenceWeights.value, defaultWeights.value),
+	)
 
 	const missingPoint = computed<MissingPoint>(() => {
 		if (start.value === null) return 'start'
@@ -85,6 +98,23 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		preferenceWeights.value = {}
 	}
 
+	/**
+	 * Takes in the stored weights. Sliders nobody has moved follow them, also when they change
+	 * later, such as after a route review; sliders the user moved are left as they are.
+	 */
+	function receiveDefaults(weights: Record<string, number>): void {
+		const isUntouched =
+			defaultWeights.value === null
+				? setWeightCount.value === 0
+				: sameWeights(preferenceWeights.value, defaultWeights.value)
+		defaultWeights.value = { ...weights }
+		if (isUntouched) preferenceWeights.value = { ...weights }
+	}
+
+	function backToDefaults(): void {
+		if (defaultWeights.value) preferenceWeights.value = { ...defaultWeights.value }
+	}
+
 	return {
 		activity: readonly(activity),
 		shape,
@@ -94,6 +124,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		preferenceWeights: readonly(preferenceWeights),
 		distanceRange,
 		setWeightCount,
+		differsFromDefaults,
 		missingPoint,
 		routeRequest,
 		setActivity,
@@ -103,5 +134,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		setWeight,
 		resetWeight,
 		resetWeights,
+		receiveDefaults,
+		backToDefaults,
 	}
 })
