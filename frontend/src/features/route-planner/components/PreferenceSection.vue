@@ -49,17 +49,10 @@ const comingLater = computed(() => {
 	>
 		<div class="flex items-baseline justify-between gap-2">
 			<h2 :id="HEADING_ID" class="text-title">{{ t('planner.preferences.title') }}</h2>
-			<p
-				v-if="planner.setWeightCount > 0"
-				class="flex items-baseline gap-3 text-small text-graphite"
-			>
+			<p v-if="planner.setWeightCount > 0" class="text-small text-graphite">
 				{{ t('planner.preferences.setCount', planner.setWeightCount) }}
-				<Button variant="link" class="text-small" @click="planner.resetWeights()">
-					{{ t('planner.preferences.reset') }}
-				</Button>
 			</p>
 		</div>
-		<PlannerDefaults />
 
 		<div v-if="attributes.isPending.value" class="flex flex-col gap-4">
 			<span class="sr-only">{{ t('planner.preferences.loading') }}</span>
@@ -113,6 +106,8 @@ const comingLater = computed(() => {
 					:name="name(attribute.key)"
 				/>
 			</div>
+			<!-- Under the sliders, so its links appearing on the first move shift nothing being dragged. -->
+			<PlannerDefaults />
 			<p v-if="comingLater" class="pt-1 text-small text-graphite">{{ comingLater }}</p>
 		</template>
 	</section>

@@ -94,10 +94,6 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		preferenceWeights.value = rest
 	}
 
-	function resetWeights(): void {
-		preferenceWeights.value = {}
-	}
-
 	/**
 	 * Takes in the stored weights. Sliders nobody has moved follow them, also when they change
 	 * later, such as after a route review; sliders the user moved are left as they are.
@@ -139,7 +135,6 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		weightOf,
 		setWeight,
 		resetWeight,
-		resetWeights,
 		receiveDefaults,
 		backToDefaults,
 		forgetDefaults,

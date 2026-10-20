@@ -73,15 +73,13 @@ describe('preference weights', () => {
 		expect(planner.preferenceWeights).toEqual({})
 	})
 
-	it('reset one or all', () => {
+	it('reset one at a time', () => {
 		const planner = usePlannerStore()
 		planner.setWeight('green', 0.5)
 		planner.setWeight('prepared', -1)
 
 		planner.resetWeight('green')
 		expect(planner.preferenceWeights).toEqual({ prepared: -1 })
-		planner.resetWeights()
-		expect(planner.setWeightCount).toBe(0)
 	})
 })
 
@@ -190,7 +188,8 @@ describe('stored defaults', () => {
 	it('can be gone back to', () => {
 		const planner = usePlannerStore()
 		planner.receiveDefaults({ green: 0.5 })
-		planner.resetWeights()
+		planner.setWeight('green', 1)
+		planner.setWeight('water', -0.5)
 
 		planner.backToDefaults()
 

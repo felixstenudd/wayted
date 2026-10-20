@@ -118,7 +118,6 @@
 		"preferences": {
 			"title": "What matters",
 			"setCount": "No preferences set | 1 preference set | {n} preferences set",
-			"reset": "Reset",
 			"loading": "Loading what you can weigh…",
 			"loadFailed": "What you can weigh could not be loaded. Check your connection, then try again.",
 			"tryAgain": "Try again",
