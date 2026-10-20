@@ -21,6 +21,7 @@ from app.dev.schemas import (
     GraphOut,
     LineString,
     MapperPendingOut,
+    MultiLineString,
     MultiPolygon,
     PendingOut,
     Point,
@@ -29,6 +30,7 @@ from app.dev.schemas import (
     VertexOut,
 )
 from app.enrichment.areas import areas_in_bounds
+from app.enrichment.lines import lines_in_bounds
 from app.graph.area import AreaTooLarge, graph_in_bounds
 from app.sources.queue import queued_tiles, request_area
 from app.sources.registry import fetched_tiles
@@ -158,6 +160,29 @@ async def areas(
                 ),
             )
             for area in found
+        ]
+    )
+
+
+@router.get("/lines", responses={status.HTTP_400_BAD_REQUEST: {"model": ErrorOut}})
+async def lines(
+    db_conn: Conn, west: Lon, south: Lat, east: Lon, north: Lat
+) -> FeatureCollection[MultiLineString, AreaOut]:
+    """The line features that intersect the box, whole."""
+    bounds = Bounds(west=west, south=south, east=east, north=north)
+    try:
+        found = await lines_in_bounds(db_conn, bounds)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
+    return FeatureCollection(
+        features=[
+            Feature(
+                geometry=MultiLineString(**line.geometry),
+                properties=AreaOut(
+                    layer=line.layer, osm_type=line.osm_type, osm_id=line.osm_id, tags=line.tags
+                ),
+            )
+            for line in found
         ]
     )
 

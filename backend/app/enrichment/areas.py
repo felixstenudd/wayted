@@ -34,12 +34,16 @@ async def areas_in_bounds(conn: AsyncConnection[TupleRow], bounds: Bounds) -> li
     Return every area that intersects bounds, whole. Raises ValueError when bounds are inside
     out.
     """
-    if bounds.west > bounds.east:
-        raise ValueError("West must not be east of east.")
-    if bounds.south > bounds.north:
-        raise ValueError("South must not be north of north.")
+    check_bounds(bounds)
     cur = await conn.execute(
         AREAS_IN_BOUNDS,
         {"west": bounds.west, "south": bounds.south, "east": bounds.east, "north": bounds.north},
     )
     return [Area(*row) for row in await cur.fetchall()]
+
+
+def check_bounds(bounds: Bounds) -> None:
+    if bounds.west > bounds.east:
+        raise ValueError("West must not be east of east.")
+    if bounds.south > bounds.north:
+        raise ValueError("South must not be north of north.")

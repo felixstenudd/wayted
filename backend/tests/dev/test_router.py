@@ -242,6 +242,51 @@ async def test_areas_refuses_an_inside_out_box(client: httpx.AsyncClient) -> Non
     )
 
 
+async def test_lines_returns_the_rivers_in_the_box(
+    client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    river = {"waterway": "river", "name": "Älven"}
+    await add_line(admin_conn, 101, [(1, 0, 0), (2, 2, 1)], river)
+    await map_pending(mapper_pool.connection)
+    await enrich_pending(enricher_pool.connection)
+
+    response = await client.get("/lines", params=GRID)
+
+    assert response.status_code == 200
+    [line] = response.json()["features"]
+    assert line["geometry"] == {
+        "type": "MultiLineString",
+        "coordinates": [[[18.0, 59.3], [18.002, 59.301]]],
+    }
+    assert line["properties"] == {
+        "layer": "water_lines",
+        "osm_type": "way",
+        "osm_id": 101,
+        "tags": river,
+    }
+
+
+async def test_lines_outside_the_box_are_left_out(
+    client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_line(admin_conn, 101, [(1, 0, 0), (2, 2, 1)], {"waterway": "river"})
+    await map_pending(mapper_pool.connection)
+    await enrich_pending(enricher_pool.connection)
+
+    response = await client.get("/lines", params={**GRID, "west": 18.005})
+
+    assert response.json() == {"type": "FeatureCollection", "features": []}
+
+
+async def test_lines_refuses_an_inside_out_box(client: httpx.AsyncClient) -> None:
+    response = await client.get("/lines", params={**GRID, "west": 18.02})
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {"detail": "West must not be east of east."},
+    )
+
+
 async def test_pending_counts_the_work_each_step_has_left(
     client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
 ) -> None:
