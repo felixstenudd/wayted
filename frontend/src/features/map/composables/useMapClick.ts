@@ -16,10 +16,10 @@ const isOnMarker = (event: MapMouseEvent) =>
 	event.originalEvent.target instanceof Element &&
 	event.originalEvent.target.closest('.maplibregl-marker') !== null
 
-/** Calls back with the topmost feature of the given layers under a click, or null. */
+/** Calls back with the topmost feature of the given layers under a click, or null, and where. */
 export function useMapClick(
 	layerIds: string[],
-	onClick: (feature: ClickedFeature | null) => void,
+	onClick: (feature: ClickedFeature | null, at: LonLat) => void,
 ): void {
 	const handle = (event: MapMouseEvent) => {
 		if (isOnMarker(event)) return
@@ -32,7 +32,10 @@ export function useMapClick(
 			],
 			{ layers: layerIds.filter((id) => map.getLayer(id)) },
 		)
-		onClick(feature ? { layerId: feature.layer.id, properties: feature.properties } : null)
+		onClick(feature ? { layerId: feature.layer.id, properties: feature.properties } : null, {
+			lon: event.lngLat.lng,
+			lat: event.lngLat.lat,
+		})
 	}
 
 	onMap(

@@ -234,7 +234,10 @@
 				"signedOut": "You have been signed out. Sign in again to change the route.",
 				"tooSlow": "Changing the route took too long. Try a smaller change.",
 				"unexpected": "The route could not be changed right now. Check your connection, then try again."
-			}
+			},
+			"handle": "Change {n}: drag to move it, or open for more",
+			"removeChange": "Remove this change",
+			"tapped": "Drag this onto another road"
 		},
 		"settingsLine": {
 			"summary": "{activity}, {shape}, {distance}",

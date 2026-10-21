@@ -11,6 +11,12 @@ import { usePlannerStore } from '../store'
 const { t } = useI18n()
 const planner = usePlannerStore()
 const { routes } = useShownRoute()
+// An edited option is described as it is now.
+const described = computed(() =>
+	routes.value.map((route, index) =>
+		planner.edit?.option === index && planner.editedRoute ? planner.editedRoute : route,
+	),
+)
 
 const selected = computed({
 	get: () => String(planner.selectedOption),
@@ -18,7 +24,7 @@ const selected = computed({
 })
 
 const options = computed(() =>
-	routes.value.map((route, index) => {
+	described.value.map((route, index) => {
 		const fit = routeFit(route.properties.length_m, planner.search?.request.target_distance_m)
 		return {
 			value: String(index),
