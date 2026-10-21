@@ -60,6 +60,20 @@ CREATE TABLE raw.osm_ways (
 
 CREATE INDEX osm_ways_node_ids_idx ON raw.osm_ways USING gin (node_ids);
 
+-- Terrain heights in metres, one raster per tile of the elevation layer, cut from the source's
+-- larger files. Each reaches one cell past its tile on every side, so a height sampled between
+-- cells near the tile's edge has every neighbour it is blended from.
+CREATE TABLE raw.elevation_tiles (
+    z    smallint NOT NULL CHECK (z BETWEEN 0 AND 22),
+    x    int      NOT NULL,
+    y    int      NOT NULL,
+    rast raster   NOT NULL,
+    PRIMARY KEY (z, x, y),
+    CONSTRAINT elevation_tiles_xy_in_zoom_check CHECK (x >= 0 AND x < (1 << z) AND y >= 0 AND y < (1 << z))
+);
+
+CREATE INDEX elevation_tiles_rast_idx ON raw.elevation_tiles USING gist (ST_ConvexHull(rast));
+
 CREATE TABLE raw.osm_relations (
     id      bigint PRIMARY KEY,
     tags    jsonb  NOT NULL,

@@ -144,6 +144,60 @@ async def test_mapper_queuing_an_edge_notifies(mapper_pool: Pool, listener: Conn
     assert channels == ["pending_enrichment"]
 
 
+# Ten by ten cells of 0.001 degrees from (18, 59) north-east, all 5 m high.
+FLAT_GEOTIFF = """
+    SELECT ST_AsGDALRaster(
+        ST_AddBand(ST_MakeEmptyRaster(10, 10, 18.0, 59.01, 0.001, -0.001, 0, 0, 4326),
+                   '32BF'::text, 5, -32767),
+        'GTiff'
+    )
+"""
+
+STORE_ELEVATION = """
+    INSERT INTO raw.elevation_tiles (z, x, y, rast) VALUES (14, 8971, 4757, ST_FromGDALRaster(%s))
+    ON CONFLICT (z, x, y) DO UPDATE SET rast = EXCLUDED.rast
+"""
+
+
+async def test_stored_elevation_tiles_are_queued_and_readable_by_the_enricher(
+    admin_conn: Conn, downloader_pool: Pool, enricher_pool: Pool
+) -> None:
+    cur = await admin_conn.execute(FLAT_GEOTIFF)
+    row = await cur.fetchone()
+    assert row is not None
+    geotiff = row[0]
+
+    # The downloader reads GeoTIFF itself, so the format is allowed for every role.
+    async with downloader_pool.connection() as conn:
+        await conn.execute(STORE_ELEVATION, (geotiff,))
+        await conn.execute(STORE_ELEVATION, (geotiff,))
+    async with enricher_pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT ST_Value(rast, ST_Point(18.0045, 59.0055, 4326)) FROM raw.elevation_tiles"
+        )
+        height = await cur.fetchone()
+    cur = await admin_conn.execute("SELECT z, x, y FROM enrich.pending_elevation ORDER BY id")
+    queued = await cur.fetchall()
+
+    assert height == (5,)
+    assert queued == [(14, 8971, 4757), (14, 8971, 4757)]
+
+
+async def test_storing_an_elevation_tile_notifies(
+    admin_conn: Conn, downloader_pool: Pool, listener: Conn
+) -> None:
+    cur = await admin_conn.execute(FLAT_GEOTIFF)
+    row = await cur.fetchone()
+    assert row is not None
+    await listener.execute("LISTEN pending_enrichment")
+
+    async with downloader_pool.connection() as conn:
+        await conn.execute(STORE_ELEVATION, (row[0],))
+
+    channels = [n.channel async for n in listener.notifies(timeout=1)]
+    assert channels == ["pending_enrichment"]
+
+
 @pytest.mark.parametrize(
     ("lon", "lat", "srid"),
     [(18.07, 59.33, 32634), (-74.0, 40.7, 32618), (18.4, -33.9, 32734), (180.0, 10.0, 32660)],
@@ -185,6 +239,7 @@ async def test_enricher_may_update_only_scores(admin_conn: Conn, enricher_pool: 
 async def test_enricher_cannot_write_raw_or_the_graph_tables(enricher_pool: Pool) -> None:
     for statement in (
         "DELETE FROM raw.osm_ways",
+        "DELETE FROM raw.elevation_tiles",
         "DELETE FROM graph.ways",
         "DELETE FROM graph.pending_ways",
     ):

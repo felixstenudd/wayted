@@ -41,6 +41,14 @@ CREATE TABLE enrich.pending_nodes (
     node_id bigint NOT NULL
 );
 
+-- Elevation tiles whose heights changed, for rescoring the edges that cross them.
+CREATE TABLE enrich.pending_elevation (
+    id bigint   GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    z  smallint NOT NULL,
+    x  int      NOT NULL,
+    y  int      NOT NULL
+);
+
 -- The WGS 84 UTM zone of a geometry's centre, for measuring in metres anywhere.
 CREATE FUNCTION enrich.utm_srid(geom geometry) RETURNS integer
 LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
@@ -96,6 +104,18 @@ CREATE TRIGGER osm_nodes_enrich_queue
     FOR EACH ROW WHEN (OLD.geom IS DISTINCT FROM NEW.geom)
     EXECUTE FUNCTION enrich.queue_node();
 
+CREATE FUNCTION enrich.queue_elevation_tile() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO enrich.pending_elevation (z, x, y) VALUES (NEW.z, NEW.x, NEW.y);
+    RETURN NULL;
+END
+$$;
+
+-- The downloader writes a tile only when its heights changed, so this fires only then.
+CREATE TRIGGER elevation_tiles_enrich_queue
+    AFTER INSERT OR UPDATE ON raw.elevation_tiles
+    FOR EACH ROW EXECUTE FUNCTION enrich.queue_elevation_tile();
+
 -- Wakes the enricher. Sent at commit, and once per transaction however many rows it queued.
 CREATE FUNCTION enrich.notify_pending() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -118,4 +138,8 @@ CREATE TRIGGER pending_relations_notify
 
 CREATE TRIGGER pending_nodes_notify
     AFTER INSERT ON enrich.pending_nodes
+    FOR EACH STATEMENT EXECUTE FUNCTION enrich.notify_pending();
+
+CREATE TRIGGER pending_elevation_notify
+    AFTER INSERT ON enrich.pending_elevation
     FOR EACH STATEMENT EXECUTE FUNCTION enrich.notify_pending();
