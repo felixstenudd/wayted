@@ -341,10 +341,10 @@ async def snap_points(pool: Pool, points: list[str], min_network_m: float) -> li
             """
             SELECT routing.snap_points(
                        routing.make_profile('running'), NULL,
-                       ARRAY(SELECT p::geometry FROM unnest(%s::text[]) p), %s
+                       ARRAY(SELECT p::geometry FROM unnest(%s::text[]) p), %s, %s
                    )
             """,
-            (points, min_network_m),
+            (points, ["start", "finish"][: len(points)], min_network_m),
         )
         row = await cur.fetchone()
     assert row is not None

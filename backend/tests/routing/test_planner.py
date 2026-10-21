@@ -30,11 +30,20 @@ async def plan(
     target_m: float | None,
     weights: dict[str, float] | None = None,
     settings: dict[str, Any] | None = None,
+    waypoints: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT routing.plan_route(%s, %s, %s, %s, %s, %s)",
-            (activity, start, finish, target_m, Jsonb(weights or {}), Jsonb(settings or {})),
+            "SELECT routing.plan_route(%s, %s, %s, %s, %s, %s, %s)",
+            (
+                activity,
+                start,
+                finish,
+                target_m,
+                Jsonb(weights or {}),
+                Jsonb(settings or {}),
+                Jsonb(waypoints or []),
+            ),
         )
         row = await cur.fetchone()
     assert row is not None
@@ -510,3 +519,146 @@ async def test_bad_target_or_settings_are_rejected(
 ) -> None:
     with pytest.raises(psycopg.errors.InvalidParameterValue):
         await plan(api_pool, "running", CENTRE, None, target_m, settings=settings)
+
+
+def waypoint(column: float, row: float, **place: object) -> dict[str, Any]:
+    """A waypoint at a grid crossing, as routing.plan_route takes it."""
+    return {
+        "lon": ORIGIN_LON + column * COLUMN_STEPS * STEP,
+        "lat": ORIGIN_LAT + row * STEP,
+        **place,
+    }
+
+
+async def passed(
+    pool: Pool, route: dict[str, Any], column: float, row: float
+) -> tuple[float, float]:
+    """How far along the route it comes nearest a grid crossing, and how near, in metres."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            WITH r AS (
+                SELECT ST_Transform(ST_GeomFromGeoJSON(%(line)s), 3006) AS line,
+                       ST_Transform(%(point)s::geometry, 3006) AS point
+            )
+            SELECT ST_LineLocatePoint(line, point) * %(length)s, ST_Distance(line, point) FROM r
+            """,
+            {
+                "line": Jsonb(route["geometry"]),
+                "point": grid_point(column, row),
+                "length": route["length_m"],
+            },
+        )
+        found = await cur.fetchone()
+    assert found is not None
+    return found[0], found[1]
+
+
+async def test_loop_passes_a_waypoint_at_about_the_target(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    route = await plan(api_pool, "running", CENTRE, None, 3_000, waypoints=[waypoint(12, 16)])
+
+    _, off_m = await passed(api_pool, route, 12, 16)
+    assert off_m < 1
+    assert route["length_m"] == pytest.approx(3_000, rel=TOLERANCE)
+    assert route["warnings"] == []
+    assert ends(route) == (coordinates(12, 12), coordinates(12, 12))
+
+
+async def test_waypoint_after_a_length_is_passed_about_there(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    # 455 m east of the start, so the route goes round to get there.
+    late = waypoint(16, 12, at="after", after_m=2_500)
+
+    route = await plan(api_pool, "running", CENTRE, None, 4_000, waypoints=[late])
+
+    along_m, off_m = await passed(api_pool, route, 16, 12)
+    assert off_m < 1
+    assert along_m == pytest.approx(2_500, rel=0.1)
+    assert route["length_m"] == pytest.approx(4_000, rel=TOLERANCE)
+
+
+async def test_waypoint_as_soon_as_possible_is_reached_first_by_the_direct_way(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    # Listed first, but the asap one comes first.
+    anywhere, first = waypoint(8, 12), waypoint(15, 14, at="asap")
+
+    route = await plan(api_pool, "running", CENTRE, None, 3_000, waypoints=[anywhere, first])
+
+    first_m, first_off_m = await passed(api_pool, route, 15, 14)
+    anywhere_m, anywhere_off_m = await passed(api_pool, route, 8, 12)
+    assert (first_off_m, anywhere_off_m) < (1, 1)
+    # Three blocks east and two north.
+    assert first_m == pytest.approx(3 * 113.7 + 2 * 111.2, rel=0.02)
+    assert anywhere_m > first_m
+    assert route["length_m"] == pytest.approx(3_000, rel=TOLERANCE)
+
+
+async def test_route_without_a_target_passes_its_waypoint_by_the_direct_way(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    route = await plan(api_pool, "running", CENTRE, EAST, None, waypoints=[waypoint(16, 14)])
+
+    _, off_m = await passed(api_pool, route, 16, 14)
+    assert off_m < 1
+    # Two rows up to the waypoint and back down again, on the way eight blocks east.
+    assert route["length_m"] == pytest.approx(8 * 113.7 + 4 * 111.2, rel=0.01)
+    assert route["warnings"] == []
+
+
+async def test_waypoint_far_from_any_road_is_an_error(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    with pytest.raises(psycopg.errors.NoDataFound, match="no road near the waypoint"):
+        await plan(api_pool, "running", CENTRE, EAST, None, waypoints=[waypoint(12, 40)])
+
+
+async def test_waypoints_go_in_where_they_lengthen_the_way_least(api_pool: Pool) -> None:
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT routing.insertion_order(ARRAY[%s, %s]::geometry[], ARRAY[%s, %s]::geometry[])",
+            (grid_point(0, 0), grid_point(10, 0), grid_point(5, 1), grid_point(2, 0)),
+        )
+        row = await cur.fetchone()
+
+    assert row == ([1, 4, 3, 2],)
+
+
+@pytest.mark.parametrize(
+    "waypoints",
+    [
+        {"lon": 18, "lat": 59.3},
+        [{"lon": 18}],
+        [{"lon": 18, "lat": 91}],
+        [{"lon": 18, "lat": 59.3, "at": "soon"}],
+        [{"lon": 18, "lat": 59.3, "at": "after"}],
+        [{"lon": 18, "lat": 59.3, "at": "after", "after_m": 0}],
+        [{"lon": 18, "lat": 59.3, "after_m": 1_000}],
+        [{"lon": 18, "lat": 59.3, "name": "café"}],
+    ],
+    ids=[
+        "not a list",
+        "no latitude",
+        "latitude out of range",
+        "unknown place",
+        "after without a length",
+        "a length of 0",
+        "a length without after",
+        "unknown key",
+    ],
+)
+async def test_bad_waypoints_are_rejected(api_pool: Pool, waypoints: object) -> None:
+    async with api_pool.connection() as conn:
+        with pytest.raises(psycopg.errors.InvalidParameterValue, match="waypoint"):
+            await conn.execute("SELECT * FROM routing.read_waypoints(%s)", (Jsonb(waypoints),))
