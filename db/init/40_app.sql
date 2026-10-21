@@ -33,15 +33,19 @@ CREATE TABLE app.routes (
     -- the request the route was planned from
     activity          text    NOT NULL REFERENCES ref.activities (code),
     shape             text    NOT NULL CHECK (shape IN ('loop', 'point_to_point')),
-    target_distance_m integer NOT NULL CHECK (target_distance_m > 0),
+    -- NULL for the most pleasant way to a finish, however long
+    target_distance_m integer CHECK (target_distance_m > 0),
     preferences       jsonb   NOT NULL DEFAULT '{}',
+    -- the through points as the planner took them: [{lon, lat, at, after_m}]
+    waypoints         jsonb   NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(waypoints) = 'array'),
     -- derived from the edges when saved, then frozen
     geom              geometry(LineString, 4326) NOT NULL,
     distance_m        double precision NOT NULL CHECK (distance_m >= 0),
     -- {attribute: {"mean": 0..1, "coverage": share of the length that was scored}}
     scores            jsonb   NOT NULL DEFAULT '{}',
     created_at        timestamptz NOT NULL DEFAULT now(),
-    updated_at        timestamptz NOT NULL DEFAULT now()
+    updated_at        timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT routes_loop_has_target_check CHECK (shape <> 'loop' OR target_distance_m IS NOT NULL)
 );
 
 CREATE INDEX routes_user_id_idx ON app.routes (user_id, created_at DESC);

@@ -38,6 +38,7 @@ async def create_route(user_id: UUID, route: RouteIn, conn: AsyncConnection[Any]
             "shape": route.shape,
             "target_distance_m": route.target_distance_m,
             "preferences": Jsonb(route.preferences),
+            "waypoints": Jsonb([w.model_dump() for w in route.waypoints]),
         },
     )
     row = await cur.fetchone()

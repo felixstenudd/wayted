@@ -637,7 +637,7 @@ export interface components {
             activity: components["schemas"]["Activity"];
             shape: components["schemas"]["Shape"];
             /** Target Distance M */
-            target_distance_m: number;
+            target_distance_m?: number | null;
             /**
              * Preferences
              * @default {}
@@ -645,6 +645,11 @@ export interface components {
             preferences: {
                 [key: string]: number;
             };
+            /**
+             * Waypoints
+             * @default []
+             */
+            waypoints: components["schemas"]["WaypointIn"][];
             /** Edges */
             edges: components["schemas"]["EdgeStepIn"][];
         };
@@ -657,11 +662,13 @@ export interface components {
             activity: components["schemas"]["Activity"];
             shape: components["schemas"]["Shape"];
             /** Target Distance M */
-            target_distance_m: number;
+            target_distance_m: number | null;
             /** Preferences */
             preferences: {
                 [key: string]: number;
             };
+            /** Waypoints */
+            waypoints: components["schemas"]["WaypointIn"][];
             /** Distance M */
             distance_m: number;
             /** Scores */
