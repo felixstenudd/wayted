@@ -44,7 +44,7 @@ const options = computed(() =>
 	<RadioGroupRoot
 		v-if="options.length > 1"
 		v-model="selected"
-		:aria-label="t('planner.options.label')"
+		:aria-label="t('planner.options.group')"
 		orientation="horizontal"
 		class="grid auto-cols-fr grid-flow-col gap-2"
 	>

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import PointMarkers from './PointMarkers.vue'
-import RouteLine from './RouteLine'
+import RouteLines from './RouteLines.vue'
 import ThroughPointMarkers from './ThroughPointMarkers.vue'
 </script>
 
 <template>
-	<RouteLine />
+	<RouteLines />
 	<ThroughPointMarkers />
 	<PointMarkers />
 </template>

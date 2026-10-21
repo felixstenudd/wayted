@@ -205,12 +205,14 @@
 			}
 		},
 		"options": {
-			"label": "Route options",
+			"label": "{letter} {km} km",
 			"name": "Route {letter}",
 			"close": "Close to {km} km",
 			"long": "{km} km long",
 			"short": "{km} km short",
-			"spoken": "Route {letter}, {km}. {fit}"
+			"spoken": "Route {letter}, {km}. {fit}",
+			"group": "Route options",
+			"show": "Show {name}"
 		},
 		"settingsLine": {
 			"summary": "{activity}, {shape}, {distance}",
