@@ -13,11 +13,12 @@ from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 
 from .downloader import DownloadStatus, RectangleResult
-from .osm.layers import LAYERS
+from .elevation.downloader import LAYER as ELEVATION_LAYER
+from .osm.layers import LAYERS as OSM_LAYERS
 from .tiles import Bounds, Tile, tiles_for_bounds
 
 # Only queue layers that has a downloader implemented
-LAYER_CODES = tuple(layer.code for layer in LAYERS)
+LAYER_CODES = tuple(layer.code for layer in OSM_LAYERS) + (ELEVATION_LAYER,)
 
 type Status = Literal["pending", "running", "failed"]
 
