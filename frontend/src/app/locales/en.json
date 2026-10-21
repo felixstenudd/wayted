@@ -239,6 +239,16 @@
 			"removeChange": "Remove this change",
 			"tapped": "Drag this onto another road"
 		},
+		"save": {
+			"submit": "Save route",
+			"saving": "Saving route…",
+			"name": "Name",
+			"cancel": "Cancel",
+			"saved": "Route saved.",
+			"view": "View in your routes",
+			"nameMissing": "Give the route a name.",
+			"failed": "The route could not be saved. Check your connection, then try again."
+		},
 		"settingsLine": {
 			"summary": "{activity}, {shape}, {distance}",
 			"shapes": {
@@ -493,6 +503,10 @@
 				"aLot": "A lot",
 				"mostly": "Mostly"
 			}
+		},
+		"name": {
+			"loop": "{km} km loop",
+			"route": "{km} km route"
 		}
 	}
 }

@@ -32,7 +32,7 @@ const targetKm = computed(() => formatKm((planner.search?.request.target_distanc
 							})
 				}}
 			</p>
-			<p v-if="routes.length > 1" class="text-small text-graphite">
+			<p v-if="routes.length > 1 && !planner.isChosen" class="text-small text-graphite">
 				{{ t('planner.options.name', { letter: optionLetter(planner.selectedOption) }) }}
 			</p>
 		</div>

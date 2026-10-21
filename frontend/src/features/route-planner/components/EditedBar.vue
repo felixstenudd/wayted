@@ -40,7 +40,7 @@ const from = computed(() => optionLetter(planner.edit?.option ?? 0))
 			<span class="text-title">{{ t('planner.edit.title') }}</span>
 			<span class="text-small text-graphite">
 				{{
-					routes.length > 1
+					routes.length > 1 && !planner.isChosen
 						? t('planner.edit.fromOption', {
 								from,
 								changes: t('planner.edit.changes', changes),

@@ -64,6 +64,10 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	const pendingOption = ref<number | null>(null)
 	// Why the last edit found no way, until the next one.
 	const editError = ref<EditError | null>(null)
+	// The route last saved from this search, and its edges then, to tell whether it changed since.
+	// Saving chooses it: the other options are let go.
+	const saved = shallowRef<{ id: number; edges: string } | null>(null)
+	const isChosen = computed(() => saved.value !== null)
 
 	const distanceRange = computed(() => DISTANCE_RANGES[activity.value])
 	const usesTargetDistance = computed(() => shape.value === 'loop' || hasTargetDistance.value)
@@ -111,6 +115,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 			edit.value = null
 			pendingOption.value = null
 			editError.value = null
+			saved.value = null
 		},
 		{ flush: 'sync' },
 	)
@@ -125,6 +130,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		edit.value = null
 		pendingOption.value = null
 		editError.value = null
+		saved.value = null
 		return true
 	}
 
@@ -170,6 +176,10 @@ export const usePlannerStore = defineStore('route-planner', () => {
 
 	function setEditError(error: EditError | null): void {
 		editError.value = error
+	}
+
+	function markSaved(id: number, route: Route): void {
+		saved.value = { id, edges: JSON.stringify(route.properties.edges) }
 	}
 
 	function changeSettings(isChanging: boolean): void {
@@ -301,6 +311,8 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		editHandles,
 		pendingOption: readonly(pendingOption),
 		editError: readonly(editError),
+		saved: readonly(saved),
+		isChosen,
 		findRoutes,
 		selectOption,
 		confirmOption,
@@ -309,6 +321,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		undoEdit,
 		discardEdit,
 		setEditError,
+		markSaved,
 		changeSettings,
 		setActivity,
 		placeNextPoint,

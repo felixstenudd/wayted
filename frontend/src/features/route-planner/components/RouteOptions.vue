@@ -49,7 +49,7 @@ const options = computed(() =>
 <template>
 	<!-- One route is not a choice, so there is nothing to show. -->
 	<RadioGroupRoot
-		v-if="options.length > 1"
+		v-if="options.length > 1 && !planner.isChosen"
 		v-model="selected"
 		:aria-label="t('planner.options.group')"
 		orientation="horizontal"

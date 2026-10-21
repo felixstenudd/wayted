@@ -7,6 +7,7 @@ export {
 	weightWord,
 	type WeightWord,
 } from './attributes'
+export { suggestRouteName, type NamedRoute } from './naming'
 export { plannedFirst } from './profile'
 export type { AttributeGroup, AttributeScore, RouteAttribute } from './types'
 export { default as AttributeSymbol } from './components/AttributeSymbol.vue'

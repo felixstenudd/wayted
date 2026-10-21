@@ -6,6 +6,7 @@ import { storedPreferencesKey } from '@/features/route'
 
 import type { ReviewReason } from './reasons'
 import type {
+	NewRoute,
 	NewStretchReview,
 	RouteReviewInput,
 	RouteSummary,
@@ -24,6 +25,20 @@ export function useSavedRoutes() {
 	return useQuery({
 		queryKey: savedRoutesKey,
 		queryFn: () => auth.authedRequest<RouteSummary[]>('/logbook/routes'),
+	})
+}
+
+/** Saves a route to the user's routes; its line, distance and scores come from its edges. */
+export function useSaveRoute() {
+	const auth = useAuthStore()
+	const queryClient = useQueryClient()
+	return useMutation({
+		mutationFn: (route: NewRoute) =>
+			auth.authedRequest<SavedRoute>('/logbook/routes', { method: 'POST', body: route }),
+		onSuccess: (saved) => {
+			queryClient.setQueryData(savedRouteKey(saved.id), saved)
+			void queryClient.invalidateQueries({ queryKey: savedRoutesKey, exact: true })
+		},
 	})
 }
 

@@ -12,6 +12,7 @@ import FindRoutes from './FindRoutes.vue'
 import EditedBar from './EditedBar.vue'
 import RouteHead from './RouteHead.vue'
 import RouteOptions from './RouteOptions.vue'
+import SaveRoute from './SaveRoute.vue'
 
 const { t } = useI18n()
 const planner = usePlannerStore()
@@ -37,8 +38,11 @@ const isShowingRoute = computed(() => shown.value !== null && !planner.isChangin
 			<RouteOptions />
 			<EditedBar />
 			<RouteHead />
+			<SaveRoute />
 		</template>
-		<DistanceField v-else />
-		<FindRoutes />
+		<template v-else>
+			<DistanceField />
+			<FindRoutes />
+		</template>
 	</div>
 </template>

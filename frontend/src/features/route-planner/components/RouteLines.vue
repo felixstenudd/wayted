@@ -39,12 +39,21 @@ const isTouch = useMediaQuery('(pointer: coarse)')
 // The shown option is drawn as it is now: edited, when the user has edited it.
 const lines = computed<MapData>(() => ({
 	type: 'FeatureCollection',
-	features: routes.value.map((route, index) => ({
-		type: 'Feature',
-		geometry:
-			index === planner.selectedOption && shown.value ? shown.value.geometry : route.geometry,
-		properties: { index },
-	})),
+	// Once one is saved the others are let go.
+	features: routes.value.flatMap((route, index) =>
+		planner.isChosen && index !== planner.selectedOption
+			? []
+			: [
+					{
+						type: 'Feature' as const,
+						geometry:
+							index === planner.selectedOption && shown.value
+								? shown.value.geometry
+								: route.geometry,
+						properties: { index },
+					},
+				],
+	),
 }))
 
 const round = { 'line-cap': 'round', 'line-join': 'round' } as const
@@ -158,7 +167,7 @@ watch(routes, (found) => {
 
 // One route is not a choice, so it goes unlabelled. The shown one is labelled as it is now.
 const labels = computed(() => {
-	if (routes.value.length < 2) return []
+	if (routes.value.length < 2 || planner.isChosen) return []
 	const drawn = routes.value.map((route, index) =>
 		index === planner.selectedOption && shown.value ? shown.value : route,
 	)

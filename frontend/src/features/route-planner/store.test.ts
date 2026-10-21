@@ -384,6 +384,19 @@ describe('route edits', () => {
 		expect(planner.pendingOption).toBeNull()
 	})
 
+	it('leave the saved route the only one, until the next search', () => {
+		const planner = searched()
+		planner.selectOption(1)
+
+		planner.markSaved(42, route(8_000))
+		expect(planner.saved?.id).toBe(42)
+		expect(planner.isChosen).toBe(true)
+
+		planner.findRoutes()
+		expect(planner.saved).toBeNull()
+		expect(planner.isChosen).toBe(false)
+	})
+
 	it('are gone with the next search', () => {
 		const planner = searched()
 		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])

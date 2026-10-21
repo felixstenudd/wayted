@@ -10,6 +10,7 @@ import PreferenceSection from './PreferenceSection.vue'
 import RouteKindFields from './RouteKindFields.vue'
 import RoutePoints from './RoutePoints.vue'
 import RouteView from './RouteView.vue'
+import SaveRoute from './SaveRoute.vue'
 import SettingsLine from './SettingsLine.vue'
 import ThroughPointSettings from './ThroughPointSettings.vue'
 
@@ -54,8 +55,10 @@ const editingPoint = computed(() =>
 			<DistanceField />
 			<PreferenceSection />
 		</div>
+		<!-- The phase's one main action: find routes while setting up, then save the one shown. -->
 		<div class="sticky bottom-0 border-t border-line bg-paper px-5 pt-4 pb-5">
-			<FindRoutes />
+			<SaveRoute v-if="isShowingRoute" />
+			<FindRoutes v-else />
 		</div>
 	</div>
 	<div v-else-if="editingPoint" class="border-t border-line pt-4">
