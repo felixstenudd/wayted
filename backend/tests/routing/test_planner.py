@@ -819,11 +819,35 @@ async def test_options_with_waypoints_all_pass_them(
         assert option["length_m"] == pytest.approx(4_000, rel=TOLERANCE)
 
 
-async def test_route_without_a_target_has_no_options_yet(
+async def test_loop_through_a_point_anywhere_has_options_that_pass_it(
     admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
 ) -> None:
     await grid(admin_conn, mapper_pool)
 
-    route = await plan(api_pool, "running", CENTRE, EAST, None)
+    route = await plan(api_pool, "running", CENTRE, None, 4_000, waypoints=[waypoint(12, 16)])
 
-    assert route["options"] == []
+    routes = [route, *route["options"]]
+    assert len(routes) > 1
+    for option in route["options"]:
+        _, off_m = await passed(api_pool, option, 12, 16)
+        assert off_m < 1
+        assert option["length_m"] == pytest.approx(4_000, rel=TOLERANCE)
+    for i, a in enumerate(routes):
+        for b in routes[i + 1 :]:
+            assert await shared_m(api_pool, a, b) <= 0.5 * min(a["length_m"], b["length_m"])
+
+
+async def test_route_without_a_target_has_options_on_other_streets(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    # Twenty blocks east, so a street one block over adds about a tenth.
+    route = await plan(api_pool, "running", grid_point(2, 12), grid_point(22, 12), None)
+
+    assert route["options"]
+    for option in route["options"]:
+        assert ends(option) == (coordinates(2, 12), coordinates(22, 12))
+        assert option["length_m"] < 1.2 * route["length_m"]
+        assert option["warnings"] == []
+        assert await shared_m(api_pool, route, option) <= 0.5 * route["length_m"]
