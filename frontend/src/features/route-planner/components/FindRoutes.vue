@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleAlert, Info } from '@lucide/vue'
+import { CircleAlert, Info, LoaderCircle } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -35,11 +35,13 @@ const isNotice = computed(
 		<Button
 			size="lg"
 			class="w-full"
-			:disabled="planner.routeRequest === null || isBusy"
+			:disabled="planner.routeRequest === null"
 			:aria-busy="isBusy"
+			:aria-disabled="isBusy || undefined"
 			:aria-describedby="planner.missingPoint ? (props.missingHintId ?? HINT_ID) : undefined"
-			@click="planner.findRoutes()"
+			@click="isBusy || planner.findRoutes()"
 		>
+			<LoaderCircle v-if="isBusy" class="animate-spin" aria-hidden="true" />
 			{{
 				state.status === 'finding'
 					? t('planner.findRoutes.submitting')

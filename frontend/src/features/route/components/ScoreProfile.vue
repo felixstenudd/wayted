@@ -80,6 +80,7 @@ const rows = computed(() =>
 				<div class="relative ml-6" aria-hidden="true">
 					<div class="relative h-2 overflow-hidden rounded-full bg-line">
 						<span
+							v-if="row.fillPercent > 0"
 							class="absolute inset-y-0 left-0 rounded-full bg-ink"
 							:style="{ width: `${row.fillPercent}%` }"
 						/>

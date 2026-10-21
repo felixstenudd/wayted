@@ -31,7 +31,7 @@ const isShowingRoute = computed(() => shown.value !== null && !planner.isChangin
 	<!-- While a through point's settings fill the sheet, its name and the way back head it. -->
 	<div v-if="editingId !== null" class="flex items-baseline justify-between gap-3">
 		<h2 id="through-point-sheet-title" class="text-title">{{ nameOf(editingId) }}</h2>
-		<Button variant="link" class="text-small" @click="planner.editThroughPoint(null)">
+		<Button variant="ghost" class="-my-2 -mr-3 h-11" @click="planner.editThroughPoint(null)">
 			{{ t('planner.points.through.done') }}
 		</Button>
 	</div>

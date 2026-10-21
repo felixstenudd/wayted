@@ -103,6 +103,10 @@ watch(
 
 // A through point's settings open in the sheet, which rises far enough to show them.
 const planner = usePlannerStore()
+// Those settings head the sheet with their own way back, so the switch steps aside for them.
+const isNavShown = computed(
+	() => section.value !== 'plan' || planner.editingThroughPointId === null,
+)
 watch(
 	() => planner.editingThroughPointId,
 	(id) => {
@@ -148,7 +152,12 @@ provideMap()
 			</template>
 			<!-- Out of the peek, so the lowest stop is the section's own; a step up reaches it. -->
 			<div class="flex flex-col gap-4">
-				<SegmentedNav :label="t('nav.label')" :items="navItems" :current="parts.nav" />
+				<SegmentedNav
+					v-if="isNavShown"
+					:label="t('nav.label')"
+					:items="navItems"
+					:current="parts.nav"
+				/>
 				<component :is="parts.panel" layout="sheet" v-bind="sectionProps" />
 			</div>
 		</BottomSheet>

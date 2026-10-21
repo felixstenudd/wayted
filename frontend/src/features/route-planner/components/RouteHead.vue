@@ -38,7 +38,7 @@ const plannerWarnings = computed(() =>
 
 <template>
 	<!-- The shown route's length, which option it is, and why it misses the target if it does. -->
-	<div v-if="shown" role="status" class="flex flex-col gap-1 empty:hidden">
+	<div v-if="shown" role="status" aria-atomic="false" class="flex flex-col gap-1 empty:hidden">
 		<div v-if="!hasCards || isRerouting" class="flex items-baseline justify-between gap-3">
 			<p class="text-heading" :class="{ 'text-graphite': isRerouting }">
 				{{
@@ -74,7 +74,7 @@ const plannerWarnings = computed(() =>
 			<TriangleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
 			{{ t('planner.edit.skips', { name: nameOf(id) }) }}
 		</p>
-		<p v-if="planner.isDraggingLine" role="status" class="text-small text-graphite">
+		<p v-if="planner.isDraggingLine" class="text-small text-graphite">
 			{{ t('planner.edit.dragging') }}
 		</p>
 		<p v-if="planner.editError" role="alert" class="flex gap-1.5 text-small text-contour">
