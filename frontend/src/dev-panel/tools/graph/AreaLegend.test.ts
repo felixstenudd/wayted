@@ -6,7 +6,7 @@ import AreaLegend from './AreaLegend.vue'
 
 const mountLegend = (hidden: string[]) =>
 	mount(AreaLegend, {
-		props: { layers: ['nature', 'parks'], hidden },
+		props: { layers: ['nature', 'parks', 'water_lines'], lineLayers: ['water_lines'], hidden },
 		global: { plugins: [i18n] },
 	})
 
@@ -27,6 +27,13 @@ describe('AreaLegend', () => {
 		await box(legend, 'parks').setValue(false)
 
 		expect(legend.emitted('update:hidden')).toEqual([[['parks']]])
+	})
+
+	it('says a line layer is drawn as a line', () => {
+		const entry = mountLegend([]).get('label:last-of-type')
+
+		expect(entry.text()).toContain('Rivers and coast')
+		expect(entry.text()).toContain('line')
 	})
 
 	it('shows a hidden layer again when it is checked', async () => {

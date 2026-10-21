@@ -31,6 +31,8 @@ const pointer = useDetentPointer(
 )
 
 const percent = (at: number) => `${((at + 1) / 2) * 100}%`
+// The words lean towards the middle as the thumb nears an end, so they stay over the track.
+const tipShift = computed(() => ({ translate: `${-((value.value + 1) / 2) * 100}% 0` }))
 const fill = computed(() => ({
 	left: percent(Math.min(value.value, 0)),
 	width: `${(Math.abs(value.value) / 2) * 100}%`,
@@ -123,7 +125,8 @@ function reset(): void {
 				<span
 					v-if="!disabled"
 					aria-hidden="true"
-					class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 -translate-x-1/2 rounded-sm bg-ink px-1.5 text-caption whitespace-nowrap text-paper opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-visible/thumb:opacity-100 group-active:opacity-100 group-data-fine:opacity-100"
+					:style="tipShift"
+					class="pointer-events-none absolute bottom-full left-1/2 mb-1.5 rounded-sm bg-ink px-1.5 text-caption whitespace-nowrap text-paper opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-visible/thumb:opacity-100 group-active:opacity-100 group-data-fine:opacity-100"
 				>
 					{{ valueText }}
 				</span>

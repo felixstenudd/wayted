@@ -19,6 +19,12 @@ export const DISTANCE_RANGES: Record<Activity, DistanceRange> = {
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
+/** Whether two sets of weights say the same; a missing weight is "don't mind". */
+function sameWeights(a: Record<string, number>, b: Record<string, number>): boolean {
+	const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+	return [...keys].every((key) => (a[key] ?? 0) === (b[key] ?? 0))
+}
+
 /** The route the user is setting up, and the search for it once they ask. */
 export const usePlannerStore = defineStore('route-planner', () => {
 	const activity = ref<Activity>('running')
@@ -32,6 +38,8 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	const hasTargetDistance = ref(true)
 	// Only weights other than 0 ("don't mind") are kept.
 	const preferenceWeights = ref<Record<string, number>>({})
+	// The user's stored weights, once loaded; the planner starts from them.
+	const defaultWeights = ref<Record<string, number> | null>(null)
 	// The last press of Find routes, until the request changes.
 	const search = ref<RouteSearch | null>(null)
 	let searches = 0
@@ -39,6 +47,11 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	const distanceRange = computed(() => DISTANCE_RANGES[activity.value])
 	const usesTargetDistance = computed(() => shape.value === 'loop' || hasTargetDistance.value)
 	const setWeightCount = computed(() => Object.keys(preferenceWeights.value).length)
+	const differsFromDefaults = computed(
+		() =>
+			defaultWeights.value !== null &&
+			!sameWeights(preferenceWeights.value, defaultWeights.value),
+	)
 
 	const missingPoint = computed<MissingPoint>(() => {
 		if (start.value === null) return 'start'
@@ -115,7 +128,26 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		preferenceWeights.value = rest
 	}
 
-	function resetWeights(): void {
+	/**
+	 * Takes in the stored weights. Sliders nobody has moved follow them, also when they change
+	 * later, such as after a route review; sliders the user moved are left as they are.
+	 */
+	function receiveDefaults(weights: Record<string, number>): void {
+		const isUntouched =
+			defaultWeights.value === null
+				? setWeightCount.value === 0
+				: sameWeights(preferenceWeights.value, defaultWeights.value)
+		defaultWeights.value = { ...weights }
+		if (isUntouched) preferenceWeights.value = { ...weights }
+	}
+
+	function backToDefaults(): void {
+		if (defaultWeights.value) preferenceWeights.value = { ...defaultWeights.value }
+	}
+
+	/** Drops the weights a signed-in user brought, so whoever comes next starts clean. */
+	function forgetDefaults(): void {
+		defaultWeights.value = null
 		preferenceWeights.value = {}
 	}
 
@@ -130,6 +162,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		preferenceWeights: readonly(preferenceWeights),
 		distanceRange,
 		setWeightCount,
+		differsFromDefaults,
 		missingPoint,
 		routeRequest,
 		search: readonly(search),
@@ -140,6 +173,8 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		weightOf,
 		setWeight,
 		resetWeight,
-		resetWeights,
+		receiveDefaults,
+		backToDefaults,
+		forgetDefaults,
 	}
 })

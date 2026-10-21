@@ -1,24 +1,13 @@
-import { computed, defineComponent, watch, type PropType } from 'vue'
+import { computed, defineComponent, watch } from 'vue'
 
-import {
-	EMPTY,
-	ringBounds,
-	tokenColor,
-	useMapSource,
-	useMapView,
-	type MapCover,
-} from '@/features/map'
+import { EMPTY, ringBounds, tokenColor, useMapSource, useMapView } from '@/features/map'
 
 import { useFoundRoute } from '../api'
 
 /** Draws the found route on the map and fits the map to it. Renders nothing in the page. */
 export default defineComponent({
 	name: 'RouteLine',
-	props: {
-		/** What covers the map when the route is shown, read at that moment. */
-		cover: { type: Function as PropType<() => MapCover>, required: true },
-	},
-	setup(props) {
+	setup() {
 		const state = useFoundRoute()
 		const route = computed(() => (state.value.status === 'found' ? state.value.route : null))
 		const { showBounds } = useMapView()
@@ -41,7 +30,7 @@ export default defineComponent({
 		])
 
 		watch(route, (found) => {
-			if (found) showBounds(ringBounds(found.geometry.coordinates), props.cover())
+			if (found) showBounds(ringBounds(found.geometry.coordinates))
 		})
 
 		return () => null

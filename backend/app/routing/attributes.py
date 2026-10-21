@@ -28,8 +28,7 @@ ROUTE_ATTRIBUTES: tuple[RouteAttribute, ...] = (
     RouteAttribute("quiet_streets", "streets"),
     RouteAttribute("sights", "sights"),
     RouteAttribute("bridges", "sights"),
-    RouteAttribute("asphalt", "surface"),
-    RouteAttribute("gravel", "surface"),
+    RouteAttribute("prepared", "surface"),
 )
 
 KEYS = frozenset(a.key for a in ROUTE_ATTRIBUTES)

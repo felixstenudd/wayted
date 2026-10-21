@@ -10,7 +10,7 @@ export type RouteShape = RouteRequestIn['shape']
 export type RouteRequest = RouteRequestIn
 
 /** A planned route: a GeoJSON Feature, its line in travel order. */
-export type Route = components['schemas']['RouteOut']
+export type Route = components['schemas']['PlannedRouteOut']
 export type RouteWarning = components['schemas']['RouteWarning']
 /** Why the backend found no route. */
 export type NoRouteReason = components['schemas']['Reason']
@@ -33,3 +33,5 @@ export interface DistanceRange {
 
 /** Which point the user still has to place before routes can be found. */
 export type MissingPoint = 'start' | 'finish' | null
+
+export type StoredPreferences = components['schemas']['PreferencesOut']

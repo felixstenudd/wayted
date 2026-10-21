@@ -20,12 +20,19 @@ class OsmLayer:
     # Fetched without their nodes or members, for relations whose members reach far outside the
     # rectangle.
     shallow_selectors: tuple[str, ...] = ()
-    # An area layer's tag patterns; the enricher builds its features from the same ones.
+    # An area or line layer's tag patterns; the enricher builds its features from the same ones.
     tags: tuple[TagPattern, ...] = ()
 
 
 def area_selectors(tags: Sequence[TagPattern]) -> tuple[str, ...]:
     """Ways and multipolygon relations with any of the patterns. Values of one key share a regex."""
+    filters = _filters(tags)
+    return tuple(f"way{f}" for f in filters) + tuple(
+        f'relation{f}["type"="multipolygon"]' for f in filters
+    )
+
+
+def _filters(tags: Sequence[TagPattern]) -> list[str]:
     by_key: dict[str, list[str]] = {}
     several_keys: list[str] = []
     for pattern in tags:
@@ -34,10 +41,7 @@ def area_selectors(tags: Sequence[TagPattern]) -> tuple[str, ...]:
             by_key.setdefault(key, []).append(value)
         else:
             several_keys.append("".join(f'["{k}"="{v}"]' for k, v in pattern.items()))
-    filters = [_one_key(key, values) for key, values in by_key.items()] + several_keys
-    return tuple(f"way{f}" for f in filters) + tuple(
-        f'relation{f}["type"="multipolygon"]' for f in filters
-    )
+    return [_one_key(key, values) for key, values in by_key.items()] + several_keys
 
 
 def _one_key(key: str, values: list[str]) -> str:
@@ -48,6 +52,11 @@ def _one_key(key: str, values: list[str]) -> str:
 
 def area_layer(code: str, tags: tuple[TagPattern, ...]) -> OsmLayer:
     return OsmLayer(code=code, selectors=area_selectors(tags), is_area=True, tags=tags)
+
+
+def line_layer(code: str, tags: tuple[TagPattern, ...]) -> OsmLayer:
+    """Ways only: long lines are split into many ways, and their relations reach far away."""
+    return OsmLayer(code=code, selectors=tuple(f"way{f}" for f in _filters(tags)), tags=tags)
 
 
 ### Main Layer ###
@@ -76,5 +85,25 @@ NATURE = area_layer(
     ),
 )
 
+WATER = area_layer(
+    "water",
+    (
+        {"natural": "water"},
+        {"waterway": "riverbank"},
+        {"landuse": "reservoir"},
+        {"landuse": "basin"},
+    ),
+)
+
+# Streams and ditches are left out: too small to run along.
+WATER_LINES = line_layer(
+    "water_lines",
+    (
+        {"natural": "coastline"},
+        {"waterway": "river"},
+        {"waterway": "canal"},
+    ),
+)
+
 # Every layer available (that has a downloader)
-LAYERS = (ROADS, PARKS, NATURE)
+LAYERS = (ROADS, PARKS, NATURE, WATER, WATER_LINES)

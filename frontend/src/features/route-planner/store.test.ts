@@ -73,15 +73,13 @@ describe('preference weights', () => {
 		expect(planner.preferenceWeights).toEqual({})
 	})
 
-	it('reset one or all', () => {
+	it('reset one at a time', () => {
 		const planner = usePlannerStore()
 		planner.setWeight('green', 0.5)
-		planner.setWeight('gravel', -1)
+		planner.setWeight('prepared', -1)
 
 		planner.resetWeight('green')
-		expect(planner.preferenceWeights).toEqual({ gravel: -1 })
-		planner.resetWeights()
-		expect(planner.setWeightCount).toBe(0)
+		expect(planner.preferenceWeights).toEqual({ prepared: -1 })
 	})
 })
 
@@ -206,5 +204,65 @@ describe('findRoutes', () => {
 		planner.setWeight('green', 1)
 
 		expect(planner.search).toBeNull()
+	})
+})
+
+describe('stored defaults', () => {
+	it('become the weights while the sliders are untouched', () => {
+		const planner = usePlannerStore()
+
+		planner.receiveDefaults({ green: 0.5, water: -0.25 })
+
+		expect(planner.preferenceWeights).toEqual({ green: 0.5, water: -0.25 })
+		expect(planner.differsFromDefaults).toBe(false)
+	})
+
+	it('follow a later change, such as a nudge from a route review, if nothing was moved', () => {
+		const planner = usePlannerStore()
+		planner.receiveDefaults({ green: 0.5 })
+
+		planner.receiveDefaults({ green: 0.6 })
+
+		expect(planner.weightOf('green')).toBe(0.6)
+	})
+
+	it('never overwrite sliders the user moved', () => {
+		const planner = usePlannerStore()
+		planner.receiveDefaults({ green: 0.5 })
+		planner.setWeight('water', 1)
+
+		planner.receiveDefaults({ green: 0.6 })
+
+		expect(planner.preferenceWeights).toEqual({ green: 0.5, water: 1 })
+		expect(planner.differsFromDefaults).toBe(true)
+	})
+
+	it('can be gone back to', () => {
+		const planner = usePlannerStore()
+		planner.receiveDefaults({ green: 0.5 })
+		planner.setWeight('green', 1)
+		planner.setWeight('water', -0.5)
+
+		planner.backToDefaults()
+
+		expect(planner.preferenceWeights).toEqual({ green: 0.5 })
+	})
+
+	it('are forgotten with what was moved, so the next user starts from their own', () => {
+		const planner = usePlannerStore()
+		planner.receiveDefaults({ green: 0.5 })
+		planner.setWeight('water', 1)
+
+		planner.forgetDefaults()
+		planner.receiveDefaults({ quiet_streets: 0.3 })
+
+		expect(planner.preferenceWeights).toEqual({ quiet_streets: 0.3 })
+	})
+
+	it('are not there to differ from before they have loaded', () => {
+		const planner = usePlannerStore()
+		planner.setWeight('green', 1)
+
+		expect(planner.differsFromDefaults).toBe(false)
 	})
 })

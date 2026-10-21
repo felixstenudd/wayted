@@ -6,18 +6,26 @@ import { fillOpacity, isDotted, layerToken } from './areas'
 
 const props = defineProps<{
 	layers: string[]
+	// drawn as lines, not as areas
+	lineLayers: string[]
 }>()
 const hidden = defineModel<string[]>('hidden', { required: true })
 
 const i18n = useI18n()
 const { t } = i18n
 
-// The swatch repeats how the map draws the layer: a pale fill inside its edge.
+// The swatch repeats how the map draws the layer: a pale fill inside its edge, or the line.
 const entries = computed(() =>
 	props.layers.map((layer) => ({
 		layer,
 		name: i18n.te(`graph.legend.${layer}`) ? t(`graph.legend.${layer}`) : layer,
-		edge: isDotted(layer) ? t('graph.legend.dotted') : t('graph.legend.solid'),
+		isLine: props.lineLayers.includes(layer),
+		edge: props.lineLayers.includes(layer)
+			? t('graph.legend.line')
+			: isDotted(layer)
+				? t('graph.legend.dotted')
+				: t('graph.legend.solid'),
+		lineStyle: { backgroundColor: `var(${layerToken(layer)})` },
 		style: {
 			backgroundColor: `color-mix(in oklch, var(${layerToken(layer)}) ${fillOpacity(layer) * 100}%, transparent)`,
 			borderColor: `var(${layerToken(layer)})`,
@@ -49,7 +57,15 @@ function toggle(layer: string, event: Event) {
 				class="size-4 accent-ink"
 				@change="toggle(entry.layer, $event)"
 			/>
-			<span class="rounded-xs size-4 border-2" :style="entry.style" aria-hidden="true" />
+			<span v-if="entry.isLine" class="flex size-4 items-center" aria-hidden="true">
+				<span class="h-0.5 w-full" :style="entry.lineStyle" />
+			</span>
+			<span
+				v-else
+				class="rounded-xs size-4 border-2"
+				:style="entry.style"
+				aria-hidden="true"
+			/>
 			<span>{{ entry.name }}</span>
 			<span class="text-graphite">{{ entry.edge }}</span>
 		</label>

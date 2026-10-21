@@ -23,7 +23,16 @@ from app.dev.schemas import (
     VertexOut,
 )
 from app.enrichment.areas import areas_in_bounds
-from app.geojson import Feature, FeatureCollection, LineString, MultiPolygon, Point, Polygon
+from app.enrichment.lines import lines_in_bounds
+from app.geojson import (
+    Feature,
+    FeatureCollection,
+    LineString,
+    MultiLineString,
+    MultiPolygon,
+    Point,
+    Polygon,
+)
 from app.graph.area import AreaTooLarge, graph_in_bounds
 from app.sources.queue import queued_tiles, request_area
 from app.sources.registry import fetched_tiles
@@ -119,6 +128,7 @@ async def graph(db_conn: Conn, west: Lon, south: Lat, east: Lon, north: Lat) -> 
                         forward=edge.forward,
                         backward=edge.backward,
                         scores=edge.scores,
+                        feedback=edge.feedback,
                         tags=edge.tags,
                     ),
                 )
@@ -157,6 +167,29 @@ async def areas(
     )
 
 
+@router.get("/lines", responses={status.HTTP_400_BAD_REQUEST: {"model": ErrorOut}})
+async def lines(
+    db_conn: Conn, west: Lon, south: Lat, east: Lon, north: Lat
+) -> FeatureCollection[MultiLineString, AreaOut]:
+    """The line features that intersect the box, whole."""
+    bounds = Bounds(west=west, south=south, east=east, north=north)
+    try:
+        found = await lines_in_bounds(db_conn, bounds)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
+    return FeatureCollection(
+        features=[
+            Feature(
+                geometry=MultiLineString(**line.geometry),
+                properties=AreaOut(
+                    layer=line.layer, osm_type=line.osm_type, osm_id=line.osm_id, tags=line.tags
+                ),
+            )
+            for line in found
+        ]
+    )
+
+
 @router.get("/pending")
 async def pending(db_conn: Conn) -> PendingOut:
     """How many distinct elements wait for the mapper and for the enricher."""
@@ -171,9 +204,7 @@ async def pending(db_conn: Conn) -> PendingOut:
 async def request_circle(body: AreaRequestIn, db_conn: Conn) -> AreaRequestOut:
     """Queue the tiles around a circle for the worker. Returns how many rows this call queued."""
     bounds = bounds_for_circle(body.lat, body.lon, body.radius_m)
-    # Commit before answering: the connection itself is released after the response is sent.
-    async with db_conn.transaction():
-        queued = await request_area(db_conn, bounds, body.refetch)
+    queued = await request_area(db_conn, bounds, body.refetch)
     return AreaRequestOut(
         queued=sum(queued.values()),
         queued_by_layer=queued,

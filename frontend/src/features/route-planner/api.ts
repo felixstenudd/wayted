@@ -1,11 +1,11 @@
-import { useQuery } from '@tanstack/vue-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, type ComputedRef } from 'vue'
 
 import { useAuthStore } from '@/features/auth'
 
 import { PREPARING_POLL_MS, routeState, shouldPoll, type RouteState } from './route'
 import { usePlannerStore } from './store'
-import type { RouteAnswer, RouteAttribute } from './types'
+import type { RouteAnswer, RouteAttribute, StoredPreferences } from './types'
 
 export function useRouteAttributes() {
 	const auth = useAuthStore()
@@ -52,4 +52,29 @@ export function useFoundRoute(): ComputedRef<RouteState> {
 			answeredAt: query.dataUpdatedAt.value,
 		}),
 	)
+}
+
+// Exported for route reviews, which nudge these weights and mark them stale.
+export const storedPreferencesKey = ['logbook', 'preferences'] as const
+
+/** The user's stored weights, which the planner starts from. */
+export function useStoredPreferences() {
+	const auth = useAuthStore()
+	return useQuery({
+		queryKey: storedPreferencesKey,
+		queryFn: () => auth.authedRequest<StoredPreferences>('/logbook/preferences'),
+	})
+}
+
+export function useSaveDefaults() {
+	const auth = useAuthStore()
+	const queryClient = useQueryClient()
+	return useMutation({
+		mutationFn: (weights: Record<string, number>) =>
+			auth.authedRequest<StoredPreferences>('/logbook/preferences', {
+				method: 'PUT',
+				body: { weights },
+			}),
+		onSuccess: (saved) => queryClient.setQueryData(storedPreferencesKey, saved),
+	})
 }

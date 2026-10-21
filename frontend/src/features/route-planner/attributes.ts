@@ -18,6 +18,20 @@ export function weightWord(weight: number): WeightWord {
 	return WORDS.get(nearestDetent(weight, WEIGHT_DETENTS)) ?? 'dontMind'
 }
 
+/**
+ * The message for a weight of one attribute: its own word, such as "Along water", when it has
+ * one, else the plain word. "Don't mind" is the same for every attribute.
+ */
+export function weightMessage(
+	attributeKey: string,
+	weight: number,
+	hasMessage: (path: string) => boolean,
+): string {
+	const word = weightWord(weight)
+	const own = `planner.preferences.weightWords.${attributeKey}.${word}`
+	return word !== 'dontMind' && hasMessage(own) ? own : `planner.preferences.weights.${word}`
+}
+
 /** Attributes by group, groups in the order they first appear. */
 export function groupAttributes(
 	attributes: readonly RouteAttribute[],

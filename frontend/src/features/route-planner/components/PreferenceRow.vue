@@ -4,21 +4,24 @@ import { useI18n } from 'vue-i18n'
 
 import { BipolarSlider } from '@/shared/ui/bipolar-slider'
 
-import { WEIGHT_DETENTS, weightWord } from '../attributes'
+import { WEIGHT_DETENTS, weightMessage } from '../attributes'
 import { usePlannerStore } from '../store'
 import type { RouteAttribute } from '../types'
 import AttributeSymbol from './AttributeSymbol.vue'
 
 const props = defineProps<{ attribute: RouteAttribute; name: string }>()
 
-const { t } = useI18n()
+const i18n = useI18n()
+const { t } = i18n
 const planner = usePlannerStore()
 
 const weight = computed({
 	get: () => planner.weightOf(props.attribute.key),
 	set: (next: number) => planner.setWeight(props.attribute.key, next),
 })
-const word = computed(() => t(`planner.preferences.weights.${weightWord(weight.value)}`))
+const word = computed(() =>
+	t(weightMessage(props.attribute.key, weight.value, (path) => i18n.te(path))),
+)
 </script>
 
 <template>

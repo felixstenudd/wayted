@@ -34,6 +34,11 @@ class QueuedTileOut(BaseModel):
     last_message: str | None
 
 
+class VotesOut(BaseModel):
+    up: int
+    down: int
+
+
 class EdgeOut(BaseModel):
     id: int
     way_id: int
@@ -43,6 +48,8 @@ class EdgeOut(BaseModel):
     forward: list[str]
     backward: list[str]
     scores: dict[str, Any]
+    # users' segment reviews: votes per activity, then per topic
+    feedback: dict[str, dict[str, VotesOut]]
     tags: dict[str, str]
 
 

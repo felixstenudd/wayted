@@ -61,8 +61,7 @@ def test_attributes_are_listed_in_display_order_with_groups(client: TestClient) 
         ("quiet_streets", "streets"),
         ("sights", "sights"),
         ("bridges", "sights"),
-        ("asphalt", "surface"),
-        ("gravel", "surface"),
+        ("prepared", "surface"),
     ]
 
 

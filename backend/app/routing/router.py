@@ -14,8 +14,8 @@ from .attributes import ROUTE_ATTRIBUTES
 from .schemas import (
     AttributeOut,
     NoRouteOut,
+    PlannedRouteOut,
     PreparingOut,
-    RouteOut,
     RoutePropertiesOut,
     RouteRequestIn,
 )
@@ -46,7 +46,7 @@ def _query(request: RouteRequestIn) -> service.RouteQuery:
 
 @router.post(
     "/routes",
-    response_model=RouteOut,
+    response_model=PlannedRouteOut,
     responses={
         status.HTTP_202_ACCEPTED: {"model": PreparingOut},
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
@@ -56,7 +56,9 @@ def _query(request: RouteRequestIn) -> service.RouteQuery:
         status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Planning took too long"},
     },
 )
-async def routes(_: UserId, request: RouteRequestIn, db_conn: Conn) -> RouteOut | JSONResponse:
+async def routes(
+    _: UserId, request: RouteRequestIn, db_conn: Conn
+) -> PlannedRouteOut | JSONResponse:
     """
     Plan a route. Answers 202 while the map data around it is downloaded and scored; the
     client asks again until it gets the route.
@@ -73,7 +75,7 @@ async def routes(_: UserId, request: RouteRequestIn, db_conn: Conn) -> RouteOut 
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, e.reason) from None
     except service.PlanningTimeout as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from None
-    return RouteOut(
+    return PlannedRouteOut(
         geometry=LineString(**route.geometry),
         properties=RoutePropertiesOut(
             length_m=route.length_m,

@@ -61,7 +61,7 @@ class RoutePropertiesOut(BaseModel):
     warnings: list[RouteWarning]
 
 
-class RouteOut(Feature[LineString, RoutePropertiesOut]):
+class PlannedRouteOut(Feature[LineString, RoutePropertiesOut]):
     """The route as a GeoJSON Feature, its line in travel order."""
 
 
