@@ -24,6 +24,8 @@ const targetKm = computed(() => formatKm((planner.search?.request.target_distanc
 // The planner's warnings explain what it found; an edited route is the user's own, so it is only
 // said how far off the target it is.
 const isEdited = computed(() => planner.edit?.option === planner.selectedOption)
+// With options to choose from, their cards say the length and letter; the head only updates.
+const hasCards = computed(() => routes.value.length > 1 && !planner.isChosen)
 const editedFit = computed(() => {
 	if (!isEdited.value || !shown.value || shown.value.properties.warnings.length === 0) return null
 	const fit = routeFit(shown.value.properties.length_m, planner.search?.request.target_distance_m)
@@ -36,8 +38,8 @@ const plannerWarnings = computed(() =>
 
 <template>
 	<!-- The shown route's length, which option it is, and why it misses the target if it does. -->
-	<div v-if="shown" role="status" class="flex flex-col gap-1">
-		<div class="flex items-baseline justify-between gap-3">
+	<div v-if="shown" role="status" class="flex flex-col gap-1 empty:hidden">
+		<div v-if="!hasCards || isRerouting" class="flex items-baseline justify-between gap-3">
 			<p class="text-heading" :class="{ 'text-graphite': isRerouting }">
 				{{
 					isRerouting
@@ -47,7 +49,7 @@ const plannerWarnings = computed(() =>
 							})
 				}}
 			</p>
-			<p v-if="routes.length > 1 && !planner.isChosen" class="text-small text-graphite">
+			<p v-if="hasCards" class="text-small text-graphite">
 				{{ t('planner.options.name', { letter: optionLetter(planner.selectedOption) }) }}
 			</p>
 		</div>

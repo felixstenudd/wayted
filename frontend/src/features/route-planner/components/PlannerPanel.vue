@@ -49,6 +49,7 @@ const editingPoint = computed(() =>
 				v-if="plannedWith"
 				:request="plannedWith"
 				:action="t('planner.settingsLine.done')"
+				is-found-for
 				@action="planner.changeSettings(false)"
 			/>
 			<h1 :class="plannedWith ? 'sr-only' : 'text-heading'">{{ t('planner.title') }}</h1>
@@ -63,7 +64,8 @@ const editingPoint = computed(() =>
 				<FindRoutes />
 				<SaveRoute quiet />
 			</div>
-			<SaveRoute v-else-if="isShowingRoute" />
+			<!-- Opening the settings changes nothing yet, so the route can still be saved. -->
+			<SaveRoute v-else-if="shown && !planner.isStale" />
 			<FindRoutes v-else />
 		</div>
 	</div>
@@ -85,6 +87,7 @@ const editingPoint = computed(() =>
 			v-if="plannedWith"
 			:request="plannedWith"
 			:action="t('planner.settingsLine.done')"
+			is-found-for
 			@action="planner.changeSettings(false)"
 		/>
 		<RouteKindFields />

@@ -125,7 +125,6 @@
 			"loading": "Loading what you can weigh…",
 			"loadFailed": "What you can weigh could not be loaded. Check your connection, then try again.",
 			"tryAgain": "Try again",
-			"comingLater": "Coming later: {attributes}.",
 			"weights": {
 				"avoid": "Avoid",
 				"ratherNot": "Rather not",
@@ -155,8 +154,8 @@
 				"prepared": {
 					"avoid": "Rough where possible",
 					"ratherNot": "Rather rough",
-					"niceToHave": "Rather prepared",
-					"prefer": "Prepared where possible"
+					"niceToHave": "Rather smooth",
+					"prefer": "Smooth where possible"
 				}
 			},
 			"groups": {
@@ -172,7 +171,7 @@
 				"quiet_streets": "Quiet streets",
 				"sights": "Places to see",
 				"bridges": "Bridges",
-				"prepared": "Prepared"
+				"prepared": "Smooth"
 			}
 		},
 		"findRoutes": {
@@ -220,7 +219,6 @@
 		"edit": {
 			"title": "Edited route",
 			"changes": "1 change | {n} changes",
-			"fromOption": "From route {from}, {changes}",
 			"undo": "Undo",
 			"discard": "Discard changes",
 			"updating": "Updating…",
@@ -281,7 +279,8 @@
 			"avoided": "{names} avoided",
 			"noPreferences": "No preferences set",
 			"change": "Change",
-			"done": "Done"
+			"done": "Done",
+			"foundFor": "Routes found for"
 		},
 		"points": {
 			"label": "Points on the route",
@@ -329,13 +328,16 @@
 					"after": "After a distance",
 					"afterHint": "About this far into the route."
 				},
-				"done": "Done"
+				"done": "Done",
+				"tapHint": "Tap the map to add one.",
+				"addedTapHint": "1 added. Drag it to move it, or tap it for more. | {n} added. Drag them to move them, or tap one for more."
 			},
 			"locationErrors": {
 				"denied": "Location access is off for this site. Allow it in your browser settings, or click the map to place the start.",
 				"unavailable": "Your location could not be found. Try again, or click the map to place the start.",
 				"unsupported": "This browser cannot share your location. Click the map to place the start."
-			}
+			},
+			"tapHint": "Tap the map to place it."
 		},
 		"sheet": {
 			"expand": "Show more of the planner",
@@ -555,9 +557,12 @@
 					"none": "Rough",
 					"aLittle": "Mostly rough",
 					"some": "Mixed",
-					"aLot": "Mostly prepared",
-					"mostly": "Prepared"
+					"aLot": "Mostly smooth",
+					"mostly": "Smooth"
 				}
+			},
+			"rowNames": {
+				"prepared": "Surface"
 			}
 		},
 		"name": {

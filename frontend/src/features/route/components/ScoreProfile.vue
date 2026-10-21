@@ -21,10 +21,13 @@ const { t } = i18n
 const attributes = useRouteAttributes()
 
 const percent = (share: number) => Math.round(share * 100)
+// A row may be named for what its words describe: "Surface", read with "Mostly smooth".
 const name = (key: string) =>
-	i18n.te(`planner.preferences.attributes.${key}`)
-		? t(`planner.preferences.attributes.${key}`)
-		: humanizeKey(key)
+	i18n.te(`route.profile.rowNames.${key}`)
+		? t(`route.profile.rowNames.${key}`)
+		: i18n.te(`planner.preferences.attributes.${key}`)
+			? t(`planner.preferences.attributes.${key}`)
+			: humanizeKey(key)
 
 const rows = computed(() =>
 	profileRows(

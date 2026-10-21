@@ -4,6 +4,7 @@ import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { useMapView, type LonLat } from '@/features/map'
+import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { Button } from '@/shared/ui/button'
 
 import { useCurrentLocation } from '../composables/useCurrentLocation'
@@ -17,6 +18,7 @@ const { t } = useI18n()
 const planner = usePlannerStore()
 const { center, showPoint } = useMapView()
 const location = useCurrentLocation()
+const isTouch = useMediaQuery('(pointer: coarse)')
 
 const points = computed<Point[]>(() =>
 	planner.shape === 'point_to_point' ? ['start', 'finish'] : ['start'],
@@ -33,7 +35,7 @@ watch(
 function hint(point: Point): string {
 	if (planner[point] !== null) return t('planner.points.placedHint')
 	return planner.missingPoint === point
-		? t('planner.points.clickHint')
+		? t(isTouch.value ? 'planner.points.tapHint' : 'planner.points.clickHint')
 		: t('planner.points.afterStartHint')
 }
 

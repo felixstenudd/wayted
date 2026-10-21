@@ -16,6 +16,8 @@ const { routes } = useShownRoute()
 const changes = computed(() => (planner.edit ? planner.edit.steps.length - 1 : 0))
 const isEdited = computed(() => planner.edit?.option === planner.selectedOption)
 const from = computed(() => optionLetter(planner.edit?.option ?? 0))
+// With options shown, the selected card already says it is edited.
+const hasCards = computed(() => routes.value.length > 1 && !planner.isChosen)
 </script>
 
 <template>
@@ -35,31 +37,17 @@ const from = computed(() => optionLetter(planner.edit?.option ?? 0))
 			</Button>
 		</div>
 	</div>
-	<div v-else-if="isEdited" class="flex items-center gap-2">
+	<div v-else-if="isEdited" class="flex items-center gap-1">
 		<div class="flex min-w-0 flex-1 flex-col">
-			<span class="text-title">{{ t('planner.edit.title') }}</span>
-			<span class="text-small text-graphite">
-				{{
-					routes.length > 1 && !planner.isChosen
-						? t('planner.edit.fromOption', {
-								from,
-								changes: t('planner.edit.changes', changes),
-							})
-						: t('planner.edit.changes', changes)
-				}}
-			</span>
+			<span v-if="!hasCards" class="text-title">{{ t('planner.edit.title') }}</span>
+			<span class="text-small text-graphite">{{ t('planner.edit.changes', changes) }}</span>
 		</div>
 		<Button variant="ghost" size="sm" @click="planner.undoEdit()">
 			<Undo2 />
 			{{ t('planner.edit.undo') }}
 		</Button>
+		<Button variant="ghost" size="sm" @click="planner.discardEdit()">
+			{{ t('planner.edit.discard') }}
+		</Button>
 	</div>
-	<Button
-		v-if="isEdited && planner.pendingOption === null"
-		variant="link"
-		class="self-start text-small"
-		@click="planner.discardEdit()"
-	>
-		{{ t('planner.edit.discard') }}
-	</Button>
 </template>

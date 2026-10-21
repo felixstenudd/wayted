@@ -12,6 +12,8 @@ const props = defineProps<{
 	/** What the shown routes were planned with. */
 	request: DeepReadonly<RouteRequest>
 	action: string
+	/** While the settings below it are being changed: it names what the routes were found for. */
+	isFoundFor?: boolean
 }>()
 defineEmits<{ action: [] }>()
 
@@ -62,6 +64,9 @@ const preferences = computed(() => {
 <template>
 	<div class="flex items-center gap-3 rounded-md bg-sunken py-2.5 pr-1.5 pl-3">
 		<div class="flex min-w-0 flex-1 flex-col">
+			<span v-if="isFoundFor" class="text-small text-graphite">
+				{{ t('planner.settingsLine.foundFor') }}
+			</span>
 			<span class="text-body font-semibold">{{ summary }}</span>
 			<span class="text-small text-graphite">{{ preferences }}</span>
 		</div>

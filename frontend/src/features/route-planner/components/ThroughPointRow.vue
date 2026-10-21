@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { useMapView } from '@/features/map'
+import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 import { Button } from '@/shared/ui/button'
 
 import { useShownRoute } from '../composables/useShownRoute'
@@ -14,16 +15,23 @@ const { t } = useI18n()
 const planner = usePlannerStore()
 const { shown } = useShownRoute()
 const { center } = useMapView()
+const isTouch = useMediaQuery('(pointer: coarse)')
 
 const count = computed(() => planner.throughPoints.length)
 const hint = computed(() => {
 	if (count.value > 0)
-		return t('planner.points.through.addedHint', { n: count.value }, count.value)
+		return t(
+			isTouch.value
+				? 'planner.points.through.addedTapHint'
+				: 'planner.points.through.addedHint',
+			{ n: count.value },
+			count.value,
+		)
 	if (planner.missingPoint === 'start') return t('planner.points.through.afterStartHint')
 	if (planner.missingPoint === 'finish') return t('planner.points.through.afterFinishHint')
 	// While a route is shown a map click adds nothing; the button still does.
 	if (shown.value !== null) return t('planner.points.through.routeShownHint')
-	return t('planner.points.through.clickHint')
+	return t(isTouch.value ? 'planner.points.through.tapHint' : 'planner.points.through.clickHint')
 })
 
 function addAtCenter(): void {
