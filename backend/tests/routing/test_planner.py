@@ -29,12 +29,12 @@ async def plan(
     finish: str | None,
     target_m: float,
     weights: dict[str, float] | None = None,
-    options: dict[str, float] | None = None,
+    settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     async with pool.connection() as conn:
         cur = await conn.execute(
             "SELECT routing.plan_route(%s, %s, %s, %s, %s, %s)",
-            (activity, start, finish, target_m, Jsonb(weights or {}), Jsonb(options or {})),
+            (activity, start, finish, target_m, Jsonb(weights or {}), Jsonb(settings or {})),
         )
         row = await cur.fetchone()
     assert row is not None
@@ -66,12 +66,12 @@ async def route_ways(
             """
             SELECT e.way_id
             FROM routing.route_edges(
-                     routing.make_profile('running', %s, p_turn_m => %s), NULL, %s::bigint[]
+                     routing.make_profile('running', %s, %s), NULL, %s::bigint[]
                  ) r
             JOIN graph.edges e ON e.id = r.edge_id
             ORDER BY r.step
             """,
-            (Jsonb(weights or {}), turn_m, vias),
+            (Jsonb(weights or {}), Jsonb({"turns": {"turn_m": turn_m}}), vias),
         )
         return [way_id for (way_id,) in await cur.fetchall()]
 
@@ -470,17 +470,17 @@ async def test_unreachable_finish_is_an_error(
 
 
 @pytest.mark.parametrize(
-    ("target_m", "options"),
+    ("target_m", "settings"),
     [
         (0, {}),
-        (3_000, {"tolerance": 0}),
-        (3_000, {"snap": 50}),
-        (3_000, {"snap_m": -1}),
-        (3_000, {"turn_m": -1}),
+        (3_000, {"plan": {"tolerance": 0}}),
+        (3_000, {"plan": {"snap": 50}}),
+        (3_000, {"plan": {"snap_m": -1}}),
+        (3_000, {"turns": {"turn_m": -1}}),
     ],
 )
-async def test_bad_target_or_options_are_rejected(
-    api_pool: Pool, target_m: float, options: dict[str, float]
+async def test_bad_target_or_settings_are_rejected(
+    api_pool: Pool, target_m: float, settings: dict[str, Any]
 ) -> None:
     with pytest.raises(psycopg.errors.InvalidParameterValue):
-        await plan(api_pool, "running", CENTRE, None, target_m, options=options)
+        await plan(api_pool, "running", CENTRE, None, target_m, settings=settings)

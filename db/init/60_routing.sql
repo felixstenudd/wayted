@@ -24,34 +24,134 @@ LEFT JOIN ref.activity_highway_factors f
     ON f.activity = a.code AND f.highway = coalesce(w.tags ->> 'highway', 'ferry')
 WHERE a.code = ANY (e.forward) OR a.code = ANY (e.backward);
 
--- What a request asks of each edge, checked once by routing.make_profile.
+-- Every setting the planner is tuned by, grouped by the stage that reads it, at the value it
+-- starts from. Each stage reads only its own group, so one behaviour can be tuned without
+-- touching the others, and a request may override any of them (see routing.make_profile).
+-- Fractions of a goal or target are shares of its length; lists are the sizes a stage tries.
+-- - cost: alpha, how far preferences bend an edge's cost (see routing.cost_sql).
+-- - turns: the cost of a turn (see routing.turns_sql): turn_m at a right angle, nothing up to
+--   free_deg off straight, and from hairpin_deg on up to hairpin_m more at 180 degrees.
+-- - legs: reuse_penalty, the cost multiplier on edges the route already uses, and the corridor a
+--   leg is routed in first (see routing.route_edges).
+-- - area: how far around the start and finish the planner reads (see routing.search_area).
+-- - loops, detours: where candidates go (see routing.loop_candidates, routing.detour_candidates).
+-- - evaluate: when a candidate's turn at a via counts against it (see routing.evaluate).
+-- - doubling: the rules routing.doubled_m measures by.
+-- - score: what routing.score weighs, besides missing the target.
+-- - plan: tolerance, how far the length may miss the target; snap_m, how far a point may be from
+--   the road it starts on; attempts at a goal, candidates kept from each and routes tried.
+CREATE FUNCTION routing.defaults() RETURNS jsonb
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT '{
+        "cost":     {"alpha": 0.7},
+        "turns":    {"turn_m": 60, "free_deg": 30, "hairpin_deg": 120, "hairpin_m": 1000},
+        "legs":     {"reuse_penalty": 4, "corridor_share": 0.5, "corridor_min_m": 300},
+        "area":     {"loop_share": 0.45, "min_m": 500},
+        "loops":    {
+            "sizes": [0.85, 1, 1.15], "ring_low": 0.27, "ring_aim": 0.3, "ring_high": 0.33,
+            "bearings": 12, "corner_gap_deg": 60, "bearing_slack_deg": 15, "appeal_steps": 5
+        },
+        "detours":  {
+            "sizes": [0.85, 1, 1.15], "legs_per_ratio": 2, "min_legs": 2, "max_legs": 4,
+            "via_reach": 0.3333333333333333,
+            "circle_from": 4, "circle_sizes": [0.85, 0.92, 1, 1.08, 1.15],
+            "circle_winding": 1.2, "circle_via_deg": 72,
+            "single_low": 0.9, "single_aim": 0.95, "single_from": 0.25, "single_to": 0.75,
+            "single_per_side": 2
+        },
+        "evaluate": {"via_turn_deg": 120, "spike_m": 150, "spike_deg": 150, "spike_penalty": 1},
+        "doubling": {
+            "opposite_deg": 135,
+            "close": {"sample_m": 20, "within_m": 40, "apart_m": 300, "run_m": 100, "weight": 1},
+            "lobe": {"sample_m": 100, "within_m": 300, "apart_m": 1000, "run_m": 300, "weight": 0.5}
+        },
+        "score":    {"preference": 0.3, "doubled": 2, "reused": 3},
+        "plan":     {"tolerance": 0.07, "snap_m": 200, "attempts": 2, "kept": 3, "routed": 3}
+    }'::jsonb
+$$;
+
+-- p_defaults with p_overrides laid over it, group by group. An override must name a setting
+-- p_defaults has and be of its kind: a number, a non-empty list of numbers, or a group. p_path is
+-- where p_defaults sits, for the message. Raises invalid_parameter_value otherwise.
+CREATE FUNCTION routing.merge_settings(p_defaults jsonb, p_overrides jsonb, p_path text DEFAULT '')
+RETURNS jsonb
+LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    v_merged jsonb := p_defaults;
+    v_key    text;
+    v_value  jsonb;
+    v_name   text;
+BEGIN
+    IF jsonb_typeof(p_overrides) IS DISTINCT FROM 'object' THEN
+        RAISE EXCEPTION '% must be an object', coalesce(nullif(p_path, ''), 'settings')
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    FOR v_key, v_value IN SELECT * FROM jsonb_each(p_overrides) LOOP
+        v_name := ltrim(p_path || '.' || v_key, '.');
+        IF NOT p_defaults ? v_key THEN
+            RAISE EXCEPTION 'unknown setting: %', v_name USING ERRCODE = 'invalid_parameter_value';
+        END IF;
+        IF jsonb_typeof(p_defaults -> v_key) = 'object' THEN
+            v_value := routing.merge_settings(p_defaults -> v_key, v_value, v_name);
+        ELSIF jsonb_typeof(v_value) IS DISTINCT FROM jsonb_typeof(p_defaults -> v_key)
+            OR (jsonb_typeof(v_value) = 'array' AND (
+                jsonb_array_length(v_value) = 0
+                OR EXISTS (SELECT 1 FROM jsonb_array_elements(v_value) x
+                           WHERE jsonb_typeof(x) <> 'number')
+            ))
+        THEN
+            RAISE EXCEPTION '% must be %', v_name, CASE jsonb_typeof(p_defaults -> v_key)
+                WHEN 'array' THEN 'a list of numbers' ELSE 'a number' END
+                USING ERRCODE = 'invalid_parameter_value';
+        END IF;
+        v_merged := jsonb_set(v_merged, ARRAY[v_key], v_value);
+    END LOOP;
+    RETURN v_merged;
+END
+$$;
+
+-- What a request asks of each edge and of the planner, checked once by routing.make_profile.
 CREATE TYPE routing.profile AS (
     -- a ref.activities code
-    activity      text,
+    activity text,
     -- attribute key -> weight, scaled so the absolute weights sum to 1 (or '{}')
-    weights       jsonb,
-    -- how far preferences bend cost: an edge costs length * factor * (1 - alpha * preference)
-    alpha         double precision,
-    -- cost multiplier on edges the route already uses
-    reuse_penalty double precision,
-    -- cost in metres of a right-angle turn at a junction (see routing.turns_sql)
-    turn_m        double precision
+    weights  jsonb,
+    -- routing.defaults() with the request's overrides
+    settings jsonb
 );
+
+-- A number from p_profile's settings: p_name in p_group.
+CREATE FUNCTION routing.setting(p_profile routing.profile, p_group text, p_name text)
+RETURNS double precision
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT (p_profile.settings -> p_group ->> p_name)::double precision
+$$;
+
+-- A list of numbers from p_profile's settings: p_name in p_group.
+CREATE FUNCTION routing.settings_list(p_profile routing.profile, p_group text, p_name text)
+RETURNS double precision[]
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT ARRAY(
+        SELECT x::double precision
+        FROM jsonb_array_elements_text(p_profile.settings -> p_group -> p_name) x
+    )
+$$;
 
 -- Weights run from -1 (avoid) to 1 (prefer) per edge score key, e.g. {"green": 1}. They are
 -- scaled so an edge's preference stays in [-1, 1] however many keys are weighted, which keeps
 -- cost between (1 - alpha) and (1 + alpha) times length * factor, and so always positive.
--- Raises invalid_parameter_value for an unknown activity or a value out of range.
+-- p_settings overrides routing.defaults(), e.g. {"turns": {"turn_m": 80}}. No setting may be
+-- negative, and some have tighter bounds, checked here.
+-- Raises invalid_parameter_value for an unknown activity, setting or a value out of range.
 CREATE FUNCTION routing.make_profile(
-    p_activity      text,
-    p_weights       jsonb            DEFAULT '{}',
-    p_alpha         double precision DEFAULT 0.7,
-    p_reuse_penalty double precision DEFAULT 4,
-    p_turn_m        double precision DEFAULT 60
+    p_activity text,
+    p_weights  jsonb DEFAULT '{}',
+    p_settings jsonb DEFAULT '{}'
 ) RETURNS routing.profile
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
-    v_total double precision;
+    v_total   double precision;
+    v_profile routing.profile;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM ref.activities WHERE code = p_activity) THEN
         RAISE EXCEPTION 'unknown activity: %', p_activity USING ERRCODE = 'invalid_parameter_value';
@@ -66,19 +166,9 @@ BEGIN
         RAISE EXCEPTION 'weights must be numbers from -1 to 1'
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
-    IF p_alpha IS NULL OR p_alpha < 0 OR p_alpha >= 1 THEN
-        RAISE EXCEPTION 'alpha must be in [0, 1)' USING ERRCODE = 'invalid_parameter_value';
-    END IF;
-    IF p_reuse_penalty IS NULL OR p_reuse_penalty < 1 THEN
-        RAISE EXCEPTION 'reuse_penalty must be at least 1'
-            USING ERRCODE = 'invalid_parameter_value';
-    END IF;
-    IF p_turn_m IS NULL OR p_turn_m < 0 THEN
-        RAISE EXCEPTION 'turn_m must be at least 0' USING ERRCODE = 'invalid_parameter_value';
-    END IF;
 
     SELECT sum(abs(w.value::double precision)) INTO v_total FROM jsonb_each(p_weights) w;
-    RETURN ROW(
+    v_profile := ROW(
         p_activity,
         coalesce(
             (SELECT jsonb_object_agg(w.key, w.value::double precision / v_total)
@@ -86,10 +176,35 @@ BEGIN
              WHERE w.value::double precision <> 0),
             '{}'
         ),
-        p_alpha,
-        p_reuse_penalty,
-        p_turn_m
+        routing.merge_settings(routing.defaults(), p_settings)
     )::routing.profile;
+
+    IF jsonb_path_exists(v_profile.settings, 'strict $.**? (@.type() == "number" && @ < 0)') THEN
+        RAISE EXCEPTION 'settings must not be negative' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF routing.setting(v_profile, 'cost', 'alpha') >= 1 THEN
+        RAISE EXCEPTION 'cost.alpha must be in [0, 1)' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF routing.setting(v_profile, 'legs', 'reuse_penalty') < 1 THEN
+        RAISE EXCEPTION 'legs.reuse_penalty must be at least 1'
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF routing.setting(v_profile, 'plan', 'tolerance') NOT BETWEEN 1e-9 AND 1 - 1e-9 THEN
+        RAISE EXCEPTION 'plan.tolerance must be in (0, 1)'
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF routing.setting(v_profile, 'plan', 'snap_m') = 0 THEN
+        RAISE EXCEPTION 'plan.snap_m must be positive' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF least(
+        routing.setting(v_profile, 'plan', 'attempts'),
+        routing.setting(v_profile, 'plan', 'kept'),
+        routing.setting(v_profile, 'plan', 'routed')
+    ) < 1 THEN
+        RAISE EXCEPTION 'plan.attempts, kept and routed must be at least 1'
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    RETURN v_profile;
 END
 $$;
 
@@ -131,8 +246,9 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 -- Edges SQL whose cost is what a route optimises: length weighted by highway class and the
--- profile's preferences, and multiplied by the reuse penalty on edges in p_used. A missing score
--- counts as 0, so edges that are not scored yet are neither preferred nor avoided.
+-- profile's preferences, and multiplied by the reuse penalty (legs.reuse_penalty) on edges in
+-- p_used; an edge costs length * factor * (1 - cost.alpha * preference). A missing score counts
+-- as 0, so edges that are not scored yet are neither preferred nor avoided.
 CREATE FUNCTION routing.cost_sql(
     p_profile routing.profile, p_area geometry, p_used bigint[] DEFAULT '{}'
 ) RETURNS text
@@ -141,7 +257,7 @@ LANGUAGE sql STABLE AS $$
         p_profile.activity,
         format(
             'length_m * factor * (1 - %s * (%s)) * CASE WHEN used THEN %s ELSE 1 END',
-            p_profile.alpha,
+            routing.setting(p_profile, 'cost', 'alpha'),
             coalesce(
                 (SELECT string_agg(
                      format('%s * coalesce((scores ->> %L)::double precision, 0)', w.value, w.key),
@@ -149,7 +265,7 @@ LANGUAGE sql STABLE AS $$
                  FROM jsonb_each(p_profile.weights) w),
                 '0'
             ),
-            p_profile.reuse_penalty
+            routing.setting(p_profile, 'legs', 'reuse_penalty')
         ),
         p_area,
         p_used
@@ -212,12 +328,13 @@ LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
     SELECT -2 * p_vertex - 1
 $$;
 
--- p_sql's network turned into one of arcs, so that a route pays for its turns: moving from one
--- arc to the next costs the next one's cost plus p_turn_m for a right angle at a junction (a
--- vertex where more than two edges meet), scaled linearly from nothing at 30 degrees off
--- straight. Bends between two edges are free, since there is no other way to go. A hairpin looks
--- like turning round however many edges meet there, so from 120 degrees on the cost climbs by up
--- to 1000 m more at 180; turning back onto the edge just travelled counts as 180 degrees anywhere.
+-- p_sql's network turned into one of arcs, so that a route pays for its turns, as p_profile's
+-- turns settings say: moving from one arc to the next costs the next one's cost plus turn_m for a
+-- right angle at a junction (a vertex where more than two edges meet), scaled linearly from
+-- nothing at free_deg (30) off straight. Bends between two edges are free, since there is no
+-- other way to go. A hairpin looks like turning round however many edges meet there, so from
+-- hairpin_deg (120) on the cost climbs by up to hairpin_m (1000) more at 180; turning back onto
+-- the edge just travelled counts as 180 degrees anywhere.
 -- That is more than the reuse penalty adds to most streets, so a route would rather go back over
 -- a street it has used than double back on the spot, and does that only when nothing else is
 -- left. The ways out of
@@ -225,7 +342,7 @@ $$;
 -- start from an arc, to carry on from where the last one arrived. The angles come from the ends
 -- of each edge's line.
 CREATE FUNCTION routing.turns_sql(
-    p_sql text, p_turn_m double precision, p_departures bigint[], p_arrivals bigint[]
+    p_sql text, p_profile routing.profile, p_departures bigint[], p_arrivals bigint[]
 ) RETURNS text
 LANGUAGE sql IMMUTABLE AS $$
     SELECT format(
@@ -255,8 +372,8 @@ LANGUAGE sql IMMUTABLE AS $$
         FROM (
             SELECT m.source, m.target,
                    m.cost + CASE WHEN m.turns THEN
-                       %2$s * greatest(m.angle - radians(30), 0) / radians(60)
-                           + 1000 * greatest(m.angle - radians(120), 0) / radians(60)
+                       %2$s * greatest(m.angle - radians(%5$s), 0) / radians(90 - %5$s)
+                           + %6$s * greatest(m.angle - radians(%7$s), 0) / radians(180 - %7$s)
                        ELSE 0
                    END AS cost
             FROM (
@@ -276,9 +393,12 @@ LANGUAGE sql IMMUTABLE AS $$
         ) t
         $sql$,
         p_sql,
-        p_turn_m,
+        routing.setting(p_profile, 'turns', 'turn_m'),
         coalesce(p_departures, '{}'),
-        coalesce(p_arrivals, '{}')
+        coalesce(p_arrivals, '{}'),
+        routing.setting(p_profile, 'turns', 'free_deg'),
+        routing.setting(p_profile, 'turns', 'hairpin_m'),
+        routing.setting(p_profile, 'turns', 'hairpin_deg')
     )
 $$;
 
@@ -332,19 +452,31 @@ $$;
 -- Where a route of p_target_m from p_start to p_finish (NULL: back to the start) can go. No point
 -- of an open route is farther than (target - distance) / 2 from the line between its ends, and
 -- loop candidates lie within a third of the target of the start, so the area keeps every graph
--- read near the route. The API downloads the tiles covering it before planning.
+-- read near the route: loop_share of the target round the start of a loop, and at least min_m
+-- (p_settings, the area settings). The API downloads the tiles covering it before planning, by
+-- the default settings.
 CREATE FUNCTION routing.search_area(
-    p_start geometry, p_finish geometry, p_target_m double precision
+    p_start geometry,
+    p_finish geometry,
+    p_target_m double precision,
+    p_settings jsonb DEFAULT routing.defaults() -> 'area'
 ) RETURNS geometry
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT CASE
         WHEN p_finish IS NULL THEN
-            ST_Buffer(p_start::geography, greatest(0.45 * p_target_m, 500))::geometry
+            ST_Buffer(
+                p_start::geography,
+                greatest(
+                    (p_settings ->> 'loop_share')::double precision * p_target_m,
+                    (p_settings ->> 'min_m')::double precision
+                )
+            )::geometry
         ELSE
             ST_Buffer(
                 ST_MakeLine(p_start, p_finish)::geography,
                 greatest(
-                    (p_target_m - ST_Distance(p_start::geography, p_finish::geography)) / 2, 500
+                    (p_target_m - ST_Distance(p_start::geography, p_finish::geography)) / 2,
+                    (p_settings ->> 'min_m')::double precision
                 )
             )::geometry
     END
@@ -363,17 +495,30 @@ CREATE TYPE routing.candidate AS (
 -- compared in steps of 0.2, and of corners alike in it the one nearest 0.3 of the goal away wins,
 -- or every size would take the same most appealing corners. Street patterns stretch some
 -- directions more than others, so every loop is also tried 15 % smaller and larger;
--- routing.evaluate scores them all in the same call.
+-- routing.evaluate scores them all in the same call. The numbers are the loops settings: ring_low,
+-- ring_high, bearings, corner_gap_deg, bearing_slack_deg, appeal_steps, ring_aim and sizes.
 CREATE FUNCTION routing.loop_candidates(
     p_profile routing.profile, p_area geometry, p_start bigint, p_goal_m double precision
 ) RETURNS SETOF routing.candidate
 LANGUAGE sql AS $$
-    WITH band AS MATERIALIZED (
+    WITH s AS MATERIALIZED (
+        SELECT routing.setting(p_profile, 'loops', 'ring_low') AS ring_low,
+               routing.setting(p_profile, 'loops', 'ring_aim') AS ring_aim,
+               routing.setting(p_profile, 'loops', 'ring_high') AS ring_high,
+               routing.setting(p_profile, 'loops', 'bearings') AS bearings,
+               radians(routing.setting(p_profile, 'loops', 'corner_gap_deg')) AS corner_gap,
+               radians(routing.setting(p_profile, 'loops', 'bearing_slack_deg')) AS slack,
+               routing.setting(p_profile, 'loops', 'appeal_steps') AS appeal_steps,
+               routing.settings_list(p_profile, 'loops', 'sizes') AS sizes
+    ),
+    band AS MATERIALIZED (
         SELECT d.vertex, d.distance_m
-        FROM routing.distances(
-                 routing.length_sql(p_profile.activity, p_area), p_start, 0.33 * 1.15 * p_goal_m
+        FROM s, routing.distances(
+                 routing.length_sql(p_profile.activity, p_area),
+                 p_start,
+                 s.ring_high * (SELECT max(k) FROM unnest(s.sizes) k) * p_goal_m
              ) d
-        WHERE d.distance_m >= 0.27 * 0.85 * p_goal_m
+        WHERE d.distance_m >= s.ring_low * (SELECT min(k) FROM unnest(s.sizes) k) * p_goal_m
     ),
     ring AS MATERIALIZED (
         SELECT b.vertex, b.distance_m, ST_Azimuth(s.geom, v.geom) AS azimuth, st.appeal
@@ -386,19 +531,21 @@ LANGUAGE sql AS $$
     corners AS (
         SELECT
             (SELECT vertex FROM ring
-             WHERE distance_m BETWEEN 0.27 * g.goal_m AND 0.33 * g.goal_m
-             ORDER BY routing.angle_between(azimuth, b.bearing) > radians(15),
-                      round(appeal * 5) DESC, abs(distance_m - 0.3 * g.goal_m),
+             WHERE distance_m BETWEEN s.ring_low * g.goal_m AND s.ring_high * g.goal_m
+             ORDER BY routing.angle_between(azimuth, b.bearing) > s.slack,
+                      round(appeal * s.appeal_steps) DESC, abs(distance_m - s.ring_aim * g.goal_m),
                       routing.angle_between(azimuth, b.bearing)
              LIMIT 1) AS c1,
             (SELECT vertex FROM ring
-             WHERE distance_m BETWEEN 0.27 * g.goal_m AND 0.33 * g.goal_m
-             ORDER BY routing.angle_between(azimuth, b.bearing + radians(60)) > radians(15),
-                      round(appeal * 5) DESC, abs(distance_m - 0.3 * g.goal_m),
-                      routing.angle_between(azimuth, b.bearing + radians(60))
+             WHERE distance_m BETWEEN s.ring_low * g.goal_m AND s.ring_high * g.goal_m
+             ORDER BY routing.angle_between(azimuth, b.bearing + s.corner_gap) > s.slack,
+                      round(appeal * s.appeal_steps) DESC, abs(distance_m - s.ring_aim * g.goal_m),
+                      routing.angle_between(azimuth, b.bearing + s.corner_gap)
              LIMIT 1) AS c2
-        FROM (SELECT radians(d) AS bearing FROM generate_series(0, 330, 30) d) b,
-             (SELECT k * p_goal_m AS goal_m FROM unnest(ARRAY[0.85, 1, 1.15]) k) g
+        FROM s,
+             LATERAL (SELECT radians(i * 360.0 / s.bearings) AS bearing
+                      FROM generate_series(0, s.bearings::int - 1) i) b,
+             LATERAL (SELECT k * p_goal_m AS goal_m FROM unnest(s.sizes) k) g
     )
     SELECT DISTINCT ROW(ARRAY[p_start, c1, c2, p_start])::routing.candidate
     FROM corners
@@ -532,7 +679,11 @@ $$;
 -- - for a goal four times the direct route or more, where a bow would be a tall narrow U, a
 --   circle through start and finish, the long way round: a loop that passes the finish, not one
 --   that comes back to the start first. Its vias are chosen as a bow's, one per 72 degrees.
--- Every shape is tried at three sizes, as in routing.loop_candidates.
+-- Every shape is tried at three sizes, as in routing.loop_candidates. The numbers are the detours
+-- settings: legs_per_ratio, min_legs and max_legs for a bow's legs, via_reach for how far from
+-- its point a via may be, as a share of the spacing; circle_from, circle_winding, circle_via_deg
+-- and circle_sizes for circles; single_low, single_aim, single_from, single_to and
+-- single_per_side for single detours, and sizes.
 CREATE FUNCTION routing.detour_candidates(
     p_profile routing.profile,
     p_area geometry,
@@ -541,26 +692,49 @@ CREATE FUNCTION routing.detour_candidates(
     p_goal_m double precision
 ) RETURNS SETOF routing.candidate
 LANGUAGE sql AS $$
-    WITH ends AS (
+    WITH s AS MATERIALIZED (
+        SELECT routing.settings_list(p_profile, 'detours', 'sizes') AS sizes,
+               routing.setting(p_profile, 'detours', 'legs_per_ratio') AS legs_per_ratio,
+               routing.setting(p_profile, 'detours', 'min_legs') AS min_legs,
+               routing.setting(p_profile, 'detours', 'max_legs') AS max_legs,
+               routing.setting(p_profile, 'detours', 'via_reach') AS via_reach,
+               routing.setting(p_profile, 'detours', 'circle_from') AS circle_from,
+               routing.settings_list(p_profile, 'detours', 'circle_sizes') AS circle_sizes,
+               routing.setting(p_profile, 'detours', 'circle_winding') AS circle_winding,
+               radians(routing.setting(p_profile, 'detours', 'circle_via_deg')) AS circle_via,
+               routing.setting(p_profile, 'detours', 'single_low') AS single_low,
+               routing.setting(p_profile, 'detours', 'single_aim') AS single_aim,
+               routing.setting(p_profile, 'detours', 'single_from') AS single_from,
+               routing.setting(p_profile, 'detours', 'single_to') AS single_to,
+               routing.setting(p_profile, 'detours', 'single_per_side') AS single_per_side
+    ),
+    -- The largest goal any shape is tried at, which bounds every search.
+    reach_m AS MATERIALIZED (
+        SELECT p_goal_m * greatest(
+            (SELECT max(k) FROM unnest(s.sizes) k), (SELECT max(k) FROM unnest(s.circle_sizes) k)
+        ) AS max_m
+        FROM s
+    ),
+    ends AS (
         SELECT s.geom AS start_geom, f.geom AS finish_geom,
                ST_Distance(s.geom::geography, f.geom::geography) AS straight_m
         FROM graph.vertices s, graph.vertices f
         WHERE s.id = p_start AND f.id = p_finish
     ),
     goals AS (
-        SELECT k * p_goal_m AS goal_m FROM unnest(ARRAY[0.85, 1, 1.15]) k
+        SELECT k * p_goal_m AS goal_m FROM s, unnest(s.sizes) k
     ),
     from_start AS (
-        SELECT * FROM routing.distances(
-            routing.length_sql(p_profile.activity, p_area), p_start, 1.15 * p_goal_m
-        )
+        SELECT d.* FROM reach_m, routing.distances(
+            routing.length_sql(p_profile.activity, p_area), p_start, reach_m.max_m
+        ) d
     ),
     to_finish AS (
-        SELECT * FROM routing.distances(
+        SELECT d.* FROM reach_m, routing.distances(
             routing.reversed_sql(routing.length_sql(p_profile.activity, p_area)),
             p_finish,
-            1.15 * p_goal_m
-        )
+            reach_m.max_m
+        ) d
     ),
     direct AS (
         SELECT distance_m FROM to_finish WHERE vertex = p_start
@@ -568,9 +742,9 @@ LANGUAGE sql AS $$
     -- Vertices on some route of at most the largest goal; the stats are read for these alone.
     near AS MATERIALIZED (
         SELECT s.vertex, s.distance_m AS d_start, f.distance_m AS d_finish
-        FROM from_start s JOIN to_finish f USING (vertex)
+        FROM from_start s JOIN to_finish f USING (vertex) CROSS JOIN reach_m
         WHERE s.vertex NOT IN (p_start, p_finish)
-          AND s.distance_m + f.distance_m <= 1.15 * p_goal_m
+          AND s.distance_m + f.distance_m <= reach_m.max_m
     ),
     reach AS MATERIALIZED (
         SELECT n.vertex, n.d_start, n.d_finish, v.geom, a.from_start, a.axis,
@@ -595,9 +769,11 @@ LANGUAGE sql AS $$
         -- straight line. Measured against the straight distance, it is then goal / direct long.
         SELECT g.goal_m, side, 'bow' AS kind,
                routing.bow_height(g.goal_m / direct.distance_m) AS size,
-               least(4, greatest(2, round(2 * g.goal_m / direct.distance_m)))::int AS legs,
+               least(s.max_legs, greatest(
+                   s.min_legs, round(s.legs_per_ratio * g.goal_m / direct.distance_m)
+               ))::int AS legs,
                g.goal_m / direct.distance_m * ends.straight_m AS length_m
-        FROM goals g, direct, ends, unnest(ARRAY[1, -1]) side
+        FROM s, goals g, direct, ends, unnest(ARRAY[1, -1]) side
         WHERE g.goal_m > direct.distance_m AND ends.straight_m > 0
         UNION ALL
         -- A circle winds through the streets even where the direct route runs straight, so it is
@@ -605,12 +781,14 @@ LANGUAGE sql AS $$
         -- it gets two more.
         SELECT g.goal_m, side, 'circle',
                routing.arc_angle(g.goal_m / w.winding_m),
-               ceil(routing.arc_angle(g.goal_m / w.winding_m) / radians(72))::int,
+               ceil(routing.arc_angle(g.goal_m / w.winding_m) / s.circle_via)::int,
                g.goal_m / w.winding_m * ends.straight_m
-        FROM (SELECT k * p_goal_m AS goal_m FROM unnest(ARRAY[0.85, 0.92, 1, 1.08, 1.15]) k) g,
+        FROM s, LATERAL (SELECT k * p_goal_m AS goal_m FROM unnest(s.circle_sizes) k) g,
              direct, ends, unnest(ARRAY[1, -1]) side,
-             LATERAL (SELECT greatest(direct.distance_m, 1.2 * ends.straight_m) AS winding_m) w
-        WHERE p_goal_m >= 4 * direct.distance_m AND ends.straight_m > 0
+             LATERAL (
+                 SELECT greatest(direct.distance_m, s.circle_winding * ends.straight_m) AS winding_m
+             ) w
+        WHERE p_goal_m >= s.circle_from * direct.distance_m AND ends.straight_m > 0
     ),
     -- Materialized, so each point is worked out once, not again for every vertex it is compared
     -- with.
@@ -622,8 +800,9 @@ LANGUAGE sql AS $$
                    ELSE routing.arc_point(
                        ends.start_geom, ends.finish_geom, sh.size, sh.side, k::float8 / sh.legs)
                END AS point,
-               sh.length_m / sh.legs / 3 AS radius_m
-        FROM shapes sh CROSS JOIN ends CROSS JOIN LATERAL generate_series(1, sh.legs - 1) k
+               sh.length_m / sh.legs * s.via_reach AS radius_m
+        FROM shapes sh CROSS JOIN ends CROSS JOIN s
+        CROSS JOIN LATERAL generate_series(1, sh.legs - 1) k
     ),
     shape_vias AS (
         SELECT p.goal_m, p.side, p.kind, p.k,
@@ -643,16 +822,18 @@ LANGUAGE sql AS $$
     single AS (
         SELECT reach.vertex, row_number() OVER (
             PARTITION BY goals.goal_m, sign(sin(from_start - axis))
-            ORDER BY appeal DESC, abs(d_start + d_finish - 0.95 * goals.goal_m)
+            ORDER BY appeal DESC, abs(d_start + d_finish - s.single_aim * goals.goal_m)
         ) AS rank
-        FROM reach JOIN goals ON d_start + d_finish BETWEEN 0.9 * goal_m AND goal_m
-        WHERE along BETWEEN 0.25 AND 0.75
+        FROM s CROSS JOIN reach
+        JOIN goals ON d_start + d_finish BETWEEN s.single_low * goal_m AND goal_m
+        WHERE along BETWEEN s.single_from AND s.single_to
     )
     SELECT ROW(ARRAY[p_start, p_finish])::routing.candidate
     UNION
     SELECT ROW(p_start || vias || p_finish)::routing.candidate FROM shape_routes
     UNION
-    SELECT ROW(ARRAY[p_start, vertex, p_finish])::routing.candidate FROM single WHERE rank <= 2
+    SELECT ROW(ARRAY[p_start, vertex, p_finish])::routing.candidate
+    FROM s, single WHERE rank <= s.single_per_side
 $$;
 
 -- How much of p_line, in metres, comes back alongside itself, heading the other way (more than
@@ -667,11 +848,21 @@ $$;
 -- distance, so that a sample's matches are in its own cell or a neighbouring one. The line is
 -- measured in Web Mercator scaled by cos(latitude), which is true to well under a percent over a
 -- route. A closed line is measured round the loop, so its end is not taken for a return to its
--- start.
-CREATE FUNCTION routing.doubled_m(p_line geometry) RETURNS double precision
+-- start. The numbers are p_settings, the doubling settings: opposite_deg, and a group per rule.
+CREATE FUNCTION routing.doubled_m(
+    p_line geometry, p_settings jsonb DEFAULT routing.defaults() -> 'doubling'
+) RETURNS double precision
 LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-    WITH rules(rule, sample_m, within_m, apart_m, run_m, weight) AS (
-        VALUES (1, 20.0, 40.0, 300.0, 100.0, 1.0), (2, 100.0, 300.0, 1000.0, 300.0, 0.5)
+    WITH rules AS (
+        SELECT r.key AS rule,
+               (r.value ->> 'sample_m')::double precision AS sample_m,
+               (r.value ->> 'within_m')::double precision AS within_m,
+               (r.value ->> 'apart_m')::double precision AS apart_m,
+               (r.value ->> 'run_m')::double precision AS run_m,
+               (r.value ->> 'weight')::double precision AS weight,
+               radians((p_settings ->> 'opposite_deg')::double precision) AS opposite
+        FROM jsonb_each(p_settings) r
+        WHERE jsonb_typeof(r.value) = 'object'
     ),
     -- Materialized, like total below: inlined, it would be worked out again for every sample.
     line AS MATERIALIZED (
@@ -698,7 +889,7 @@ LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
         SELECT max(along_m) AS length_m, ST_IsClosed(p_line) AS closed FROM along
     ),
     cells AS MATERIALIZED (
-        SELECT a.rule, r.within_m, r.apart_m, a.i, a.x, a.y, a.heading, a.along_m,
+        SELECT a.rule, r.within_m, r.apart_m, r.opposite, a.i, a.x, a.y, a.heading, a.along_m,
                floor(a.x / r.within_m)::bigint AS cx, floor(a.y / r.within_m)::bigint AS cy
         FROM along a JOIN rules r USING (rule)
         WHERE a.step_m > 0
@@ -719,7 +910,7 @@ LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
                    ELSE abs(a.along_m - b.along_m)
               END > a.apart_m
           AND (a.x - b.x) ^ 2 + (a.y - b.y) ^ 2 <= a.within_m ^ 2
-          AND routing.angle_between(a.heading, b.heading) > radians(135)
+          AND routing.angle_between(a.heading, b.heading) > a.opposite
     ),
     -- Consecutive samples share a run: their index less their rank is the same.
     runs AS (
@@ -741,19 +932,23 @@ $$;
 -- routing.doubled_m), so that going out and back scores worse than missing the target by as much,
 -- and three times more the share on edges travelled more than once (p_reused_m). Going back over
 -- the same edges is the worst of all, and short stretches of it, such as into a side street and
--- out again, are too near along the route for routing.doubled_m to see.
+-- out again, are too near along the route for routing.doubled_m to see. The weights are
+-- p_settings, the score settings: preference, doubled and reused.
 CREATE FUNCTION routing.score(
     p_target_m   double precision,
     p_length_m   double precision,
     p_preference double precision,
     p_doubled_m  double precision,
-    p_reused_m   double precision
+    p_reused_m   double precision,
+    p_settings   jsonb DEFAULT routing.defaults() -> 'score'
 ) RETURNS double precision
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT abs(p_length_m - p_target_m) / p_target_m
-        + 0.3 * (1 - coalesce(p_preference, 0))
-        + 2 * coalesce(p_doubled_m / nullif(p_length_m, 0), 0)
-        + 3 * coalesce(p_reused_m / nullif(p_length_m, 0), 0)
+        + (p_settings ->> 'preference')::double precision * (1 - coalesce(p_preference, 0))
+        + (p_settings ->> 'doubled')::double precision
+            * coalesce(p_doubled_m / nullif(p_length_m, 0), 0)
+        + (p_settings ->> 'reused')::double precision
+            * coalesce(p_reused_m / nullif(p_length_m, 0), 0)
 $$;
 
 -- A candidate as pgRouting routes it: its length, length-weighted preference, length that is
@@ -769,11 +964,12 @@ CREATE TYPE routing.evaluation AS (
 -- Every candidate evaluated from one pgr_dijkstra call over the distinct legs of all of them, on
 -- routing.turns_sql's network so that turns count as they will on the route. Legs are found apart,
 -- so a leg does not know how the one before arrived; where its cheapest way out of the via turns
--- back sharply (more than 120 degrees, where a hairpin starts to cost) from the way the last leg
--- came in, it is found again from that arc, in one more call for all such legs, as
--- routing.route_edges will route it. The score is routing.score, plus 1 when the route still has
--- to turn back at a via (one at the end of a spur, or where every way on is a hairpin), or turns
--- round there over the 150 m either side, which only a route with no other candidate takes.
+-- back sharply (more than via_turn_deg, 120 degrees, where a hairpin starts to cost) from the way
+-- the last leg came in, it is found again from that arc, in one more call for all such legs, as
+-- routing.route_edges will route it. The score is routing.score, plus spike_penalty (1) when the
+-- route still has to turn back at a via (one at the end of a spur, or where every way on is a
+-- hairpin), or turns round there by more than spike_deg (150) over the spike_m (150 m) either
+-- side, which only a route with no other candidate takes; these are the evaluate settings.
 -- Legs are evaluated without the reuse penalty that the final route gets, so a leg may double
 -- back where the route will not. Candidates with a leg that cannot be travelled are left out.
 CREATE FUNCTION routing.evaluate(
@@ -807,7 +1003,7 @@ LANGUAGE sql AS $$
                p.path_seq
         FROM pairs, pgr_dijkstra(
             routing.turns_sql(
-                routing.cost_sql(p_profile, p_area), p_profile.turn_m, pairs.sources, pairs.targets
+                routing.cost_sql(p_profile, p_area), p_profile, pairs.sources, pairs.targets
             ),
             format(
                 $sql$
@@ -834,7 +1030,8 @@ LANGUAGE sql AS $$
         JOIN legs b ON b.n = f.n AND b.i = f.after
         JOIN ends ea ON ea.source = a.source AND ea.target = a.target
         JOIN ends eb ON eb.source = b.source AND eb.target = b.target
-        WHERE routing.turn_angle(ea.last_arc, eb.first_arc) > radians(120)
+        WHERE routing.turn_angle(ea.last_arc, eb.first_arc)
+            > radians(routing.setting(p_profile, 'evaluate', 'via_turn_deg'))
     ),
     redone AS (
         SELECT p.start_vid AS from_arc, -(p.end_vid + 1) / 2 AS target, p.node AS arc,
@@ -846,7 +1043,7 @@ LANGUAGE sql AS $$
             HAVING count(*) > 0
         ) t, pgr_dijkstra(
             routing.turns_sql(
-                routing.cost_sql(p_profile, p_area), p_profile.turn_m, '{}', t.targets
+                routing.cost_sql(p_profile, p_area), p_profile, '{}', t.targets
             ),
             format(
                 $sql$
@@ -864,7 +1061,8 @@ LANGUAGE sql AS $$
         SELECT DISTINCT t.n
         FROM turning t
         JOIN redone r ON r.from_arc = t.from_arc AND r.target = t.target
-        WHERE routing.turn_angle(t.from_arc, r.arc) > radians(120)
+        WHERE routing.turn_angle(t.from_arc, r.arc)
+              > radians(routing.setting(p_profile, 'evaluate', 'via_turn_deg'))
           AND r.path_seq = (
               SELECT min(x.path_seq) FROM redone x
               WHERE x.from_arc = t.from_arc AND x.target = t.target
@@ -896,20 +1094,23 @@ LANGUAGE sql AS $$
                sum(e.length_m) OVER (PARTITION BY a.n, a.i ORDER BY a.seq DESC) AS left_m
         FROM leg_arcs a JOIN graph.edges e ON e.id = a.arc / 2
     ),
-    -- Where each leg is 150 m before its end and after its start, or at its other end when it is
+    spike AS (SELECT routing.setting(p_profile, 'evaluate', 'spike_m') AS m),
+    -- Where each leg is spike_m before its end and after its start, or at its other end when it is
     -- shorter.
     leg_reach AS (
         SELECT b.n, b.i, b.tail AS before_end, a.head AS after_start
         FROM (
-            SELECT DISTINCT ON (n, i) n, i, tail FROM steps
-            ORDER BY n, i, left_m < 150, CASE WHEN left_m >= 150 THEN left_m ELSE -left_m END
+            SELECT DISTINCT ON (n, i) n, i, tail FROM steps, spike
+            ORDER BY n, i, left_m < spike.m,
+                     CASE WHEN left_m >= spike.m THEN left_m ELSE -left_m END
         ) b
         JOIN (
-            SELECT DISTINCT ON (n, i) n, i, head FROM steps
-            ORDER BY n, i, done_m < 150, CASE WHEN done_m >= 150 THEN done_m ELSE -done_m END
+            SELECT DISTINCT ON (n, i) n, i, head FROM steps, spike
+            ORDER BY n, i, done_m < spike.m,
+                     CASE WHEN done_m >= spike.m THEN done_m ELSE -done_m END
         ) a USING (n, i)
     ),
-    -- Vias the route turns round at over the 150 m either side, as round a block, though no
+    -- Vias the route turns round at over the spike_m either side, as round a block, though no
     -- single turn there is sharp and the ways back are too far apart to count as doubled.
     spikes AS (
         SELECT DISTINCT f.n
@@ -924,7 +1125,7 @@ LANGUAGE sql AS $$
           AND routing.angle_between(
                   ST_Azimuth(p.geom::geography, v.geom::geography),
                   ST_Azimuth(v.geom::geography, q.geom::geography)
-              ) > radians(150)
+              ) > radians(routing.setting(p_profile, 'evaluate', 'spike_deg'))
     ),
     -- Each candidate's line in travel order, for measuring how much of it is doubled.
     lines AS (
@@ -940,7 +1141,7 @@ LANGUAGE sql AS $$
     ),
     -- Measured once a candidate; the joins below could otherwise measure it again.
     doubled AS MATERIALIZED (
-        SELECT n, routing.doubled_m(line) AS doubled_m FROM lines
+        SELECT n, routing.doubled_m(line, p_profile.settings -> 'doubling') AS doubled_m FROM lines
     ),
     uses AS (
         SELECT l.n, l.arc / 2 AS edge, count(*) AS times
@@ -964,8 +1165,10 @@ LANGUAGE sql AS $$
         t.preferred_m / nullif(t.length_m, 0),
         d.doubled_m,
         routing.score(
-            p_target_m, t.length_m, t.preferred_m / nullif(t.length_m, 0), d.doubled_m, t.reused_m
-        ) + CASE WHEN r.n IS NULL AND s.n IS NULL THEN 0 ELSE 1 END
+            p_target_m, t.length_m, t.preferred_m / nullif(t.length_m, 0), d.doubled_m, t.reused_m,
+            p_profile.settings -> 'score'
+        ) + CASE WHEN r.n IS NULL AND s.n IS NULL THEN 0
+                 ELSE routing.setting(p_profile, 'evaluate', 'spike_penalty') END
     )::routing.evaluation
     FROM totals t
     JOIN candidates c USING (n)
@@ -979,8 +1182,9 @@ $$;
 -- in p_used, so the reuse penalty keeps a leg off the streets the route has already taken where
 -- it can. Each leg after the first starts from the arc the last one arrived by, so the turn at a
 -- via costs what any other turn does and the route does not double back there. A leg is routed
--- in a corridor first, half as wide as its vias are apart and at least 300 m, which holds far
--- fewer edges than the whole area; only when it has no way through is the whole area searched.
+-- in a corridor first, corridor_share (half) as wide as its vias are apart and at least
+-- corridor_min_m (300 m), which holds far fewer edges than the whole area; only when it has no way
+-- through is the whole area searched.
 -- Raises no_data_found (detail unreachable) when a leg cannot be travelled.
 CREATE FUNCTION routing.route_edges(
     p_profile routing.profile, p_area geometry, p_vias bigint[]
@@ -999,7 +1203,11 @@ BEGIN
         CONTINUE WHEN p_vias[i] = p_vias[i + 1];
         SELECT ST_Buffer(
                    ST_MakeLine(a.geom, b.geom)::geography,
-                   greatest(ST_Distance(a.geom::geography, b.geom::geography) / 2, 300)
+                   greatest(
+                       ST_Distance(a.geom::geography, b.geom::geography)
+                           * routing.setting(p_profile, 'legs', 'corridor_share'),
+                       routing.setting(p_profile, 'legs', 'corridor_min_m')
+                   )
                )::geometry
         INTO v_corridor
         FROM graph.vertices a, graph.vertices b
@@ -1012,7 +1220,7 @@ BEGIN
             FROM pgr_dijkstra(
                 routing.turns_sql(
                     routing.cost_sql(p_profile, v_leg_area, v_used),
-                    p_profile.turn_m,
+                    p_profile,
                     CASE WHEN i = 1 THEN ARRAY[p_vias[1]] END,
                     ARRAY[p_vias[i + 1]]
                 ),
@@ -1087,28 +1295,33 @@ LANGUAGE sql AS $$
 $$;
 
 -- Plans a route of about p_target_m for p_activity from p_start to p_finish, or back to p_start
--- when p_finish is NULL, weighting edge scores by p_weights (see routing.make_profile). Options:
--- alpha, reuse_penalty and turn_m (see routing.profile), tolerance (0.07: how far the length may
--- miss the target) and snap_m (200: how far a point may be from the road it starts on).
+-- when p_finish is NULL, weighting edge scores by p_weights. p_settings overrides
+-- routing.defaults() (see routing.make_profile); the plan settings are read here.
 -- Candidates are generated and scored in bulk; if the best misses the tolerance, the goal is
--- scaled by how much it missed and candidates are tried once more. Evaluation leaves out the
--- reuse penalty, so a route can come out otherwise than evaluated; when it misses the tolerance,
--- the next best candidates are routed too, up to three in all, and the one whose route scores
--- best is returned. Warnings, judged on that route: too_short (the finish is farther than the
--- target), target_missed (it misses the target by more than the tolerance).
+-- scaled by how much it missed and candidates are tried again, up to attempts (2) times, keeping
+-- the best kept (3) of each. Evaluation leaves out the reuse penalty, so a route can come out
+-- otherwise than evaluated; when it misses the tolerance, the next best candidates are routed
+-- too, up to routed (3) in all, and the one whose route scores best is returned. Warnings,
+-- judged on that route: too_short (the finish is farther than the target), target_missed (it
+-- misses the target by more than the tolerance).
 -- Raises invalid_parameter_value for bad input, and no_data_found when there is no route; its
 -- detail says why, for the API to pass on: start_off_road or finish_off_road (no road within
 -- snap_m), unreachable (no way from the start to the finish) or no_loop (too few roads around
 -- the start to come back by another way).
+-- JIT is off: the planner's queries are mostly calls to functions it cannot compile, and their
+-- cost estimates, made without knowing how many rows those return, would often pass the JIT
+-- threshold and spend more time compiling than the query takes.
 CREATE FUNCTION routing.plan_route(
     p_activity text,
     p_start    geometry,
     p_finish   geometry,
     p_target_m double precision,
     p_weights  jsonb DEFAULT '{}',
-    p_options  jsonb DEFAULT '{}'
+    p_settings jsonb DEFAULT '{}'
 ) RETURNS jsonb
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql
+SET jit = off
+AS $$
 DECLARE
     v_tolerance double precision;
     v_snap_m    double precision;
@@ -1130,31 +1343,15 @@ DECLARE
     v_best_score double precision;
     v_length_m  double precision;
 BEGIN
-    IF jsonb_typeof(p_options) IS DISTINCT FROM 'object'
-        OR p_options - ARRAY['alpha', 'reuse_penalty', 'turn_m', 'tolerance', 'snap_m'] <> '{}'
-        OR EXISTS (SELECT 1 FROM jsonb_each(p_options) o WHERE jsonb_typeof(o.value) <> 'number')
-    THEN
-        RAISE EXCEPTION
-            'options may only be numbers named alpha, reuse_penalty, turn_m, tolerance, snap_m'
+    IF p_target_m IS NULL OR p_target_m <= 0 OR p_start IS NULL THEN
+        RAISE EXCEPTION 'need a start and a positive target'
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
-    v_tolerance := coalesce((p_options ->> 'tolerance')::double precision, 0.07);
-    v_snap_m := coalesce((p_options ->> 'snap_m')::double precision, 200);
-    IF p_target_m IS NULL OR p_target_m <= 0 OR v_tolerance <= 0 OR v_tolerance >= 1
-        OR v_snap_m <= 0 OR p_start IS NULL
-    THEN
-        RAISE EXCEPTION 'need a start, a positive target and snap_m, and a tolerance in (0, 1)'
-            USING ERRCODE = 'invalid_parameter_value';
-    END IF;
-    v_profile := routing.make_profile(
-        p_activity,
-        p_weights,
-        coalesce((p_options ->> 'alpha')::double precision, 0.7),
-        coalesce((p_options ->> 'reuse_penalty')::double precision, 4),
-        coalesce((p_options ->> 'turn_m')::double precision, 60)
-    );
+    v_profile := routing.make_profile(p_activity, p_weights, p_settings);
+    v_tolerance := routing.setting(v_profile, 'plan', 'tolerance');
+    v_snap_m := routing.setting(v_profile, 'plan', 'snap_m');
 
-    v_area := routing.search_area(p_start, p_finish, p_target_m);
+    v_area := routing.search_area(p_start, p_finish, p_target_m, v_profile.settings -> 'area');
     v_start := routing.snap(p_activity, p_start, v_snap_m);
     IF v_start IS NULL THEN
         RAISE EXCEPTION 'no road near the start'
@@ -1170,7 +1367,7 @@ BEGIN
     END IF;
 
     v_goal_m := p_target_m;
-    FOR attempt IN 1 .. 2 LOOP
+    FOR attempt IN 1 .. routing.setting(v_profile, 'plan', 'attempts')::integer LOOP
         v_ranked := v_ranked || ARRAY(
             SELECT e
             FROM routing.evaluate(
@@ -1187,7 +1384,7 @@ BEGIN
                 )
             ) e
             ORDER BY e.score
-            LIMIT 3
+            LIMIT routing.setting(v_profile, 'plan', 'kept')::integer
         );
         SELECT * INTO v_retry FROM unnest(v_ranked) e ORDER BY e.score LIMIT 1;
         IF FOUND AND (v_best.vias IS NULL OR v_retry.score < v_best.score) THEN
@@ -1213,7 +1410,7 @@ BEGIN
             SELECT DISTINCT ON (e.vias) e.* FROM unnest(v_ranked) e ORDER BY e.vias, e.score
         ) d
         ORDER BY d.score
-        LIMIT 3
+        LIMIT routing.setting(v_profile, 'plan', 'routed')::integer
     LOOP
         v_routed := routing.route_json(v_profile, v_area, v_try.vias, '{}');
         v_length_m := (v_routed ->> 'length_m')::double precision;
@@ -1221,8 +1418,11 @@ BEGIN
             p_target_m,
             v_length_m,
             routing.preference(v_profile.weights, v_routed -> 'scores'),
-            routing.doubled_m(ST_GeomFromGeoJSON(v_routed -> 'geometry')),
-            (v_routed ->> 'reused_m')::double precision
+            routing.doubled_m(
+                ST_GeomFromGeoJSON(v_routed -> 'geometry'), v_profile.settings -> 'doubling'
+            ),
+            (v_routed ->> 'reused_m')::double precision,
+            v_profile.settings -> 'score'
         );
         IF v_route IS NULL OR v_score < v_best_score THEN
             v_route := v_routed;

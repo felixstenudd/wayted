@@ -127,7 +127,7 @@ async def test_profile_scales_weights_and_drops_zeros(api_pool: Pool) -> None:
     async with api_pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT (p).activity, (p).weights, (p).alpha, (p).reuse_penalty, (p).turn_m
+            SELECT (p).activity, (p).weights, (p).settings = routing.defaults()
             FROM routing.make_profile('cycling', %s) p
             """,
             (Jsonb({"green": 1, "nature": -0.5, "water": 0}),),
@@ -135,38 +135,62 @@ async def test_profile_scales_weights_and_drops_zeros(api_pool: Pool) -> None:
         row = await cur.fetchone()
 
     assert row is not None
-    activity, weights, alpha, reuse_penalty, turn_m = row
+    activity, weights, default_settings = row
     assert activity == "cycling"
     assert weights == pytest.approx({"green": 2 / 3, "nature": -1 / 3})
-    assert (alpha, reuse_penalty, turn_m) == (0.7, 4, 60)
+    assert default_settings
+
+
+async def test_profile_lays_settings_over_the_defaults(api_pool: Pool) -> None:
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT (p).settings -> 'turns', (p).settings -> 'loops' -> 'sizes',
+                   (p).settings - 'turns' - 'loops' = routing.defaults() - 'turns' - 'loops'
+            FROM routing.make_profile('running', '{}', %s) p
+            """,
+            (Jsonb({"turns": {"turn_m": 80}, "loops": {"sizes": [1]}}),),
+        )
+        row = await cur.fetchone()
+
+    assert row is not None
+    turns, sizes, others_unchanged = row
+    assert turns == {"turn_m": 80, "free_deg": 30, "hairpin_deg": 120, "hairpin_m": 1000}
+    assert sizes == [1]
+    assert others_unchanged
 
 
 @pytest.mark.parametrize(
-    ("activity", "weights", "alpha", "reuse_penalty", "turn_m", "message"),
+    ("activity", "weights", "settings", "message"),
     [
-        ("swimming", {}, 0.7, 4, 60, "unknown activity"),
-        ("running", [], 0.7, 4, 60, "weights must be an object"),
-        ("running", {"green": 1.5}, 0.7, 4, 60, "weights must be numbers"),
-        ("running", {"green": "a lot"}, 0.7, 4, 60, "weights must be numbers"),
-        ("running", {}, 1, 4, 60, "alpha"),
-        ("running", {}, 0.7, 0.5, 60, "reuse_penalty"),
-        ("running", {}, 0.7, 4, -1, "turn_m"),
+        ("swimming", {}, {}, "unknown activity"),
+        ("running", [], {}, "weights must be an object"),
+        ("running", {"green": 1.5}, {}, "weights must be numbers"),
+        ("running", {"green": "a lot"}, {}, "weights must be numbers"),
+        ("running", {}, [], "settings must be an object"),
+        ("running", {}, {"turn_m": 80}, "unknown setting: turn_m"),
+        ("running", {}, {"turns": {"turn": 80}}, "unknown setting: turns.turn"),
+        ("running", {}, {"turns": 80}, "turns must be an object"),
+        ("running", {}, {"turns": {"turn_m": "80"}}, "turns.turn_m must be a number"),
+        ("running", {}, {"loops": {"sizes": []}}, "loops.sizes must be a list of numbers"),
+        ("running", {}, {"loops": {"sizes": 1}}, "loops.sizes must be a list of numbers"),
+        ("running", {}, {"turns": {"turn_m": -1}}, "must not be negative"),
+        ("running", {}, {"doubling": {"lobe": {"weight": -1}}}, "must not be negative"),
+        ("running", {}, {"cost": {"alpha": 1}}, "cost.alpha"),
+        ("running", {}, {"legs": {"reuse_penalty": 0.5}}, "legs.reuse_penalty"),
+        ("running", {}, {"plan": {"tolerance": 1}}, "plan.tolerance"),
+        ("running", {}, {"plan": {"snap_m": 0}}, "plan.snap_m"),
+        ("running", {}, {"plan": {"attempts": 0}}, "plan.attempts"),
     ],
 )
 async def test_profile_rejects_bad_input(
-    api_pool: Pool,
-    activity: str,
-    weights: object,
-    alpha: float,
-    reuse_penalty: float,
-    turn_m: float,
-    message: str,
+    api_pool: Pool, activity: str, weights: object, settings: object, message: str
 ) -> None:
     async with api_pool.connection() as conn:
         with pytest.raises(psycopg.errors.InvalidParameterValue, match=message):
             await conn.execute(
-                "SELECT routing.make_profile(%s, %s, %s, %s, %s)",
-                (activity, Jsonb(weights), alpha, reuse_penalty, turn_m),
+                "SELECT routing.make_profile(%s, %s, %s)",
+                (activity, Jsonb(weights), Jsonb(settings)),
             )
 
 
