@@ -8,6 +8,7 @@ import { CourseSymbol } from '@/shared/ui/course-symbol'
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/ui/popover'
 
 import { formatKm } from '../distance'
+import { useSkippedThroughPoints } from '../composables/useSkippedThroughPoints'
 import { useThroughPointNumbers } from '../composables/useThroughPointNumbers'
 import { usePlannerStore } from '../store'
 import { soonOrder } from '../throughPoints'
@@ -21,6 +22,7 @@ const i18n = useI18n()
 const { t } = i18n
 const planner = usePlannerStore()
 const { numbers, nameOf } = useThroughPointNumbers()
+const skipped = useSkippedThroughPoints()
 // Tailwind's md breakpoint, as the page uses: below it the settings open in the sheet.
 const hasRoomForPopover = useMediaQuery('(min-width: 48rem)')
 
@@ -78,6 +80,7 @@ function setOpen(id: number, open: boolean): void {
 					<CourseSymbol
 						kind="control"
 						:control-number="numbers[index]"
+						:missed="skipped.includes(point.id)"
 						class="size-6 sm:size-7"
 					/>
 					<span

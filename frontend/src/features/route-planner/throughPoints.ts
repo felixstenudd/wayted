@@ -1,3 +1,5 @@
+import { distanceToLineM, type LonLat } from '@/features/map'
+
 import type { ThroughPoint } from './types'
 
 /**
@@ -21,4 +23,21 @@ export function soonOrder(
 ): Map<number, number> {
 	const soon = points.filter((point) => point.placement.at === 'asap')
 	return new Map(soon.map((point, index) => [point.id, index + 1]))
+}
+
+// An edited route this much further from a point than the planned one has left it out.
+const SKIPPED_BY_M = 30
+
+/**
+ * Which points an edit took the route away from. Each is measured against the planned route,
+ * which passed it where the nearest road is, not always on the spot.
+ */
+export function skippedPoints(
+	points: readonly LonLat[],
+	planned: readonly (readonly number[])[],
+	edited: readonly (readonly number[])[],
+): boolean[] {
+	return points.map(
+		(point) => distanceToLineM(point, edited) > distanceToLineM(point, planned) + SKIPPED_BY_M,
+	)
 }

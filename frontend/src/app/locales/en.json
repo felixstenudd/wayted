@@ -245,7 +245,8 @@
 			"longer": "{km} km longer than your {target} km.",
 			"shorter": "{km} km shorter than your {target} km.",
 			"hint": "Drag the yellow line to move part of the route onto another road.",
-			"hintTouch": "Tap the yellow line, then drag the dot onto another road."
+			"hintTouch": "Tap the yellow line, then drag the dot onto another road.",
+			"skips": "{name} is no longer on the route. Undo the change, or drag the line back to it."
 		},
 		"save": {
 			"submit": "Save route",

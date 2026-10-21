@@ -6,6 +6,8 @@ import { useI18n } from 'vue-i18n'
 
 import { rerouteKey } from '../api'
 import { useShownRoute } from '../composables/useShownRoute'
+import { useSkippedThroughPoints } from '../composables/useSkippedThroughPoints'
+import { useThroughPointNumbers } from '../composables/useThroughPointNumbers'
 import { formatKm } from '../distance'
 import { optionLetter, routeFit } from '../options'
 import { usePlannerStore } from '../store'
@@ -13,6 +15,8 @@ import { usePlannerStore } from '../store'
 const { t } = useI18n()
 const planner = usePlannerStore()
 const { routes, shown } = useShownRoute()
+const skipped = useSkippedThroughPoints()
+const { nameOf } = useThroughPointNumbers()
 const rerouting = useIsMutating({ mutationKey: rerouteKey })
 const isRerouting = computed(() => rerouting.value > 0)
 
@@ -63,6 +67,10 @@ const plannerWarnings = computed(() =>
 		>
 			<TriangleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
 			{{ t(`planner.route.warnings.${warning}`, { km: targetKm }) }}
+		</p>
+		<p v-for="id in skipped" :key="id" class="flex gap-1.5 text-small text-graphite">
+			<TriangleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+			{{ t('planner.edit.skips', { name: nameOf(id) }) }}
 		</p>
 		<p v-if="planner.isDraggingLine" role="status" class="text-small text-graphite">
 			{{ t('planner.edit.dragging') }}
