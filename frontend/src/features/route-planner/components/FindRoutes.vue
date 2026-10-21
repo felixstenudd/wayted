@@ -23,6 +23,10 @@ const isNotice = computed(
 
 <template>
 	<div class="flex flex-col gap-2">
+		<p v-if="planner.isStale && !isBusy" class="flex gap-1.5 text-small text-graphite">
+			<Info class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+			{{ t('planner.findRoutes.staleHint') }}
+		</p>
 		<Button
 			size="lg"
 			class="w-full"
@@ -36,7 +40,9 @@ const isNotice = computed(
 					? t('planner.findRoutes.submitting')
 					: state.status === 'preparing'
 						? t('planner.findRoutes.preparing')
-						: t('planner.findRoutes.submit')
+						: planner.isStale
+							? t('planner.findRoutes.again')
+							: t('planner.findRoutes.submit')
 			}}
 		</Button>
 		<p v-if="planner.missingPoint" :id="HINT_ID" class="text-small text-graphite">

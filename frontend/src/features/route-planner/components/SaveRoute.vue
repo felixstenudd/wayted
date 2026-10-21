@@ -13,6 +13,11 @@ import { Input } from '@/shared/ui/input'
 import { useShownRoute } from '../composables/useShownRoute'
 import { usePlannerStore } from '../store'
 
+const props = defineProps<{
+	/** Out of date: saving is the quiet choice beside finding routes again. */
+	quiet?: boolean
+}>()
+
 const ID = 'save-route-name'
 
 const { t } = useI18n()
@@ -136,6 +141,14 @@ const error = computed(() => {
 			</Button>
 		</div>
 	</form>
+	<Button
+		v-else-if="props.quiet"
+		variant="link"
+		class="self-center text-small"
+		@click="startNaming"
+	>
+		{{ t('planner.save.asItIs') }}
+	</Button>
 	<Button v-else size="lg" class="w-full" @click="startNaming">
 		{{ t('planner.save.submit') }}
 	</Button>

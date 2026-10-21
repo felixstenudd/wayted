@@ -103,7 +103,8 @@ useMapFilter('route-line', isShown)
 useMapFilter('route-hit', isShown)
 useMapLayerCursor('route-options', 'pointer')
 
-// While an edit is on its way the course dims, and the drag that made it stays drawn.
+// While an edit is on its way, or the route is out of date, the course dims; the drag that made an
+// edit stays drawn until it answers.
 const dropped = ref<{ grab: LonLat; drop: LonLat } | null>(null)
 const tapped = ref<LonLat | null>(null)
 const { grab, pointer, hover } = useMapLineDrag('route-hit', (from, to) => {
@@ -114,7 +115,7 @@ const { grab, pointer, hover } = useMapLineDrag('route-hit', (from, to) => {
 watch(editing.isPending, (pending) => {
 	if (!pending) dropped.value = null
 })
-const courseOpacity = () => (editing.isPending.value ? 0.45 : 1)
+const courseOpacity = () => (editing.isPending.value || planner.isStale ? 0.45 : 1)
 useMapPaint('route-line', 'line-opacity', courseOpacity)
 useMapPaint('route-edge', 'line-opacity', courseOpacity)
 
@@ -167,7 +168,7 @@ watch(routes, (found) => {
 
 // One route is not a choice, so it goes unlabelled. The shown one is labelled as it is now.
 const labels = computed(() => {
-	if (routes.value.length < 2 || planner.isChosen) return []
+	if (routes.value.length < 2 || planner.isChosen || planner.isStale) return []
 	const drawn = routes.value.map((route, index) =>
 		index === planner.selectedOption && shown.value ? shown.value : route,
 	)

@@ -242,14 +242,15 @@ describe('through points', () => {
 		expect(planner.editingThroughPointId).toBeNull()
 	})
 
-	it('make a found route stale when they change', () => {
+	it('make a found route out of date when they change', () => {
 		const planner = usePlannerStore()
 		planner.start = UMEA
 		planner.findRoutes()
 
 		planner.addThroughPoint(TAVLEBORG)
 
-		expect(planner.search).toBeNull()
+		expect(planner.search).not.toBeNull()
+		expect(planner.isStale).toBe(true)
 	})
 })
 
@@ -283,14 +284,40 @@ describe('findRoutes', () => {
 		planner.receiveDefaults({ green: 0.5 })
 
 		expect(planner.search).not.toBeNull()
+		expect(planner.isStale).toBe(false)
 	})
 
-	it('drops the search once the request changes', () => {
+	it('keeps the routes found, out of date, once the request changes', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.findRoutes()
+		expect(planner.isStale).toBe(false)
+
+		planner.setWeight('green', 1)
+
+		expect(planner.search).not.toBeNull()
+		expect(planner.isStale).toBe(true)
+		planner.findRoutes()
+		expect(planner.isStale).toBe(false)
+	})
+
+	it('are not out of date when the request is set back to what they were planned with', () => {
 		const planner = usePlannerStore()
 		planner.start = UMEA
 		planner.findRoutes()
 
 		planner.setWeight('green', 1)
+		planner.resetWeight('green')
+
+		expect(planner.isStale).toBe(false)
+	})
+
+	it('are forgotten with the user, so whoever comes next starts clean', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.findRoutes()
+
+		planner.forgetDefaults()
 
 		expect(planner.search).toBeNull()
 	})

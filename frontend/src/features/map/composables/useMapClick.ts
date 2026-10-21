@@ -11,8 +11,8 @@ export interface ClickedFeature {
 // A thin line is hard to hit exactly.
 const REACH_PX = 4
 
-// A click on a marker belongs to the marker, though MapLibre reports it as a click on the map.
-const isOnMarker = (event: MapMouseEvent) =>
+/** A click on a marker belongs to the marker, though MapLibre reports it as one on the map. */
+export const isOnMarker = (event: MapMouseEvent) =>
 	event.originalEvent.target instanceof Element &&
 	event.originalEvent.target.closest('.maplibregl-marker') !== null
 

@@ -3,6 +3,7 @@ import { onScopeDispose, ref, type Ref } from 'vue'
 
 import { onMap } from '../context'
 import type { LonLat } from '../geometry'
+import { isOnMarker } from './useMapClick'
 
 // Less than this is a click that wobbled, not a drag.
 const DRAG_PX = 4
@@ -26,7 +27,8 @@ export function useMapLineDrag(
 	let canvas: HTMLElement | null = null
 
 	const press = (event: MapLayerMouseEvent) => {
-		if (event.originalEvent.button !== 0) return
+		// A marker over the line, such as the start, is dragged for itself.
+		if (event.originalEvent.button !== 0 || isOnMarker(event)) return
 		// Keeps the map from panning for this drag.
 		event.preventDefault()
 		grab.value = lonLat(event)
@@ -40,6 +42,10 @@ export function useMapLineDrag(
 		if (hasMoved) pointer.value = lonLat(event)
 	}
 	const over = (event: MapLayerMouseEvent) => {
+		if (isOnMarker(event)) {
+			out()
+			return
+		}
 		hover.value = lonLat(event)
 		if (canvas && !grab.value) canvas.style.cursor = 'grab'
 	}

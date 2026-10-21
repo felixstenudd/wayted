@@ -195,7 +195,9 @@
 				"unexpected": "Routes could not be found right now. Check your connection, then try again."
 			},
 			"preparing": "Getting map data…",
-			"preparingHint": "The map data for this area is being downloaded. The first route in a new area can take a minute or two."
+			"preparingHint": "The map data for this area is being downloaded. The first route in a new area can take a minute or two.",
+			"again": "Find routes again",
+			"staleHint": "You changed the settings. Find routes again to plan with them."
 		},
 		"route": {
 			"length": "{km} km",
@@ -247,7 +249,8 @@
 			"saved": "Route saved.",
 			"view": "View in your routes",
 			"nameMissing": "Give the route a name.",
-			"failed": "The route could not be saved. Check your connection, then try again."
+			"failed": "The route could not be saved. Check your connection, then try again.",
+			"asItIs": "Save the route as it is"
 		},
 		"planAgain": {
 			"loading": "Loading your route…",

@@ -19,7 +19,8 @@ export function useThroughPointNumbers(): {
 
 	const numbers = computed(() =>
 		throughPointNumbers(
-			state.value.status === 'found'
+			// Out of date, the order may no longer be the points'.
+			state.value.status === 'found' && !planner.isStale
 				? (state.value.routes[0]?.properties.waypoint_order ?? null)
 				: null,
 			planner.throughPoints.length,

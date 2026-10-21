@@ -59,7 +59,11 @@ const editingPoint = computed(() =>
 		</div>
 		<!-- The phase's one main action: find routes while setting up, then save the one shown. -->
 		<div class="sticky bottom-0 border-t border-line bg-paper px-5 pt-4 pb-5">
-			<SaveRoute v-if="isShowingRoute" />
+			<div v-if="planner.isStale && shown" class="flex flex-col gap-2">
+				<FindRoutes />
+				<SaveRoute quiet />
+			</div>
+			<SaveRoute v-else-if="isShowingRoute" />
 			<FindRoutes v-else />
 		</div>
 	</div>

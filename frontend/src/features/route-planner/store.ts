@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, readonly, ref, shallowRef, watch } from 'vue'
+import { computed, readonly, ref, shallowRef } from 'vue'
 
 import type { LonLat } from '@/features/map'
 
@@ -106,20 +106,22 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		}
 	})
 
-	// A route found for other settings is stale. Compared by value, since setting the same weights
-	// again builds an equal request. Sync, so a change and a search in one tick keep the search.
-	watch(
-		routeRequest,
-		(request) => {
-			if (JSON.stringify(request) === JSON.stringify(search.value?.request)) return
-			search.value = null
-			edit.value = null
-			pendingOption.value = null
-			editError.value = null
-			saved.value = null
-		},
-		{ flush: 'sync' },
+	// Routes found for other settings stay, with their edits, until the user finds routes again;
+	// they are out of date meanwhile. Compared by value, since setting the same weights again
+	// builds an equal request.
+	const isStale = computed(
+		() =>
+			search.value !== null &&
+			JSON.stringify(routeRequest.value) !== JSON.stringify(search.value.request),
 	)
+
+	function clearSearch(): void {
+		search.value = null
+		edit.value = null
+		pendingOption.value = null
+		editError.value = null
+		saved.value = null
+	}
 
 	/** Starts a search for the current request. Returns false when points are missing. */
 	function findRoutes(): boolean {
@@ -308,10 +310,11 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		if (defaultWeights.value) preferenceWeights.value = { ...defaultWeights.value }
 	}
 
-	/** Drops the weights a signed-in user brought, so whoever comes next starts clean. */
+	/** Drops a signed-in user's weights and routes, so whoever comes next starts clean. */
 	function forgetDefaults(): void {
 		defaultWeights.value = null
 		preferenceWeights.value = {}
+		clearSearch()
 	}
 
 	return {
@@ -331,6 +334,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		missingPoint,
 		routeRequest,
 		search: readonly(search),
+		isStale,
 		selectedOption: readonly(selectedOption),
 		isChangingSettings: readonly(isChangingSettings),
 		edit: readonly(edit),

@@ -40,7 +40,11 @@ const isShowingRoute = computed(() => shown.value !== null && !planner.isChangin
 			<RouteOptions />
 			<EditedBar />
 			<RouteHead />
-			<SaveRoute />
+			<template v-if="planner.isStale">
+				<FindRoutes />
+				<SaveRoute quiet />
+			</template>
+			<SaveRoute v-else />
 		</template>
 		<template v-else>
 			<DistanceField />
