@@ -128,7 +128,7 @@ async def test_profile_scales_weights_and_drops_zeros(api_pool: Pool) -> None:
         cur = await conn.execute(
             """
             SELECT (p).activity, (p).weights, (p).settings = routing.defaults()
-            FROM routing.make_profile('cycling', %s) p
+            FROM routing.make_profile('running', %s) p
             """,
             (Jsonb({"green": 1, "nature": -0.5, "water": 0}),),
         )
@@ -136,9 +136,24 @@ async def test_profile_scales_weights_and_drops_zeros(api_pool: Pool) -> None:
 
     assert row is not None
     activity, weights, default_settings = row
-    assert activity == "cycling"
+    assert activity == "running"
     assert weights == pytest.approx({"green": 2 / 3, "nature": -1 / 3})
     assert default_settings
+
+
+async def test_rides_pay_more_for_turns_unless_the_request_says_otherwise(api_pool: Pool) -> None:
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT routing.setting(routing.make_profile(a, '{}', s), 'turns', 'turn_m')
+            FROM (VALUES ('running', '{}'::jsonb), ('cycling', '{}'),
+                         ('cycling', '{"turns": {"turn_m": 30}}')) v(a, s)
+            """
+        )
+        running, cycling, asked = [turn_m for (turn_m,) in await cur.fetchall()]
+
+    assert cycling > running == 60
+    assert asked == 30
 
 
 async def test_profile_lays_settings_over_the_defaults(api_pool: Pool) -> None:

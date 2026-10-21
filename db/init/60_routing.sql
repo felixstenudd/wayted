@@ -26,7 +26,8 @@ WHERE a.code = ANY (e.forward) OR a.code = ANY (e.backward);
 
 -- Every setting the planner is tuned by, grouped by the stage that reads it, at the value it
 -- starts from. Each stage reads only its own group, so one behaviour can be tuned without
--- touching the others, and a request may override any of them (see routing.make_profile).
+-- touching the others, and a request may override any of them (see routing.make_profile). Some
+-- start from other values for an activity (see routing.activity_defaults).
 -- Fractions of a goal or target are shares of its length; lists are the sizes a stage tries.
 -- - cost: alpha, how far preferences bend an edge's cost (see routing.cost_sql).
 -- - turns: the cost of a turn (see routing.turns_sql): turn_m at a right angle, nothing up to
@@ -72,6 +73,16 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
             "tolerance": 0.07, "snap_m": 200, "loop_network": 1,
             "attempts": 2, "kept": 3, "routed": 3
         }
+    }'::jsonb
+$$;
+
+-- Settings that differ by activity (a ref.activities code), laid over routing.defaults() before
+-- a request's own: a turn costs a rider more than a runner, who has no speed to lose at a corner,
+-- so rides keep to fewer turns.
+CREATE FUNCTION routing.activity_defaults() RETURNS jsonb
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT '{
+        "cycling": {"turns": {"turn_m": 180}}
     }'::jsonb
 $$;
 
@@ -145,8 +156,9 @@ $$;
 -- Weights run from -1 (avoid) to 1 (prefer) per edge score key, e.g. {"green": 1}. They are
 -- scaled so an edge's preference stays in [-1, 1] however many keys are weighted, which keeps
 -- cost between (1 - alpha) and (1 + alpha) times length * factor, and so always positive.
--- p_settings overrides routing.defaults(), e.g. {"turns": {"turn_m": 80}}. No setting may be
--- negative, and some have tighter bounds, checked here.
+-- p_settings overrides routing.defaults() and the activity's routing.activity_defaults(), e.g.
+-- {"turns": {"turn_m": 80}}. No setting may be negative, and some have tighter bounds, checked
+-- here.
 -- Raises invalid_parameter_value for an unknown activity, setting or a value out of range.
 CREATE FUNCTION routing.make_profile(
     p_activity text,
@@ -181,7 +193,12 @@ BEGIN
              WHERE w.value::double precision <> 0),
             '{}'
         ),
-        routing.merge_settings(routing.defaults(), p_settings)
+        routing.merge_settings(
+            routing.merge_settings(
+                routing.defaults(), coalesce(routing.activity_defaults() -> p_activity, '{}')
+            ),
+            p_settings
+        )
     )::routing.profile;
 
     IF jsonb_path_exists(v_profile.settings, 'strict $.**? (@.type() == "number" && @ < 0)') THEN
