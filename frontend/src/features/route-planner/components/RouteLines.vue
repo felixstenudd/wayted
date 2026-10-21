@@ -206,7 +206,9 @@ const labels = computed(() => {
 		<span class="block size-3.5 rounded-full border-2 border-overprint-contrast bg-paper" />
 	</MapMarker>
 	<EditHandles
-		:handles="planner.editHandles"
+		:handles="
+			shown && planner.edit?.option === planner.selectedOption ? planner.editHandles : []
+		"
 		:tapped="tapped"
 		@move="editing.moveHandle"
 		@remove="editing.removeHandle"

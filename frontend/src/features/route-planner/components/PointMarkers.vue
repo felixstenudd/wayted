@@ -9,7 +9,11 @@ import { usePlannerStore } from '../store'
 const { t } = useI18n()
 const planner = usePlannerStore()
 
-useMapClickAt((at) => planner.placeNextPoint(at))
+// A click beside an open through point's settings closes them, and places nothing.
+useMapClickAt((at) => {
+	if (planner.editingThroughPointId !== null) planner.editThroughPoint(null)
+	else planner.placeNextPoint(at)
+})
 </script>
 
 <template>

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
-import { computed, type ComputedRef } from 'vue'
+import { computed, watch, type ComputedRef } from 'vue'
 
 import { useAuthStore } from '@/features/auth'
 import type { LonLat } from '@/features/map'
@@ -16,6 +16,7 @@ import type { RerouteAnswer, Route, RouteAnswer, StoredPreferences } from './typ
 export function useFoundRoute(): ComputedRef<RouteState> {
 	const auth = useAuthStore()
 	const planner = usePlannerStore()
+	const queryClient = useQueryClient()
 	const query = useQuery({
 		queryKey: computed(() => ['routing', 'route', planner.search] as const),
 		queryFn: ({ queryKey: [, , search] }) =>
@@ -24,8 +25,10 @@ export function useFoundRoute(): ComputedRef<RouteState> {
 				body: search?.request,
 			}),
 		enabled: computed(() => planner.search !== null),
-		// Each search is planned once; asking again is up to the user.
+		// Each search is planned once; asking again is up to the user. Kept for as long as the
+		// search is, also while the planner is not on screen: options and edits build on it.
 		staleTime: Infinity,
+		gcTime: Infinity,
 		refetchOnWindowFocus: false,
 		// A failure is the answer: no route, or one that took the backend too long.
 		retry: false,
@@ -34,6 +37,14 @@ export function useFoundRoute(): ComputedRef<RouteState> {
 				? PREPARING_POLL_MS
 				: false,
 	})
+	// A new search lets the last one's routes go, which nothing builds on any more.
+	watch(
+		() => planner.search,
+		(_, previous) => {
+			if (previous)
+				queryClient.removeQueries({ queryKey: ['routing', 'route', previous], exact: true })
+		},
+	)
 	return computed(() =>
 		routeState({
 			isSearching: planner.search !== null,

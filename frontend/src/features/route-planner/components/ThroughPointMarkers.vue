@@ -43,6 +43,12 @@ function move(id: number, to: LonLat): void {
 	planner.moveThroughPoint(id, to)
 }
 
+// A press on the map is left to the map's click, which closes the settings without placing a point.
+function leaveToMap(event: CustomEvent<{ originalEvent: Event }>): void {
+	const target = event.detail.originalEvent.target
+	if (target instanceof Element && target.closest('.maplibregl-canvas')) event.preventDefault()
+}
+
 function setOpen(id: number, open: boolean): void {
 	if (open && Date.now() - movedAt < CLICK_AFTER_DRAG_MS) return
 	if (open) planner.editThroughPoint(id)
@@ -85,6 +91,7 @@ function setOpen(id: number, open: boolean): void {
 			</PopoverTrigger>
 			<PopoverContent
 				aria-labelledby="through-point-popover-title"
+				@interact-outside="leaveToMap"
 				class="flex flex-col gap-3"
 			>
 				<h2 id="through-point-popover-title" class="text-title">{{ nameOf(point.id) }}</h2>

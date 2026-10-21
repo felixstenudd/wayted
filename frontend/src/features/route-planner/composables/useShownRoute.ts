@@ -15,10 +15,12 @@ export function useShownRoute(): {
 	const planner = usePlannerStore()
 	const state = useFoundRoute()
 	const routes = computed(() => (state.value.status === 'found' ? state.value.routes : []))
-	const shown = computed(() =>
-		planner.edit?.option === planner.selectedOption
+	// Nothing is shown until the routes are there, edits included: they are of one of them.
+	const shown = computed(() => {
+		if (routes.value.length === 0) return null
+		return planner.edit?.option === planner.selectedOption
 			? planner.editedRoute
-			: (routes.value[Math.min(planner.selectedOption, routes.value.length - 1)] ?? null),
-	)
+			: (routes.value[Math.min(planner.selectedOption, routes.value.length - 1)] ?? null)
+	})
 	return { routes, shown }
 }
