@@ -1,3 +1,4 @@
+import type { LonLat } from '@/features/map'
 import type { components } from '@/shared/api'
 
 type RouteRequestIn = components['schemas']['RouteRequestIn']
@@ -28,6 +29,17 @@ export interface DistanceRange {
 	minKm: number
 	maxKm: number
 	defaultKm: number
+}
+
+/** Where on the route a through point goes. */
+export type ThroughPointPlacement =
+	{ at: 'any' } | { at: 'asap' } | { at: 'after'; afterKm: number }
+
+/** A point the route must pass. The planner picks the order unless the placement says. */
+export interface ThroughPoint {
+	id: number
+	lonLat: LonLat
+	placement: ThroughPointPlacement
 }
 
 /** Which point the user still has to place before routes can be found. */

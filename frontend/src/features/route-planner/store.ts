@@ -10,6 +10,7 @@ import type {
 	RouteRequest,
 	RouteSearch,
 	RouteShape,
+	ThroughPoint,
 } from './types'
 
 export const DISTANCE_RANGES: Record<Activity, DistanceRange> = {
@@ -36,6 +37,9 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	// From point to point the route may instead be the most pleasant way, however long. A loop
 	// always has a distance; this is kept for when point to point is chosen again.
 	const hasTargetDistance = ref(true)
+	// In the order added, which the planner keeps only for points placed as soon as possible.
+	const throughPoints = ref<ThroughPoint[]>([])
+	let throughPointIds = 0
 	// Only weights other than 0 ("don't mind") are kept.
 	const preferenceWeights = ref<Record<string, number>>({})
 	// The user's stored weights, once loaded; the planner starts from them.
@@ -70,7 +74,13 @@ export const usePlannerStore = defineStore('route-planner', () => {
 				? { target_distance_m: Math.round(targetDistanceKm.value * 1000) }
 				: {}),
 			preferences: { ...preferenceWeights.value },
-			waypoints: [],
+			waypoints: throughPoints.value.map(({ lonLat, placement }) => ({
+				...lonLat,
+				at: placement.at,
+				...(placement.at === 'after'
+					? { after_m: Math.round(placement.afterKm * 1000) }
+					: {}),
+			})),
 		}
 	})
 
@@ -100,12 +110,41 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		}
 	}
 
-	/** Puts a map click on the first point still missing. Returns false when none is. */
+	/**
+	 * Puts a map click on the first point still missing, then adds through points. While a route
+	 * is shown a click adds nothing, so a stray one does not throw the route away. Returns whether
+	 * the click placed anything.
+	 */
 	function placeNextPoint(at: LonLat): boolean {
 		if (missingPoint.value === 'start') start.value = at
 		else if (missingPoint.value === 'finish') finish.value = at
+		else if (search.value === null) addThroughPoint(at)
 		else return false
 		return true
+	}
+
+	/** Returns the new point's id. */
+	function addThroughPoint(at: LonLat): number {
+		throughPointIds += 1
+		throughPoints.value = [
+			...throughPoints.value,
+			{ id: throughPointIds, lonLat: at, placement: { at: 'any' } },
+		]
+		return throughPointIds
+	}
+
+	function moveThroughPoint(id: number, to: LonLat): void {
+		throughPoints.value = throughPoints.value.map((point) =>
+			point.id === id ? { ...point, lonLat: to } : point,
+		)
+	}
+
+	function removeThroughPoint(id: number): void {
+		throughPoints.value = throughPoints.value.filter((point) => point.id !== id)
+	}
+
+	function clearThroughPoints(): void {
+		throughPoints.value = []
 	}
 
 	function setTargetDistanceKm(km: number): void {
@@ -160,6 +199,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		targetDistanceKm: readonly(targetDistanceKm),
 		hasTargetDistance,
 		usesTargetDistance,
+		throughPoints: readonly(throughPoints),
 		preferenceWeights: readonly(preferenceWeights),
 		distanceRange,
 		setWeightCount,
@@ -170,6 +210,10 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		findRoutes,
 		setActivity,
 		placeNextPoint,
+		addThroughPoint,
+		moveThroughPoint,
+		removeThroughPoint,
+		clearThroughPoints,
 		setTargetDistanceKm,
 		weightOf,
 		setWeight,

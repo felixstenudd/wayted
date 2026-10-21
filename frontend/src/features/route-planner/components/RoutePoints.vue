@@ -9,6 +9,7 @@ import { Button } from '@/shared/ui/button'
 import { useCurrentLocation } from '../composables/useCurrentLocation'
 import { usePlannerStore } from '../store'
 import PointRow from './PointRow.vue'
+import ThroughPointRow from './ThroughPointRow.vue'
 
 type Point = 'start' | 'finish'
 
@@ -96,6 +97,7 @@ async function useMyLocation(): Promise<void> {
 				</Button>
 			</template>
 		</PointRow>
+		<ThroughPointRow />
 		<p
 			v-if="location.error.value"
 			role="alert"

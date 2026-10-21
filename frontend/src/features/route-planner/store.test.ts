@@ -165,14 +165,64 @@ describe('placeNextPoint', () => {
 		expect(planner.placeNextPoint(TAVLEBORG)).toBe(true)
 		expect(planner.finish).toEqual(TAVLEBORG)
 	})
+})
 
-	it('leaves placed points alone once nothing is missing', () => {
+describe('through points', () => {
+	const NYDALA = { lon: 20.31, lat: 63.82 }
+
+	it('are added by map clicks once the start is placed', () => {
 		const planner = usePlannerStore()
 		planner.placeNextPoint(UMEA)
 
-		expect(planner.placeNextPoint(TAVLEBORG)).toBe(false)
+		expect(planner.placeNextPoint(TAVLEBORG)).toBe(true)
+		planner.placeNextPoint(NYDALA)
+
+		expect(planner.throughPoints.map((point) => point.lonLat)).toEqual([TAVLEBORG, NYDALA])
 		expect(planner.start).toEqual(UMEA)
-		expect(planner.finish).toBeNull()
+	})
+
+	it('are not added by map clicks while a route is shown', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.findRoutes()
+
+		expect(planner.placeNextPoint(TAVLEBORG)).toBe(false)
+		expect(planner.throughPoints).toEqual([])
+	})
+
+	it('go to the planner wherever they fit, in the order added', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.addThroughPoint(TAVLEBORG)
+		planner.addThroughPoint(NYDALA)
+
+		expect(planner.routeRequest?.waypoints).toEqual([
+			{ ...TAVLEBORG, at: 'any' },
+			{ ...NYDALA, at: 'any' },
+		])
+	})
+
+	it('can be moved and removed one by one or all at once', () => {
+		const planner = usePlannerStore()
+		const first = planner.addThroughPoint(TAVLEBORG)
+		const second = planner.addThroughPoint(NYDALA)
+
+		planner.moveThroughPoint(first, UMEA)
+		planner.removeThroughPoint(second)
+		expect(planner.throughPoints.map((point) => point.lonLat)).toEqual([UMEA])
+
+		planner.clearThroughPoints()
+		expect(planner.throughPoints).toEqual([])
+	})
+
+	it('make a found route stale when they change', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.findRoutes()
+
+		planner.addThroughPoint(TAVLEBORG)
+
+		expect(planner.search).toBeNull()
 	})
 })
 
