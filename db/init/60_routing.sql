@@ -1559,6 +1559,73 @@ BEGIN
 END
 $$;
 
+-- The points a route from p_start to p_end passes, in travel order (k, from 1), with what each
+-- is (kind: start, asap, after, any or end), after_m for after waypoints, and n, the waypoint's
+-- place in p_waypoints (from 1; NULL for the start and end): the start and the asap waypoints in
+-- the order given, then the after waypoints by after_m and the end, with the any waypoints put in
+-- among them where they lengthen the way least (see routing.insertion_order). The waypoints are
+-- as routing.read_waypoints takes them.
+CREATE FUNCTION routing.travel_points(p_start geometry, p_end geometry, p_waypoints jsonb)
+RETURNS TABLE (k integer, geom geometry, kind text, after_m double precision, n integer)
+LANGUAGE plpgsql STABLE AS $$
+#variable_conflict use_column
+DECLARE
+    v_points    geometry[];
+    v_kinds     text[];
+    v_after_m   double precision[];
+    v_ns        integer[];
+    v_tail      geometry[];
+    v_tail_kind text[];
+    v_tail_m    double precision[];
+    v_tail_n    integer[];
+    v_any       geometry[];
+    v_any_n     integer[];
+BEGIN
+    -- The start and the asap waypoints, then the after waypoints and the end with the any
+    -- waypoints put in among them.
+    SELECT ARRAY[p_start] || coalesce(array_agg(w.geom ORDER BY w.n), '{}'),
+           ARRAY['start'] || coalesce(array_agg(w.at ORDER BY w.n), '{}'),
+           ARRAY[NULL::double precision] || coalesce(array_agg(w.after_m ORDER BY w.n), '{}'),
+           ARRAY[NULL::integer] || coalesce(array_agg(w.n ORDER BY w.n), '{}')
+    INTO v_points, v_kinds, v_after_m, v_ns
+    FROM routing.read_waypoints(p_waypoints) w
+    WHERE w.at = 'asap';
+    SELECT ARRAY[v_points[cardinality(v_points)]]
+               || coalesce(array_agg(w.geom ORDER BY w.after_m, w.n), '{}') || p_end,
+           ARRAY['from'] || coalesce(array_agg(w.at ORDER BY w.after_m, w.n), '{}') || 'end'::text,
+           ARRAY[NULL::double precision]
+               || coalesce(array_agg(w.after_m ORDER BY w.after_m, w.n), '{}')
+               || NULL::double precision,
+           ARRAY[NULL::integer] || coalesce(array_agg(w.n ORDER BY w.after_m, w.n), '{}')
+               || NULL::integer
+    INTO v_tail, v_tail_kind, v_tail_m, v_tail_n
+    FROM routing.read_waypoints(p_waypoints) w
+    WHERE w.at = 'after';
+    SELECT coalesce(array_agg(w.geom ORDER BY w.n), '{}'),
+           coalesce(array_agg(w.n ORDER BY w.n), '{}')
+    INTO v_any, v_any_n
+    FROM routing.read_waypoints(p_waypoints) w
+    WHERE w.at = 'any';
+    SELECT v_points || array_agg(t.geom ORDER BY o.n),
+           v_kinds || array_agg(t.kind ORDER BY o.n),
+           v_after_m || array_agg(t.after_m ORDER BY o.n),
+           v_ns || array_agg(t.n ORDER BY o.n)
+    INTO v_points, v_kinds, v_after_m, v_ns
+    FROM unnest(routing.insertion_order(v_tail, v_any)) WITH ORDINALITY AS o(i, n)
+    JOIN LATERAL (
+        SELECT (v_tail || v_any)[o.i] AS geom,
+               (v_tail_kind || array_fill('any'::text, ARRAY[cardinality(v_any)]))[o.i] AS kind,
+               v_tail_m[o.i] AS after_m,
+               (v_tail_n || v_any_n)[o.i] AS n
+    ) t ON true
+    WHERE o.n > 1;
+
+    RETURN QUERY
+        SELECT u.k::integer, u.geom, v_kinds[u.k], v_after_m[u.k], v_ns[u.k]
+        FROM unnest(v_points) WITH ORDINALITY AS u(geom, k);
+END
+$$;
+
 -- p_a followed by p_b, as much of routing.route_json as carrying a route on needs: the line,
 -- the length and the edges with their directions. p_a may be NULL, for nothing before.
 CREATE FUNCTION routing.joined(p_a jsonb, p_b jsonb) RETURNS jsonb
@@ -1747,7 +1814,8 @@ $$;
 -- to an any waypoint to its share of the length still to go to the next of those, by straight
 -- distance. A piece to where the last one ended is left out, but for a loop with nothing else.
 -- The whole route is then routed through all their vias in one go, and returned as
--- routing.route_out gives it.
+-- routing.route_out gives it, with waypoint_order: the waypoints' indexes in p_waypoints (from 0)
+-- in the order the route passes them.
 -- The points are snapped to roads that join (see routing.snap_points), so a path cut off from
 -- the rest is not taken for the way there.
 -- Warnings, judged on the route: too_short (the direct way through the points is longer than
@@ -1779,10 +1847,8 @@ DECLARE
     v_points    geometry[];
     v_kinds     text[];
     v_after_m   double precision[];
-    v_tail      geometry[];
-    v_tail_kind text[];
-    v_tail_m    double precision[];
-    v_any       geometry[];
+    -- Which waypoint each point is (its place in p_waypoints, from 1); NULL for the start and end.
+    v_ns        integer[];
     v_area      geometry;
     v_vertices  bigint[];
     v_from      integer := 1;
@@ -1802,37 +1868,10 @@ BEGIN
     END IF;
     v_profile := routing.make_profile(p_activity, p_weights, p_settings);
 
-    -- The start and the asap waypoints, then the after waypoints and the end with the any
-    -- waypoints put in among them.
-    SELECT ARRAY[p_start] || coalesce(array_agg(w.geom ORDER BY w.n), '{}'),
-           ARRAY['start'] || coalesce(array_agg(w.at ORDER BY w.n), '{}'),
-           ARRAY[NULL::double precision] || coalesce(array_agg(w.after_m ORDER BY w.n), '{}')
-    INTO v_points, v_kinds, v_after_m
-    FROM routing.read_waypoints(p_waypoints) w
-    WHERE w.at = 'asap';
-    SELECT ARRAY[v_points[cardinality(v_points)]]
-               || coalesce(array_agg(w.geom ORDER BY w.after_m, w.n), '{}') || v_end,
-           ARRAY['from'] || coalesce(array_agg(w.at ORDER BY w.after_m, w.n), '{}') || 'end'::text,
-           ARRAY[NULL::double precision]
-               || coalesce(array_agg(w.after_m ORDER BY w.after_m, w.n), '{}')
-               || NULL::double precision
-    INTO v_tail, v_tail_kind, v_tail_m
-    FROM routing.read_waypoints(p_waypoints) w
-    WHERE w.at = 'after';
-    SELECT coalesce(array_agg(w.geom ORDER BY w.n), '{}') INTO v_any
-    FROM routing.read_waypoints(p_waypoints) w
-    WHERE w.at = 'any';
-    SELECT v_points || array_agg(t.geom ORDER BY o.n),
-           v_kinds || array_agg(t.kind ORDER BY o.n),
-           v_after_m || array_agg(t.after_m ORDER BY o.n)
-    INTO v_points, v_kinds, v_after_m
-    FROM unnest(routing.insertion_order(v_tail, v_any)) WITH ORDINALITY AS o(i, n)
-    JOIN LATERAL (
-        SELECT (v_tail || v_any)[o.i] AS geom,
-               (v_tail_kind || array_fill('any'::text, ARRAY[cardinality(v_any)]))[o.i] AS kind,
-               v_tail_m[o.i] AS after_m
-    ) t ON true
-    WHERE o.n > 1;
+    SELECT array_agg(t.geom ORDER BY t.k), array_agg(t.kind ORDER BY t.k),
+           array_agg(t.after_m ORDER BY t.k), array_agg(t.n ORDER BY t.k)
+    INTO v_points, v_kinds, v_after_m, v_ns
+    FROM routing.travel_points(p_start, v_end, p_waypoints) t;
 
     v_area := routing.search_area(
         p_start, p_finish, p_target_m, v_profile.settings -> 'area',
@@ -1924,6 +1963,13 @@ BEGIN
             ELSE 'target_missed'
         END]));
     END IF;
-    RETURN routing.route_out(v_route);
+    RETURN routing.route_out(v_route) || jsonb_build_object(
+        'waypoint_order',
+        to_jsonb(ARRAY(
+            SELECT u.n - 1 FROM unnest(v_ns) WITH ORDINALITY AS u(n, k)
+            WHERE u.n IS NOT NULL
+            ORDER BY u.k
+        ))
+    );
 END
 $$;

@@ -2,7 +2,8 @@ import { ApiError } from '@/shared/api'
 
 import type { NoRouteReason } from './types'
 
-export type NoRouteError = 'startOffRoad' | 'finishOffRoad' | 'unreachable' | 'noLoop'
+export type NoRouteError =
+	'startOffRoad' | 'waypointOffRoad' | 'finishOffRoad' | 'unreachable' | 'noLoop'
 export type FindRoutesError =
 	NoRouteError | 'notAccepted' | 'tooSlow' | 'stillPreparing' | 'signedOut' | 'unexpected'
 
@@ -16,6 +17,7 @@ const BY_STATUS: Partial<Record<number, FindRoutesError>> = {
 // A 422 names the reason when the settings were fine but no route was found.
 const BY_REASON: Record<NoRouteReason, NoRouteError> = {
 	start_off_road: 'startOffRoad',
+	waypoint_off_road: 'waypointOffRoad',
 	finish_off_road: 'finishOffRoad',
 	unreachable: 'unreachable',
 	no_loop: 'noLoop',

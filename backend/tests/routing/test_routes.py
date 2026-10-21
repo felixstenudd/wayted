@@ -177,10 +177,80 @@ async def test_weights_for_unscored_attributes_are_dropped(
     admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
 ) -> None:
     await mapped_grid(admin_conn, mapper_pool, api_pool)
-    unscored = service.RouteQuery("running", QUERY.start, None, 2_000, {"water": 1})
+    unscored = service.RouteQuery("running", QUERY.start, None, 2_000, {"bridges": 1})
 
     async with api_pool.connection() as conn:
         with_unscored = await service.plan(conn, unscored)
         without = await service.plan(conn, QUERY)
 
     assert with_unscored == without
+
+
+def grid_spot(column: float, row: float, **place: object) -> dict[str, Any]:
+    return {
+        "lon": ORIGIN_LON + column * COLUMN_STEPS * STEP,
+        "lat": ORIGIN_LAT + row * STEP,
+        **place,
+    }
+
+
+async def test_route_passes_its_waypoints_and_says_in_which_order(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
+) -> None:
+    await mapped_grid(admin_conn, mapper_pool, api_pool)
+    request = {**LOOP, "waypoints": [grid_spot(10, 12), grid_spot(13, 13, at="asap")]}
+
+    res = await client.post("/routing/routes", json=request)
+
+    assert res.status_code == 200
+    assert res.json()["properties"]["waypoint_order"] == [1, 0]
+
+
+async def test_waypoints_widen_the_area_that_is_prepared(api_pool: Pool) -> None:
+    far = service.Coordinate(lon=CENTRE["lon"] + 0.05, lat=CENTRE["lat"])
+    with_far = service.RouteQuery(
+        "running", QUERY.start, None, 2_000, {}, (service.Waypoint(far, "any", None),)
+    )
+
+    async with api_pool.connection() as conn:
+        plain = await service.search_bounds(conn, QUERY)
+        widened = await service.search_bounds(conn, with_far)
+
+    assert widened.east > far.lon > plain.east
+
+
+async def test_waypoint_far_from_any_road_has_no_route(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
+) -> None:
+    await mapped_grid(admin_conn, mapper_pool, api_pool)
+    # 600 m north of the grid, in tiles that have been fetched.
+    spot = grid_spot(12, 30)
+    off_road = service.Waypoint(service.Coordinate(spot["lon"], spot["lat"]), "any", None)
+    async with api_pool.connection() as api:
+        bounds = await service.search_bounds(
+            api, service.RouteQuery("running", QUERY.start, None, 2_000, {}, (off_road,))
+        )
+    for layer in LAYER_CODES:
+        await mark_fetched(admin_conn, layer, tiles_for_bounds(bounds, ZOOM))
+    request = {**LOOP, "waypoints": [spot]}
+
+    res = await client.post("/routing/routes", json=request)
+
+    assert res.status_code == 422
+    assert res.json() == {"detail": "waypoint_off_road"}
+
+
+@pytest.mark.parametrize(
+    "waypoint",
+    [
+        grid_spot(12, 14, at="after"),
+        grid_spot(12, 14, at="any", after_m=500),
+        grid_spot(12, 14, at="after", after_m=0),
+        grid_spot(12, 14, at="soon"),
+        {"lon": 200, "lat": 63},
+    ],
+)
+async def test_bad_waypoints_are_refused(client: httpx.AsyncClient, waypoint: object) -> None:
+    res = await client.post("/routing/routes", json={**LOOP, "waypoints": [waypoint]})
+
+    assert res.status_code == 422

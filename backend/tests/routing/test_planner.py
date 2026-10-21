@@ -100,6 +100,7 @@ async def test_loop_returns_to_its_start_at_about_the_target(
 
     assert route["length_m"] == pytest.approx(target_m, rel=TOLERANCE)
     assert route["warnings"] == []
+    assert route["waypoint_order"] == []
     assert ends(route) == (coordinates(12, 12), coordinates(12, 12))
     # A grid has streets enough that the loop never has to go back the way it came.
     assert route["reused_m"] < 0.05 * route["length_m"]
@@ -656,6 +657,8 @@ async def test_waypoint_as_soon_as_possible_is_reached_first_by_the_direct_way(
     assert first_m == pytest.approx(3 * 113.7 + 2 * 111.2, rel=0.02)
     assert anywhere_m > first_m
     assert route["length_m"] == pytest.approx(3_000, rel=TOLERANCE)
+    # The second waypoint given is passed first.
+    assert route["waypoint_order"] == [1, 0]
 
 
 async def test_route_without_a_target_passes_its_waypoint_by_the_direct_way(

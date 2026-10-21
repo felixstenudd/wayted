@@ -29,6 +29,18 @@ def _known_keys(preferences: dict[str, float]) -> dict[str, float]:
 Weight = Annotated[float, Field(ge=-1, le=1)]
 
 
+class WaypointIn(PointIn):
+    # any: wherever it suits the route; asap: as soon as possible; after: after about after_m.
+    at: Literal["any", "asap", "after"] = "any"
+    after_m: int | None = Field(default=None, gt=0, le=200_000)
+
+    @model_validator(mode="after")
+    def _after_m_matches_at(self) -> Self:
+        if (self.at == "after") != (self.after_m is not None):
+            raise ValueError("after_m is needed for, and only for, at after")
+        return self
+
+
 class RouteRequestIn(BaseModel):
     activity: Literal["running", "cycling"]
     shape: Literal["loop", "point_to_point"]
@@ -38,6 +50,8 @@ class RouteRequestIn(BaseModel):
     target_distance_m: int | None = Field(default=None, ge=1_000, le=200_000)
     # -1 avoids, 0 does not mind, 1 prefers.
     preferences: Annotated[dict[str, Weight], AfterValidator(_known_keys)] = {}
+    # passed in the order the planner finds best, unless their at says otherwise
+    waypoints: list[WaypointIn] = []
 
     @model_validator(mode="after")
     def _finish_matches_shape(self) -> Self:
@@ -73,6 +87,8 @@ class RoutePropertiesOut(BaseModel):
     warnings: list[RouteWarning]
     # in travel order, as saving the route takes them
     edges: list[EdgeStepOut]
+    # indexes into the request's waypoints, in the order the route passes them
+    waypoint_order: list[int]
 
 
 class PlannedRouteOut(Feature[LineString, RoutePropertiesOut]):

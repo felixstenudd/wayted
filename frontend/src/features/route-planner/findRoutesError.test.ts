@@ -16,6 +16,7 @@ describe('findRoutesError', () => {
 
 	it.each([
 		['start_off_road', 'startOffRoad'],
+		['waypoint_off_road', 'waypointOffRoad'],
 		['finish_off_road', 'finishOffRoad'],
 		['unreachable', 'unreachable'],
 		['no_loop', 'noLoop'],

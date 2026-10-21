@@ -184,6 +184,7 @@
 			},
 			"errors": {
 				"startOffRoad": "There is no road or path near the start. Move it closer to one.",
+				"waypointOffRoad": "There is no road or path near one of the through points. Move it closer to one, or remove it.",
 				"finishOffRoad": "There is no road or path near the finish. Move it closer to one.",
 				"unreachable": "The finish cannot be reached from the start. Try moving one of them.",
 				"noLoop": "No loop could be found from this start. Try another start or distance.",

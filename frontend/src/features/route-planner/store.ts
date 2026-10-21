@@ -70,6 +70,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 				? { target_distance_m: Math.round(targetDistanceKm.value * 1000) }
 				: {}),
 			preferences: { ...preferenceWeights.value },
+			waypoints: [],
 		}
 	})
 

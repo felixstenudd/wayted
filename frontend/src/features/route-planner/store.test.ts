@@ -103,6 +103,7 @@ describe('route request', () => {
 			start: UMEA,
 			target_distance_m: 10_500,
 			preferences: { nature: 0.5 },
+			waypoints: [],
 		})
 	})
 

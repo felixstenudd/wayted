@@ -43,6 +43,12 @@ def _query(request: RouteRequestIn) -> service.RouteQuery:
         finish=service.Coordinate(lon=finish.lon, lat=finish.lat) if finish else None,
         target_m=request.target_distance_m,
         weights=request.preferences,
+        waypoints=tuple(
+            service.Waypoint(
+                point=service.Coordinate(lon=w.lon, lat=w.lat), at=w.at, after_m=w.after_m
+            )
+            for w in request.waypoints
+        ),
     )
 
 
@@ -88,5 +94,6 @@ async def routes(
             reused_m=route.reused_m,
             warnings=route.warnings,
             edges=[EdgeStepOut(edge_id=e.edge_id, forward=e.forward) for e in route.edges],
+            waypoint_order=route.waypoint_order,
         ),
     )

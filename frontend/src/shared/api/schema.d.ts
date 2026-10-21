@@ -519,7 +519,7 @@ export interface components {
             status: "preparing";
         };
         /** @enum {string} */
-        Reason: "start_off_road" | "finish_off_road" | "unreachable" | "no_loop";
+        Reason: "start_off_road" | "waypoint_off_road" | "finish_off_road" | "unreachable" | "no_loop";
         /** ReasonOut */
         ReasonOut: {
             /** Code */
@@ -624,6 +624,8 @@ export interface components {
             warnings: components["schemas"]["RouteWarning"][];
             /** Edges */
             edges: components["schemas"]["EdgeStepOut"][];
+            /** Waypoint Order */
+            waypoint_order: number[];
         };
         /** RouteRequestIn */
         RouteRequestIn: {
@@ -648,6 +650,11 @@ export interface components {
             preferences: {
                 [key: string]: number;
             };
+            /**
+             * Waypoints
+             * @default []
+             */
+            waypoints: components["schemas"]["WaypointIn"][];
         };
         /** RouteReviewIn */
         RouteReviewIn: {
@@ -771,6 +778,21 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WaypointIn */
+        WaypointIn: {
+            /** Lon */
+            lon: number;
+            /** Lat */
+            lat: number;
+            /**
+             * At
+             * @default any
+             * @enum {string}
+             */
+            at: "any" | "asap" | "after";
+            /** After M */
+            after_m?: number | null;
         };
     };
     responses: never;

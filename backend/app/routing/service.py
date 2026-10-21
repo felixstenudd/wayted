@@ -19,7 +19,11 @@ from .attributes import ROUTE_ATTRIBUTES
 
 type Activity = Literal["running", "cycling"]
 # The detail of routing.plan_route's no_data_found errors.
-type Reason = Literal["start_off_road", "finish_off_road", "unreachable", "no_loop"]
+type Reason = Literal[
+    "start_off_road", "waypoint_off_road", "finish_off_road", "unreachable", "no_loop"
+]
+# any: wherever it suits the route; asap: as soon as possible; after: after about after_m.
+type WaypointAt = Literal["any", "asap", "after"]
 type RouteWarning = Literal["too_short", "target_missed"]
 
 REASONS: frozenset[str] = frozenset(get_args(Reason.__value__))
@@ -35,9 +39,22 @@ POINTS = """
     ST_Point(%(start_lon)s, %(start_lat)s, 4326), ST_Point(%(finish_lon)s, %(finish_lat)s, 4326)
 """
 
+# The waypoints in the order routing.plan_route passes them, which shapes the area.
 SEARCH_BOUNDS = f"""
+    WITH points (start, finish) AS (SELECT {POINTS})
     SELECT ST_XMin(area), ST_YMin(area), ST_XMax(area), ST_YMax(area)
-    FROM routing.search_area({POINTS}, %(target_m)s) AS area
+    FROM points, routing.search_area(
+        start,
+        finish,
+        %(target_m)s,
+        routing.defaults() -> 'area',
+        ARRAY(
+            SELECT t.geom
+            FROM routing.travel_points(start, coalesce(finish, start), %(waypoints)s) t
+            WHERE t.n IS NOT NULL
+            ORDER BY t.k
+        )
+    ) AS area
 """
 
 # The enricher scores new and moved edges after the mapper builds them; until then they count as
@@ -52,7 +69,9 @@ UNSCORED_IN_BOUNDS = """
 SET_TIMEOUT = f"SET LOCAL statement_timeout = '{PLAN_TIMEOUT}'"
 
 PLAN_ROUTE = f"""
-    SELECT routing.plan_route(%(activity)s, {POINTS}, %(target_m)s, %(weights)s)
+    SELECT routing.plan_route(
+        %(activity)s, {POINTS}, %(target_m)s, %(weights)s, '{{}}', %(waypoints)s
+    )
 """
 
 
@@ -75,6 +94,14 @@ class Coordinate:
 
 
 @dataclass(frozen=True, slots=True)
+class Waypoint:
+    point: Coordinate
+    at: WaypointAt
+    # only for at after
+    after_m: float | None
+
+
+@dataclass(frozen=True, slots=True)
 class RouteQuery:
     activity: Activity
     start: Coordinate
@@ -84,6 +111,8 @@ class RouteQuery:
     target_m: float | None
     # attribute key -> weight from -1 (avoid) to 1 (prefer)
     weights: Mapping[str, float]
+    # points the route passes, in the order given
+    waypoints: tuple[Waypoint, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +141,8 @@ class PlannedRoute:
     warnings: list[RouteWarning]
     # in travel order
     edges: list[EdgeStep]
+    # indexes into RouteQuery.waypoints, in the order the route passes them
+    waypoint_order: list[int]
 
 
 def _params(query: RouteQuery) -> dict[str, Any]:
@@ -123,7 +154,15 @@ def _params(query: RouteQuery) -> dict[str, Any]:
         "finish_lat": query.finish.lat if query.finish else None,
         "target_m": query.target_m,
         "weights": Jsonb({k: w for k, w in query.weights.items() if k in SCORED_KEYS}),
+        "waypoints": Jsonb([_waypoint(w) for w in query.waypoints]),
     }
+
+
+def _waypoint(waypoint: Waypoint) -> dict[str, Any]:
+    out: dict[str, Any] = {"lon": waypoint.point.lon, "lat": waypoint.point.lat, "at": waypoint.at}
+    if waypoint.after_m is not None:
+        out["after_m"] = waypoint.after_m
+    return out
 
 
 async def search_bounds(conn: AsyncConnection[TupleRow], query: RouteQuery) -> Bounds:
@@ -181,4 +220,5 @@ async def plan(conn: AsyncConnection[TupleRow], query: RouteQuery) -> PlannedRou
         reused_m=route["reused_m"],
         warnings=route["warnings"],
         edges=[EdgeStep(**step) for step in route["edges"]],
+        waypoint_order=route["waypoint_order"],
     )
