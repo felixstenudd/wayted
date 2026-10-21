@@ -41,11 +41,19 @@ SEARCH_BOUNDS = f"""
 """
 
 # The enricher scores new and moved edges after the mapper builds them; until then they count as
-# neither preferred nor avoided.
+# neither preferred nor avoided. Heights stored for edges it already scored are queued for it
+# as tiles, and their edges only once it takes them up.
 UNSCORED_IN_BOUNDS = """
+    WITH area AS (
+        SELECT ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326) AS envelope
+    )
     SELECT EXISTS (
-        SELECT FROM graph.pending_edges queued JOIN graph.edges edge ON edge.id = queued.edge_id
-        WHERE edge.geom && ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326)
+        SELECT FROM area, graph.pending_edges queued
+        JOIN graph.edges edge ON edge.id = queued.edge_id
+        WHERE edge.geom && area.envelope
+    ) OR EXISTS (
+        SELECT FROM area, enrich.pending_elevation tile
+        WHERE ST_Transform(ST_TileEnvelope(tile.z, tile.x, tile.y), 4326) && area.envelope
     )
 """
 

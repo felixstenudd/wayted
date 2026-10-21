@@ -15,7 +15,7 @@ from app.routing import service
 from app.routing.router import router
 from app.sources.queue import LAYER_CODES
 from app.sources.registry import mark_fetched
-from app.sources.tiles import tiles_for_bounds
+from app.sources.tiles import Tile, tiles_for_bounds
 
 from ..graph.raw_data import ORIGIN_LAT, ORIGIN_LON, STEP, Conn
 from .network_data import COLUMN_STEPS, add_grid, node_id
@@ -143,6 +143,21 @@ async def test_edges_waiting_for_scores_keep_the_client_waiting(
     await admin_conn.execute(
         "INSERT INTO graph.pending_edges (edge_id) SELECT id FROM graph.edges WHERE source = %s",
         (node_id(12, 12),),
+    )
+
+    res = await client.post("/routing/routes", json=LOOP)
+
+    assert res.status_code == 202
+
+
+async def test_heights_waiting_for_the_enricher_keep_the_client_waiting(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
+) -> None:
+    await mapped_grid(admin_conn, mapper_pool, api_pool)
+    tile = Tile.from_lat_lon(CENTRE["lat"], CENTRE["lon"], ZOOM)
+    await admin_conn.execute(
+        "INSERT INTO enrich.pending_elevation (z, x, y) VALUES (%s, %s, %s)",
+        (tile.z, tile.x, tile.y),
     )
 
     res = await client.post("/routing/routes", json=LOOP)
