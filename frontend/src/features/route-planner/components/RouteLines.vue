@@ -235,9 +235,7 @@ const labels = computed(() => {
 		</button>
 	</MapMarker>
 	<MapMarker v-if="ghost" :lon-lat="ghost" class="pointer-events-none">
-		<span
-			class="block size-4 rounded-full border-2 border-overprint-contrast bg-overprint opacity-70"
-		/>
+		<span class="block size-3 rounded-full border-2 border-overprint-contrast bg-paper" />
 	</MapMarker>
 	<MapMarker v-if="held" :lon-lat="held" class="pointer-events-none">
 		<span class="block size-5 rounded-full border-2 border-overprint-contrast bg-overprint" />

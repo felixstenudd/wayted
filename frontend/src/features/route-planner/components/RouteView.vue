@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ScoreProfile } from '@/features/route'
+import { useMediaQuery } from '@/shared/composables/useMediaQuery'
 
 import { useShownRoute } from '../composables/useShownRoute'
 import { usePlannerStore } from '../store'
@@ -21,6 +22,9 @@ const planner = usePlannerStore()
 const { shown } = useShownRoute()
 
 const request = computed(() => planner.search?.request ?? null)
+// Until the route is first edited, or chosen, it says that it can be.
+const isTouch = useMediaQuery('(pointer: coarse)')
+const isEditHintShown = computed(() => planner.edit === null && !planner.isChosen)
 </script>
 
 <template>
@@ -36,5 +40,8 @@ const request = computed(() => planner.search?.request ?? null)
 			<RouteHead />
 		</template>
 		<ScoreProfile :scores="shown.properties.scores" :preferences="request.preferences" />
+		<p v-if="isEditHintShown" class="text-small text-graphite">
+			{{ t(isTouch ? 'planner.edit.hintTouch' : 'planner.edit.hint') }}
+		</p>
 	</div>
 </template>

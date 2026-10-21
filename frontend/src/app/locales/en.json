@@ -243,7 +243,9 @@
 			"tapped": "Drag this onto another road, or drop it back where it was to cancel",
 			"dragging": "Let go to keep this change. Press Esc to cancel.",
 			"longer": "{km} km longer than your {target} km.",
-			"shorter": "{km} km shorter than your {target} km."
+			"shorter": "{km} km shorter than your {target} km.",
+			"hint": "Drag the yellow line to move part of the route onto another road.",
+			"hintTouch": "Tap the yellow line, then drag the dot onto another road."
 		},
 		"save": {
 			"submit": "Save route",
