@@ -54,7 +54,7 @@ function setOpen(index: number, open: boolean): void {
 					:aria-label="t('planner.edit.handle', { n: index + 1 })"
 				>
 					<span
-						class="size-3.5 rounded-full border-2 border-overprint-contrast bg-paper"
+						class="size-4 rounded-full border-2 border-overprint-contrast bg-overprint"
 					/>
 				</button>
 			</PopoverTrigger>
@@ -77,7 +77,7 @@ function setOpen(index: number, open: boolean): void {
 		@move="emit('dragTapped', $event)"
 	>
 		<span class="grid size-11 place-items-center">
-			<span class="size-4 rounded-full border-2 border-overprint-contrast bg-paper" />
+			<span class="size-5 rounded-full border-2 border-overprint-contrast bg-overprint" />
 		</span>
 	</MapMarker>
 </template>

@@ -1,9 +1,14 @@
 import type { LonLat } from '@/features/map'
 
-import { useReroute } from '../api'
+import { useReroute, useRerouteRequest } from '../api'
 import { editError } from '../editError'
 import { usePlannerStore } from '../store'
+import type { RerouteAnswer } from '../types'
 import { useShownRoute } from './useShownRoute'
+
+type NextHandles = (handles: LonLat[], handle: LonLat | null) => LonLat[]
+
+const addHandle: NextHandles = (handles, handle) => (handle ? [...handles, handle] : handles)
 
 /**
  * Edits of the shown route: dragging its line to a road, moving a handle such a drag left, and
@@ -13,38 +18,46 @@ export function useRouteEditing() {
 	const planner = usePlannerStore()
 	const { routes, shown } = useShownRoute()
 	const reroute = useReroute()
+	const request = useRerouteRequest()
 
-	function run(
-		grab: LonLat,
-		drop: LonLat | null,
-		nextHandles: (handles: LonLat[], handle: LonLat | null) => LonLat[],
-	): void {
+	function apply(answer: RerouteAnswer, nextHandles: NextHandles): void {
 		const original = routes.value[planner.selectedOption]
+		if (!original) return
+		const handle = answer.handle
+			? { lon: answer.handle.coordinates[0], lat: answer.handle.coordinates[1] }
+			: null
+		planner.applyEdit(original, answer.route, nextHandles([...planner.editHandles], handle))
+	}
+
+	function run(grab: LonLat, drop: LonLat | null, nextHandles: NextHandles): void {
 		const route = shown.value
 		// One edit at a time, so each starts from the route the last one made.
-		if (!original || !route || reroute.isPending.value) return
+		if (!route || reroute.isPending.value) return
 		planner.setEditError(null)
 		reroute.mutate(
 			{ route, grab, drop },
 			{
-				onSuccess: (answer) => {
-					const handle = answer.handle
-						? { lon: answer.handle.coordinates[0], lat: answer.handle.coordinates[1] }
-						: null
-					planner.applyEdit(
-						original,
-						answer.route,
-						nextHandles([...planner.editHandles], handle),
-					)
-				},
+				onSuccess: (answer) => apply(answer, nextHandles),
 				onError: (error) => planner.setEditError(editError(error)),
 			},
 		)
 	}
 
-	/** A drag of the line from grab to drop, which leaves a handle where it came onto the road. */
-	function dragLine(grab: LonLat, drop: LonLat): void {
-		run(grab, drop, (handles, handle) => (handle ? [...handles, handle] : handles))
+	/**
+	 * A drag of the line from grab to drop, which leaves a handle where it came onto the road.
+	 * previewed is what a preview already got for that drop, which is taken as it is.
+	 */
+	function dragLine(grab: LonLat, drop: LonLat, previewed: RerouteAnswer | null = null): void {
+		if (previewed && !reroute.isPending.value) {
+			planner.setEditError(null)
+			apply(previewed, addHandle)
+		} else run(grab, drop, addHandle)
+	}
+
+	/** What a drag of the line to drop would make, without making it. */
+	function previewDrag(grab: LonLat, drop: LonLat): Promise<RerouteAnswer> {
+		const route = shown.value
+		return route ? request({ route, grab, drop }) : Promise.reject(new Error('No route shown.'))
 	}
 
 	function moveHandle(index: number, to: LonLat): void {
@@ -68,5 +81,5 @@ export function useRouteEditing() {
 		else run(handle, null, (current) => current.filter((_, i) => i !== index))
 	}
 
-	return { dragLine, moveHandle, removeHandle, isPending: reroute.isPending }
+	return { dragLine, previewDrag, moveHandle, removeHandle, isPending: reroute.isPending }
 }

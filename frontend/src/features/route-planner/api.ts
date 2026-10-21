@@ -81,35 +81,36 @@ export function useSaveDefaults() {
 
 export const rerouteKey = ['routing', 'reroute'] as const
 
-/** Moves the part of route around grab onto the road nearest drop; without drop, tidies it. */
-export function useReroute() {
+export interface RerouteInput {
+	route: Route
+	grab: LonLat
+	drop: LonLat | null
+}
+
+/** Asks for route with the part around grab moved onto the road nearest drop; without drop, tidied. */
+export function useRerouteRequest(): (input: RerouteInput) => Promise<RerouteAnswer> {
 	const auth = useAuthStore()
 	const planner = usePlannerStore()
-	return useMutation({
-		mutationKey: rerouteKey,
-		mutationFn: ({
-			route,
-			grab,
-			drop,
-		}: {
-			route: Route
-			grab: LonLat
-			drop: LonLat | null
-		}) => {
-			const request = planner.search?.request
-			if (!request) throw new Error('There is no search whose route could be edited.')
-			return auth.authedRequest<RerouteAnswer>('/routing/routes/reroute', {
-				method: 'POST',
-				body: {
-					activity: request.activity,
-					edges: route.properties.edges,
-					grab,
-					drop,
-					...(request.target_distance_m
-						? { target_distance_m: request.target_distance_m }
-						: {}),
-				},
-			})
-		},
-	})
+	return ({ route, grab, drop }) => {
+		const request = planner.search?.request
+		if (!request)
+			return Promise.reject(new Error('There is no search whose route could be edited.'))
+		return auth.authedRequest<RerouteAnswer>('/routing/routes/reroute', {
+			method: 'POST',
+			body: {
+				activity: request.activity,
+				edges: route.properties.edges,
+				grab,
+				drop,
+				...(request.target_distance_m
+					? { target_distance_m: request.target_distance_m }
+					: {}),
+			},
+		})
+	}
+}
+
+/** An edit of the route, as a mutation: "Updating…" shows while it runs. */
+export function useReroute() {
+	return useMutation({ mutationKey: rerouteKey, mutationFn: useRerouteRequest() })
 }
