@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ref } from 'vue'
 
-import { settleStop, useSheetDrag } from './useSheetDrag'
+import { settleStop, sheetStops, useSheetDrag } from './useSheetDrag'
 
 const STOPS = [144, 422, 772]
 
@@ -68,5 +68,19 @@ describe('useSheetDrag', () => {
 		drag.onPointerMove(pointer(698, 50))
 		expect(drag.onPointerUp(pointer(698, 100))).toBe(false)
 		expect(stop.value).toBe(0)
+	})
+})
+
+describe('sheetStops', () => {
+	it('stops at the peek, half the screen and nearly all of it', () => {
+		expect(sheetStops(208, 844, 72)).toEqual([208, 422, 772])
+	})
+
+	it('keeps the middle stop above a peek taller than half the screen', () => {
+		expect(sheetStops(500, 844, 72)).toEqual([500, 500, 772])
+	})
+
+	it('never peeks above the highest stop', () => {
+		expect(sheetStops(900, 844, 72)).toEqual([772, 772, 772])
 	})
 })

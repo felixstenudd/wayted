@@ -30,7 +30,7 @@ interface SectionParts {
 	nav: 'plan' | 'routes'
 	/** Takes layout: 'panel' beside the map, 'sheet' in the bottom sheet. */
 	panel: Component
-	/** What a phone shows at the sheet's lowest stop, under the navigation. */
+	/** What a phone always shows, at the sheet's lowest stop and above the rest. */
 	peek?: Component
 	/** Drawn on the map. */
 	map: Component
@@ -90,7 +90,8 @@ const savedRoutes = useSavedRoutesStore()
 const isPickingStretch = computed(
 	() => savedRoutes.isPickingStretch && savedRoutes.stretchStage === 'pick',
 )
-// The lowest stop holds the picker's instruction and its way on while the map is tapped.
+// The lowest stop holds the picker's instruction and its way on while the map is tapped. A section
+// with a peek fits the stop to it instead.
 const peekRem = computed(() => (isPickingStretch.value ? 18 : 13))
 watch(
 	() => (savedRoutes.isPickingStretch ? savedRoutes.stretchStage : null),
@@ -139,15 +140,17 @@ provideMap()
 			:expand-label="t('planner.sheet.expand')"
 			:collapse-label="t('planner.sheet.collapse')"
 			:peek-rem="peekRem"
+			:fit-header="parts.peek !== undefined"
 			@height="sheetHeightPx = $event"
 		>
-			<template #header>
-				<div class="flex flex-col gap-4">
-					<SegmentedNav :label="t('nav.label')" :items="navItems" :current="parts.nav" />
-					<component :is="parts.peek" v-if="parts.peek" v-bind="sectionProps" />
-				</div>
+			<template v-if="parts.peek" #header>
+				<component :is="parts.peek" v-bind="sectionProps" />
 			</template>
-			<component :is="parts.panel" layout="sheet" v-bind="sectionProps" />
+			<!-- Out of the peek, so the lowest stop is the section's own; a step up reaches it. -->
+			<div class="flex flex-col gap-4">
+				<SegmentedNav :label="t('nav.label')" :items="navItems" :current="parts.nav" />
+				<component :is="parts.panel" layout="sheet" v-bind="sectionProps" />
+			</div>
 		</BottomSheet>
 		<MapView
 			:center="START.center"

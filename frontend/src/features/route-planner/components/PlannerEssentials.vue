@@ -21,6 +21,8 @@ const { nameOf } = useThroughPointNumbers()
 
 const { shown } = useShownRoute()
 
+const MISSING_ID = 'sheet-missing-point'
+
 const editingId = computed(() => planner.editingThroughPointId)
 const isShowingRoute = computed(() => shown.value !== null && !planner.isChangingSettings)
 </script>
@@ -47,8 +49,12 @@ const isShowingRoute = computed(() => shown.value !== null && !planner.isChangin
 			<SaveRoute v-else />
 		</template>
 		<template v-else>
+			<!-- The first thing to do. -->
+			<p v-if="planner.missingPoint" :id="MISSING_ID">
+				{{ t(`planner.sheet.missing.${planner.missingPoint}`) }}
+			</p>
 			<DistanceField />
-			<FindRoutes />
+			<FindRoutes :missing-hint-id="MISSING_ID" />
 		</template>
 	</div>
 </template>

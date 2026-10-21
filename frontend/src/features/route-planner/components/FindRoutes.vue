@@ -8,6 +8,11 @@ import { Button } from '@/shared/ui/button'
 import { useFoundRoute } from '../api'
 import { usePlannerStore } from '../store'
 
+const props = defineProps<{
+	/** Where the missing point is already asked for, so the button points there instead. */
+	missingHintId?: string
+}>()
+
 const HINT_ID = 'find-routes-hint'
 
 const { t } = useI18n()
@@ -32,7 +37,7 @@ const isNotice = computed(
 			class="w-full"
 			:disabled="planner.routeRequest === null || isBusy"
 			:aria-busy="isBusy"
-			:aria-describedby="planner.missingPoint ? HINT_ID : undefined"
+			:aria-describedby="planner.missingPoint ? (props.missingHintId ?? HINT_ID) : undefined"
 			@click="planner.findRoutes()"
 		>
 			{{
@@ -45,7 +50,11 @@ const isNotice = computed(
 							: t('planner.findRoutes.submit')
 			}}
 		</Button>
-		<p v-if="planner.missingPoint" :id="HINT_ID" class="text-small text-graphite">
+		<p
+			v-if="planner.missingPoint && !props.missingHintId"
+			:id="HINT_ID"
+			class="text-small text-graphite"
+		>
 			{{ t(`planner.findRoutes.missing.${planner.missingPoint}`) }}
 		</p>
 		<p v-else-if="state.status === 'preparing'" role="status" class="text-small text-graphite">
