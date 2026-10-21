@@ -2,17 +2,17 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import {
-	AttributeSymbol,
-	humanizeKey,
-	useRouteAttributes,
-	weightMessage,
-} from '@/features/route-planner'
-
+import { useRouteAttributes } from '../api'
+import { humanizeKey, weightMessage } from '../attributes'
 import { needsCoverageNote, profileRows, scoreWord } from '../profile'
-import type { SavedRoute } from '../types'
+import type { AttributeScore } from '../types'
+import AttributeSymbol from './AttributeSymbol.vue'
 
-const props = defineProps<{ route: SavedRoute }>()
+const props = defineProps<{
+	scores: Record<string, AttributeScore>
+	/** The weights the route was planned with, which are shown first. */
+	preferences: Record<string, number>
+}>()
 
 const HEADING_ID = 'route-profile-heading'
 
@@ -28,23 +28,23 @@ const name = (key: string) =>
 
 const rows = computed(() =>
 	profileRows(
-		props.route.scores,
-		props.route.preferences,
+		props.scores,
+		props.preferences,
 		(attributes.data.value ?? []).map((a) => a.key),
 	).map((row) => ({
 		...row,
 		name: name(row.key),
-		word: t(`savedRoutes.profile.words.${scoreWord(row.mean)}`),
+		word: t(`route.profile.words.${scoreWord(row.mean)}`),
 		wanted:
 			row.weight === 0
 				? null
-				: t('savedRoutes.profile.wanted', {
+				: t('route.profile.wanted', {
 						weight: t(weightMessage(row.key, row.weight, (path) => i18n.te(path))),
 					}),
 		known: needsCoverageNote(row.coverage)
-			? t('savedRoutes.profile.known', { percent: percent(row.coverage) })
+			? t('route.profile.known', { percent: percent(row.coverage) })
 			: null,
-		spoken: t('savedRoutes.profile.spoken', {
+		spoken: t('route.profile.spoken', {
 			percent: percent(row.mean),
 			known: percent(row.coverage),
 		}),
@@ -57,9 +57,9 @@ const rows = computed(() =>
 
 <template>
 	<section :aria-labelledby="HEADING_ID" class="flex flex-col gap-3">
-		<h2 :id="HEADING_ID" class="text-title">{{ t('savedRoutes.profile.title') }}</h2>
+		<h2 :id="HEADING_ID" class="text-title">{{ t('route.profile.title') }}</h2>
 		<p v-if="rows.length === 0" class="text-small text-graphite">
-			{{ t('savedRoutes.profile.empty') }}
+			{{ t('route.profile.empty') }}
 		</p>
 		<ul v-else class="flex flex-col gap-2.5">
 			<li v-for="row in rows" :key="row.key" class="flex items-center gap-2">

@@ -3,11 +3,10 @@ import { CircleAlert } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { AttributeSymbol, humanizeKey, useRouteAttributes } from '@/features/route-planner'
+import { AttributeSymbol, humanizeKey, plannedFirst, useRouteAttributes } from '@/features/route'
 import { Button } from '@/shared/ui/button'
 
 import { useSaveRouteReview } from '../api'
-import { plannedFirst } from '../profile'
 import { answeredOnly, type Answer, type PreferenceChange } from '../review'
 import type { SavedRoute } from '../types'
 import AnswerChoice from './AnswerChoice.vue'

@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
-import { humanizeKey, weightWord } from '@/features/route-planner'
+import { humanizeKey, weightWord } from '@/features/route'
 import { Button } from '@/shared/ui/button'
 
 import { changeKind, sliderPercent, type PreferenceChange } from '../review'

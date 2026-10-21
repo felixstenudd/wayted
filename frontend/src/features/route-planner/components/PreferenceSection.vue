@@ -3,10 +3,10 @@ import { CircleAlert } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { groupAttributes, humanizeKey, useRouteAttributes } from '@/features/route'
+
 import { Button } from '@/shared/ui/button'
 
-import { useRouteAttributes } from '../api'
-import { groupAttributes, humanizeKey } from '../attributes'
 import { usePlannerStore } from '../store'
 import PlannerDefaults from './PlannerDefaults.vue'
 import PreferenceRow from './PreferenceRow.vue'

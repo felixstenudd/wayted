@@ -2,10 +2,9 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { humanizeKey, useRouteAttributes } from '@/features/route-planner'
+import { humanizeKey, plannedFirst, useRouteAttributes } from '@/features/route'
 import { Button } from '@/shared/ui/button'
 
-import { plannedFirst } from '../profile'
 import { ANSWERS } from '../review'
 import type { SavedRoute } from '../types'
 

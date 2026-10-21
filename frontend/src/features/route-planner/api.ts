@@ -2,20 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, type ComputedRef } from 'vue'
 
 import { useAuthStore } from '@/features/auth'
+import { storedPreferencesKey } from '@/features/route'
 
 import { PREPARING_POLL_MS, routeState, shouldPoll, type RouteState } from './route'
 import { usePlannerStore } from './store'
-import type { RouteAnswer, RouteAttribute, StoredPreferences } from './types'
-
-export function useRouteAttributes() {
-	const auth = useAuthStore()
-	return useQuery({
-		queryKey: ['routing', 'attributes'],
-		queryFn: () => auth.authedRequest<RouteAttribute[]>('/routing/attributes'),
-		// The list changes with a backend release, not during a session.
-		staleTime: Infinity,
-	})
-}
+import type { RouteAnswer, StoredPreferences } from './types'
 
 /**
  * The route for the planner's current search. The backend answers 202 until the map data around
@@ -53,9 +44,6 @@ export function useFoundRoute(): ComputedRef<RouteState> {
 		}),
 	)
 }
-
-// Exported for route reviews, which nudge these weights and mark them stale.
-export const storedPreferencesKey = ['logbook', 'preferences'] as const
 
 /** The user's stored weights, which the planner starts from. */
 export function useStoredPreferences() {

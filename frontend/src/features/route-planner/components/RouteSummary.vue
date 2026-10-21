@@ -3,7 +3,8 @@ import { TriangleAlert } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { humanizeKey } from '../attributes'
+import { humanizeKey } from '@/features/route'
+
 import { formatKm } from '../distance'
 import type { Route } from '../types'
 

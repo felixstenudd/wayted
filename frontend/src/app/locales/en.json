@@ -276,20 +276,6 @@
 			"missing": "This route doesn't exist or was deleted.",
 			"loadFailed": "The route could not be loaded. Check your connection, then try again."
 		},
-		"profile": {
-			"title": "Route profile",
-			"empty": "This area hasn't been scored yet, so there is nothing to show.",
-			"wanted": "You wanted: {weight}",
-			"known": "Scored for {percent}% of the route",
-			"spoken": ", {percent} percent where scored, which is {known} percent of the route",
-			"words": {
-				"none": "None",
-				"aLittle": "A little",
-				"some": "Some",
-				"aLot": "A lot",
-				"mostly": "Mostly"
-			}
-		},
 		"rename": {
 			"start": "Rename",
 			"label": "Route name",
@@ -413,6 +399,22 @@
 			"safety_bad": "Feels unsafe",
 			"crowding_bad": "Crowded",
 			"access_bad": "Blocked or closed"
+		}
+	},
+	"route": {
+		"profile": {
+			"title": "Route profile",
+			"empty": "This area hasn't been scored yet, so there is nothing to show.",
+			"wanted": "You wanted: {weight}",
+			"known": "Scored for {percent}% of the route",
+			"spoken": ", {percent} percent where scored, which is {known} percent of the route",
+			"words": {
+				"none": "None",
+				"aLittle": "A little",
+				"some": "Some",
+				"aLot": "A lot",
+				"mostly": "Mostly"
+			}
 		}
 	}
 }

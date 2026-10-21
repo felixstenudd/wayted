@@ -1,9 +1,6 @@
 export type ScoreWord = 'none' | 'aLittle' | 'some' | 'aLot' | 'mostly'
 
-export interface AttributeScore {
-	mean: number
-	coverage: number
-}
+import type { AttributeScore } from './types'
 
 export interface ProfileRow extends AttributeScore {
 	key: string

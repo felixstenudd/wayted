@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/features/auth'
-import { storedPreferencesKey } from '@/features/route-planner'
+import { storedPreferencesKey } from '@/features/route'
 
 import type { ReviewReason } from './reasons'
 import type {
