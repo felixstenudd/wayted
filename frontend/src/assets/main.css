@@ -25,6 +25,9 @@
 	--focus-ring: var(--ink);
 	--vegetation: oklch(51.5% 0.123 147.4);
 	--contour: oklch(49.2% 0.129 46.1);
+	/* The course in faded print, for one that no longer holds. Mixed toward white, the base map's
+	   ground in both themes, so the map does not show through it and muddy it. */
+	--overprint-faded: color-mix(in oklab, var(--overprint) 45%, oklch(100% 0 0));
 
 	--elevation-float:
 		0 1px 2px oklch(20.4% 0.007 258.4 / 0.08), 0 6px 20px oklch(20.4% 0.007 258.4 / 0.1);

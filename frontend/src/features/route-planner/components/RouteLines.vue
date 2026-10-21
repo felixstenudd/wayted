@@ -125,22 +125,42 @@ useMapLayerCursor('route-options', 'pointer')
 watch(editing.isPending, (pending) => {
 	if (!pending) dropped.value = null
 })
-// While an edit is on its way, or the route is out of date, the course dims.
-const courseOpacity = () => (editing.isPending.value || planner.isStale ? 0.45 : 1)
-useMapPaint('route-line', 'line-opacity', courseOpacity)
-useMapPaint('route-edge', 'line-opacity', courseOpacity)
 
-// The preview is drawn over the route, see-through, so the new stretch reads as not yet made.
+// How the course is printed. Faded: it no longer holds, because the settings changed or because a
+// drag is previewing what replaces it. Updating: an edit of it is on its way.
+const look = computed<'printed' | 'faded' | 'updating'>(() => {
+	if (editing.isPending.value) return 'updating'
+	return planner.isStale || preview.answer.value ? 'faded' : 'printed'
+})
+const DASHED = [1.5, 1]
+const SOLID = [1, 0]
+useMapPaint('route-line', 'line-color', () =>
+	tokenColor(look.value === 'faded' ? '--overprint-faded' : '--overprint'),
+)
+useMapPaint('route-edge', 'line-color', () =>
+	tokenColor(look.value === 'faded' ? '--line-strong' : '--overprint-contrast'),
+)
+useMapPaint('route-line', 'line-dasharray', () => (look.value === 'updating' ? DASHED : SOLID))
+// Out of date, the other options step back further, below the faded course.
+useMapPaint('route-options', 'line-opacity', () => (planner.isStale ? 0.35 : 0.75))
+
+// The preview is printed as the course, over the faded one it would replace.
 const previewLine = computed<MapData>(() => {
 	const previewed = preview.answer.value
 	return previewed ? { ...previewed.answer.route, properties: {} } : EMPTY
 })
 useMapSource('route-preview', previewLine, [
 	{
+		id: 'route-preview-edge',
+		type: 'line',
+		layout: round,
+		paint: { 'line-color': tokenColor('--overprint-contrast'), 'line-width': 7 },
+	},
+	{
 		id: 'route-preview',
 		type: 'line',
 		layout: round,
-		paint: { 'line-color': tokenColor('--overprint'), 'line-width': 5, 'line-opacity': 0.55 },
+		paint: { 'line-color': tokenColor('--overprint'), 'line-width': 4 },
 	},
 ])
 // The held handle: at the pointer while dragging, then at the drop until the edit answers.
