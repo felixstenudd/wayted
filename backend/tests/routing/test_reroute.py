@@ -142,3 +142,38 @@ async def test_edges_that_do_not_join_up_are_rejected(
 
     with pytest.raises(psycopg.errors.InvalidParameterValue):
         await reroute(api_pool, broken, grid_point(12, 12), grid_point(12.5, 14))
+
+
+def turns_back(route: dict[str, Any]) -> list[int]:
+    """Edges the route travels and then straight back along: a spur."""
+    steps = route["edges"]
+    return [
+        a["edge_id"]
+        for a, b in zip(steps, steps[1:], strict=False)
+        if a["edge_id"] == b["edge_id"] and a["forward"] != b["forward"]
+    ]
+
+
+@pytest.mark.parametrize(
+    ("grab", "drop"),
+    [
+        ((12, 12), (12.5, 14)),
+        ((12, 12), (9.5, 13)),
+        ((12, 12), (14.5, 11)),
+        ((6, 12), (5.5, 13)),
+        ((18, 12), (18.5, 10)),
+    ],
+)
+async def test_an_edit_carries_on_the_way_the_route_was_going(
+    admin_conn: Conn,
+    mapper_pool: Pool,
+    api_pool: Pool,
+    grab: tuple[float, float],
+    drop: tuple[float, float],
+) -> None:
+    route = await straight(admin_conn, mapper_pool, api_pool)
+
+    edited = await reroute(api_pool, route, grid_point(*grab), grid_point(*drop))
+
+    assert turns_back(edited) == []
+    assert ends(edited) == (coordinates(2, 12), coordinates(22, 12))
