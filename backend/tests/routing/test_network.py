@@ -117,7 +117,7 @@ async def test_activity_edges_take_the_factor_of_their_highway_class(
 
     assert rows == [
         (10, "cycling", 1.1),
-        (10, "running", 1.1),
+        (10, "running", 1.2),
         (11, "cycling", 1.0),
         (11, "running", 1.0),
     ]
@@ -262,6 +262,41 @@ async def test_route_takes_the_park_when_green_is_preferred(
 
     assert indifferent == [STRAIGHT]
     assert green == [DETOUR]
+
+
+async def test_a_run_takes_the_shared_path_beside_the_street(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    street, shared = 20, 21
+    start, end = (51, 0, 0), (52, 40, 0)
+    # About 2.3 km of street, and a shared foot and cycle path one row beside it, as Swedish paths
+    # are mapped: about 6 % longer.
+    await add_line(admin_conn, street, [start, end], {"highway": "residential"})
+    await add_line(
+        admin_conn,
+        shared,
+        [start, (53, 1, 1), (54, 39, 1), end],
+        {"highway": "cycleway", "foot": "designated"},
+    )
+    await map_pending(mapper_pool.connection)
+
+    async with api_pool.connection() as conn:
+        ways = await route_ways(conn, await cost_sql(conn, "running", {}), 51, 52)
+
+    assert set(ways) == {shared}
+
+
+async def test_busier_roads_cost_a_run_more(api_pool: Pool) -> None:
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT highway, factor FROM ref.activity_highway_factors WHERE activity = 'running'"
+        )
+        factor: dict[str, float] = dict(await cur.fetchall())
+
+    assert factor["cycleway"] == factor["footway"]
+    busier = ["footway", "residential", "tertiary", "secondary", "primary", "trunk"]
+    assert [factor[h] for h in busier] == sorted(factor[h] for h in busier)
+    assert len({factor[h] for h in busier}) == len(busier)
 
 
 async def test_planned_route_without_a_target_takes_the_park_when_green_is_preferred(
