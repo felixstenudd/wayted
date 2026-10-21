@@ -95,6 +95,14 @@ class PlannedRouteOut(Feature[LineString, RoutePropertiesOut]):
     """The route as a GeoJSON Feature, its line in travel order."""
 
 
+class PlannedRoutesOut(BaseModel):
+    """One to three routes that go different ways, the best first, as a GeoJSON
+    FeatureCollection."""
+
+    type: Literal["FeatureCollection"] = "FeatureCollection"
+    features: list[PlannedRouteOut]
+
+
 class PreparingOut(BaseModel):
     """The map data around the route is still being downloaded or scored; ask again shortly."""
 

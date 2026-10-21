@@ -94,7 +94,11 @@ async def test_area_in_the_graph_gets_a_route(
     res = await client.post("/routing/routes", json=LOOP)
 
     assert res.status_code == 200
-    route = res.json()
+    found = res.json()
+    assert found["type"] == "FeatureCollection"
+    # The best first, then the options.
+    assert 1 <= len(found["features"]) <= 3
+    route = found["features"][0]
     assert route["type"] == "Feature"
     assert route["geometry"]["type"] == "LineString"
     assert route["geometry"]["coordinates"][0] == route["geometry"]["coordinates"][-1]
@@ -121,7 +125,7 @@ async def test_route_to_a_finish_needs_no_target(
     res = await client.post("/routing/routes", json=request)
 
     assert res.status_code == 200
-    properties = res.json()["properties"]
+    properties = res.json()["features"][0]["properties"]
     # Four blocks east.
     assert properties["length_m"] == pytest.approx(4 * 113.7, rel=0.01)
     assert properties["warnings"] == []
@@ -203,7 +207,7 @@ async def test_route_passes_its_waypoints_and_says_in_which_order(
     res = await client.post("/routing/routes", json=request)
 
     assert res.status_code == 200
-    assert res.json()["properties"]["waypoint_order"] == [1, 0]
+    assert res.json()["features"][0]["properties"]["waypoint_order"] == [1, 0]
 
 
 async def test_waypoints_widen_the_area_that_is_prepared(api_pool: Pool) -> None:

@@ -1,5 +1,5 @@
 import { findRoutesError, type FindRoutesError } from './findRoutesError'
-import type { Route, RouteAnswer } from './types'
+import type { FoundRoutes, Route, RouteAnswer } from './types'
 
 // The backend answers 202 while it downloads and scores the map data around the route.
 export const PREPARING_POLL_MS = 3_000
@@ -11,7 +11,8 @@ export type RouteState =
 	| { status: 'idle' }
 	| { status: 'finding' }
 	| { status: 'preparing' }
-	| { status: 'found'; route: Route }
+	// the best first
+	| { status: 'found'; routes: Route[] }
 	| { status: 'failed'; error: FindRoutesError }
 
 /** The query for the current search, as vue-query reports it. */
@@ -25,8 +26,8 @@ export interface RouteQueryState {
 	answeredAt: number
 }
 
-export function isRoute(answer: RouteAnswer | undefined): answer is Route {
-	return answer !== undefined && 'type' in answer
+export function isFound(answer: RouteAnswer | undefined): answer is FoundRoutes {
+	return answer !== undefined && 'features' in answer
 }
 
 /**
@@ -38,14 +39,14 @@ export function shouldPoll(
 	startedAt: number,
 	answeredAt: number,
 ): boolean {
-	return answer !== undefined && !isRoute(answer) && answeredAt - startedAt < MAX_PREPARING_MS
+	return answer !== undefined && !isFound(answer) && answeredAt - startedAt < MAX_PREPARING_MS
 }
 
 export function routeState(query: RouteQueryState): RouteState {
 	if (!query.isSearching) return { status: 'idle' }
 	const error = findRoutesError(query.error)
 	if (error) return { status: 'failed', error }
-	if (isRoute(query.answer)) return { status: 'found', route: query.answer }
+	if (isFound(query.answer)) return { status: 'found', routes: query.answer.features }
 	if (query.answer === undefined) return { status: 'finding' }
 	if (query.isFetching || shouldPoll(query.answer, query.startedAt, query.answeredAt))
 		return { status: 'preparing' }

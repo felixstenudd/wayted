@@ -17,6 +17,7 @@ from .schemas import (
     EdgeStepOut,
     NoRouteOut,
     PlannedRouteOut,
+    PlannedRoutesOut,
     PreparingOut,
     RoutePropertiesOut,
     RouteRequestIn,
@@ -54,7 +55,7 @@ def _query(request: RouteRequestIn) -> service.RouteQuery:
 
 @router.post(
     "/routes",
-    response_model=PlannedRouteOut,
+    response_model=PlannedRoutesOut,
     responses={
         status.HTTP_202_ACCEPTED: {"model": PreparingOut},
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
@@ -66,10 +67,10 @@ def _query(request: RouteRequestIn) -> service.RouteQuery:
 )
 async def routes(
     _: UserId, request: RouteRequestIn, db_conn: Conn
-) -> PlannedRouteOut | JSONResponse:
+) -> PlannedRoutesOut | JSONResponse:
     """
-    Plan a route. Answers 202 while the map data around it is downloaded and scored; the
-    client asks again until it gets the route.
+    Plan a route, with up to two options that go other ways. Answers 202 while the map data
+    around it is downloaded and scored; the client asks again until it gets the routes.
     """
     query = _query(request)
     # Commit before planning: the worker only sees the queued tiles once they are committed.
@@ -78,11 +79,15 @@ async def routes(
     if not ready:
         return JSONResponse(PreparingOut().model_dump(), status.HTTP_202_ACCEPTED)
     try:
-        route = await service.plan(db_conn, query)
+        found = await service.plan(db_conn, query)
     except service.NoRoute as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, e.reason) from None
     except service.PlanningTimeout as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from None
+    return PlannedRoutesOut(features=[_feature(route) for route in found])
+
+
+def _feature(route: service.PlannedRoute) -> PlannedRouteOut:
     return PlannedRouteOut(
         geometry=LineString(**route.geometry),
         properties=RoutePropertiesOut(

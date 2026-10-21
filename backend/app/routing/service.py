@@ -192,10 +192,11 @@ async def prepare(conn: AsyncConnection[TupleRow], query: RouteQuery) -> bool:
     return not row[0]
 
 
-async def plan(conn: AsyncConnection[TupleRow], query: RouteQuery) -> PlannedRoute:
+async def plan(conn: AsyncConnection[TupleRow], query: RouteQuery) -> list[PlannedRoute]:
     """
-    Plan a route of about query.target_m, or the most pleasant way to the finish without one.
-    Weights for attributes that are not scored are dropped.
+    Plan a route of about query.target_m, or the most pleasant way to the finish without one,
+    with up to two other options that go other ways: the best first. Weights for attributes that
+    are not scored are dropped.
 
     Raises NoRoute when there is none, and PlanningTimeout when planning takes too long.
     """
@@ -213,6 +214,10 @@ async def plan(conn: AsyncConnection[TupleRow], query: RouteQuery) -> PlannedRou
         raise PlanningTimeout(f"Planning took longer than {PLAN_TIMEOUT}.") from None
     assert row is not None
     route: dict[str, Any] = row[0]
+    return [_planned(route), *(_planned(option) for option in route["options"])]
+
+
+def _planned(route: dict[str, Any]) -> PlannedRoute:
     return PlannedRoute(
         geometry=route["geometry"],
         length_m=route["length_m"],

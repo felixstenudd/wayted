@@ -15,6 +15,9 @@ const { t } = useI18n()
 const planner = usePlannerStore()
 const state = useFoundRoute()
 
+const bestRoute = computed(() =>
+	state.value.status === 'found' ? state.value.routes[0] : undefined,
+)
 const isBusy = computed(() => ['finding', 'preparing'].includes(state.value.status))
 // Not the user's mistake: said plainly, not in the error colour.
 const isNotice = computed(
@@ -60,8 +63,8 @@ const isNotice = computed(
 			{{ t(`planner.findRoutes.errors.${state.error}`) }}
 		</p>
 		<RouteSummary
-			v-else-if="state.status === 'found' && planner.search"
-			:route="state.route"
+			v-else-if="bestRoute && planner.search"
+			:route="bestRoute"
 			:target-m="planner.search.request.target_distance_m"
 		/>
 	</div>

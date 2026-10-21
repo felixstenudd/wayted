@@ -570,6 +570,9 @@ async def test_unreachable_finish_is_an_error(
         (3_000, {"plan": {"snap": 50}}),
         (3_000, {"plan": {"snap_m": -1}}),
         (3_000, {"turns": {"turn_m": -1}}),
+        (3_000, {"options": {"count": 0}}),
+        (3_000, {"options": {"overlap": 0}}),
+        (3_000, {"options": {"overlap": 1.5}}),
     ],
 )
 async def test_bad_target_or_settings_are_rejected(
@@ -722,3 +725,105 @@ async def test_bad_waypoints_are_rejected(api_pool: Pool, waypoints: object) -> 
     async with api_pool.connection() as conn:
         with pytest.raises(psycopg.errors.InvalidParameterValue, match="waypoint"):
             await conn.execute("SELECT * FROM routing.read_waypoints(%s)", (Jsonb(waypoints),))
+
+
+async def shared_m(pool: Pool, a: dict[str, Any], b: dict[str, Any]) -> float:
+    """The length of the edges two routes both use, each counted once."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT coalesce(sum(length_m), 0) FROM graph.edges
+            WHERE id = ANY (%s::bigint[]) AND id = ANY (%s::bigint[])
+            """,
+            ([s["edge_id"] for s in a["edges"]], [s["edge_id"] for s in b["edges"]]),
+        )
+        row = await cur.fetchone()
+    assert row is not None
+    shared: float = row[0]
+    return shared
+
+
+async def test_loop_comes_with_options_that_go_other_ways(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    route = await plan(api_pool, "running", CENTRE, None, 3_000)
+
+    routes = [route, *route["options"]]
+    assert len(routes) == 3
+    for option in route["options"]:
+        assert option["length_m"] == pytest.approx(3_000, rel=TOLERANCE)
+        assert ends(option) == (coordinates(12, 12), coordinates(12, 12))
+        assert set(option) >= {"geometry", "edges", "scores", "warnings", "waypoint_order"}
+    for i, a in enumerate(routes):
+        for b in routes[i + 1 :]:
+            shorter_m = min(a["length_m"], b["length_m"])
+            assert await shared_m(api_pool, a, b) <= 0.5 * shorter_m
+
+
+async def test_options_can_be_turned_off_or_run_out_of_time(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    single = await plan(
+        api_pool, "running", CENTRE, None, 3_000, settings={"options": {"count": 1}}
+    )
+    rushed = await plan(
+        api_pool, "running", CENTRE, None, 3_000, settings={"options": {"budget_ms": 0}}
+    )
+
+    assert single["options"] == []
+    assert rushed["options"] == []
+    assert rushed["edges"] == single["edges"]
+
+
+async def test_options_never_score_much_worse_than_the_best(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    # A park in one corner makes one way round clearly the best.
+    await admin_conn.execute(
+        """
+        UPDATE graph.edges SET scores = '{"green": 1}'
+        WHERE source IN (SELECT id FROM graph.vertices WHERE ST_Y(geom) > %s AND ST_X(geom) < %s)
+        """,
+        (ORIGIN_LAT + 13 * STEP, ORIGIN_LON + 11 * COLUMN_STEPS * STEP),
+    )
+
+    strict = await plan(
+        api_pool, "running", CENTRE, None, 3_000, {"green": 1}, {"options": {"margin": 0.01}}
+    )
+    loose = await plan(api_pool, "running", CENTRE, None, 3_000, {"green": 1})
+
+    assert len(strict["options"]) < len(loose["options"])
+    for option in strict["options"]:
+        assert option["scores"]["green"]["mean"] > 0.5
+
+
+async def test_options_with_waypoints_all_pass_them(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    # Reached first, so the piece after it, which options vary, has most of the target to shape.
+    near = waypoint(13, 13, at="asap")
+
+    route = await plan(api_pool, "running", CENTRE, None, 4_000, waypoints=[near])
+
+    assert route["options"]
+    for option in route["options"]:
+        _, off_m = await passed(api_pool, option, 13, 13)
+        assert off_m < 1
+        assert option["waypoint_order"] == [0]
+        assert option["length_m"] == pytest.approx(4_000, rel=TOLERANCE)
+
+
+async def test_route_without_a_target_has_no_options_yet(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    route = await plan(api_pool, "running", CENTRE, EAST, None)
+
+    assert route["options"] == []

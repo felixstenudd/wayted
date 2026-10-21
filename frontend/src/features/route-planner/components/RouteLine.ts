@@ -9,7 +9,9 @@ export default defineComponent({
 	name: 'RouteLine',
 	setup() {
 		const state = useFoundRoute()
-		const route = computed(() => (state.value.status === 'found' ? state.value.route : null))
+		const route = computed(() =>
+			state.value.status === 'found' ? (state.value.routes[0] ?? null) : null,
+		)
 		const { showBounds } = useMapView()
 
 		// The course is drawn in overprint over an overprint-contrast edge, so it shows on both

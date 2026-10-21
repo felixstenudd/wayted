@@ -14,8 +14,10 @@ export type Route = components['schemas']['PlannedRouteOut']
 export type RouteWarning = components['schemas']['RouteWarning']
 /** Why the backend found no route. */
 export type NoRouteReason = components['schemas']['Reason']
-/** What POST /routing/routes answers: the route, or that the map data is still being prepared. */
-export type RouteAnswer = Route | components['schemas']['PreparingOut']
+/** One to three routes that go different ways, the best first: a GeoJSON FeatureCollection. */
+export type FoundRoutes = components['schemas']['PlannedRoutesOut']
+/** What POST /routing/routes answers: the routes, or that the map data is still being prepared. */
+export type RouteAnswer = FoundRoutes | components['schemas']['PreparingOut']
 
 /** A press of Find routes. Each one is planned anew, even for the same request. */
 export interface RouteSearch {

@@ -326,8 +326,8 @@ export interface paths {
         put?: never;
         /**
          * Routes
-         * @description Plan a route. Answers 202 while the map data around it is downloaded and scored; the
-         *     client asks again until it gets the route.
+         * @description Plan a route, with up to two options that go other ways. Answers 202 while the map data
+         *     around it is downloaded and scored; the client asks again until it gets the routes.
          */
         post: operations["routes_routing_routes_post"];
         delete?: never;
@@ -471,6 +471,21 @@ export interface components {
             type: "Feature";
             geometry: components["schemas"]["LineString"];
             properties: components["schemas"]["RoutePropertiesOut"];
+        };
+        /**
+         * PlannedRoutesOut
+         * @description One to three routes that go different ways, the best first, as a GeoJSON
+         *     FeatureCollection.
+         */
+        PlannedRoutesOut: {
+            /**
+             * Type
+             * @default FeatureCollection
+             * @constant
+             */
+            type: "FeatureCollection";
+            /** Features */
+            features: components["schemas"]["PlannedRouteOut"][];
         };
         /** PointIn */
         PointIn: {
@@ -1521,7 +1536,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlannedRouteOut"];
+                    "application/json": components["schemas"]["PlannedRoutesOut"];
                 };
             };
             /** @description Accepted */

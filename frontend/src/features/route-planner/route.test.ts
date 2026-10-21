@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ApiError } from '@/shared/api'
 
 import { MAX_PREPARING_MS, routeState, shouldPoll, type RouteQueryState } from './route'
-import type { Route } from './types'
+import type { FoundRoutes, Route } from './types'
 
 const ROUTE: Route = {
 	type: 'Feature',
@@ -23,6 +23,7 @@ const ROUTE: Route = {
 		waypoint_order: [],
 	},
 }
+const FOUND: FoundRoutes = { type: 'FeatureCollection', features: [ROUTE] }
 const PREPARING = { status: 'preparing' } as const
 
 const query = (state: Partial<RouteQueryState>): RouteQueryState => ({
@@ -45,14 +46,14 @@ describe('shouldPoll', () => {
 	})
 
 	it('stops with the route, or before any answer', () => {
-		expect(shouldPoll(ROUTE, 0, 0)).toBe(false)
+		expect(shouldPoll(FOUND, 0, 0)).toBe(false)
 		expect(shouldPoll(undefined, 0, 0)).toBe(false)
 	})
 })
 
 describe('routeState', () => {
 	it('is idle without a search', () => {
-		expect(routeState(query({ isSearching: false, answer: ROUTE }))).toEqual({ status: 'idle' })
+		expect(routeState(query({ isSearching: false, answer: FOUND }))).toEqual({ status: 'idle' })
 	})
 
 	it('is finding until the first answer', () => {
@@ -67,7 +68,7 @@ describe('routeState', () => {
 	})
 
 	it('has found the route the backend answered with', () => {
-		expect(routeState(query({ answer: ROUTE }))).toEqual({ status: 'found', route: ROUTE })
+		expect(routeState(query({ answer: FOUND }))).toEqual({ status: 'found', routes: [ROUTE] })
 	})
 
 	it('has failed on an error, even after preparing', () => {
