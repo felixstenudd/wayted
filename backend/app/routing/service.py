@@ -80,7 +80,8 @@ class RouteQuery:
     start: Coordinate
     # None for a loop back to the start
     finish: Coordinate | None
-    target_m: float
+    # None for the most pleasant way to the finish, however long; a loop needs one
+    target_m: float | None
     # attribute key -> weight from -1 (avoid) to 1 (prefer)
     weights: Mapping[str, float]
 
@@ -138,7 +139,8 @@ async def prepare(conn: AsyncConnection[TupleRow], query: RouteQuery) -> bool:
 
 async def plan(conn: AsyncConnection[TupleRow], query: RouteQuery) -> PlannedRoute:
     """
-    Plan a route of about query.target_m. Weights for attributes that are not scored are dropped.
+    Plan a route of about query.target_m, or the most pleasant way to the finish without one.
+    Weights for attributes that are not scored are dropped.
 
     Raises NoRoute when there is none, and PlanningTimeout when planning takes too long.
     """

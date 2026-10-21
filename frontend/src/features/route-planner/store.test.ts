@@ -118,6 +118,26 @@ describe('route request', () => {
 		expect(planner.routeRequest).toMatchObject({ shape: 'point_to_point', finish: TAVLEBORG })
 	})
 
+	it('leaves the distance out from point to point when any length will do', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.shape = 'point_to_point'
+		planner.finish = TAVLEBORG
+
+		planner.hasTargetDistance = false
+
+		expect(planner.routeRequest).not.toHaveProperty('target_distance_m')
+	})
+
+	it('always gives a loop a distance', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.hasTargetDistance = false
+
+		expect(planner.usesTargetDistance).toBe(true)
+		expect(planner.routeRequest).toMatchObject({ shape: 'loop', target_distance_m: 5_000 })
+	})
+
 	it('keeps the finish for later but leaves it out of a loop', () => {
 		const planner = usePlannerStore()
 		planner.start = UMEA

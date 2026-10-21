@@ -249,6 +249,30 @@ async def test_route_takes_the_park_when_green_is_preferred(
     assert green == [DETOUR]
 
 
+async def test_planned_route_without_a_target_takes_the_park_when_green_is_preferred(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, api_pool: Pool
+) -> None:
+    await two_paths(admin_conn, mapper_pool, enricher_pool)
+
+    async def ways(weights: dict[str, float]) -> list[int]:
+        async with api_pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT e.way_id
+                FROM jsonb_array_elements_text(
+                         routing.plan_route('running', %s, %s, NULL, %s) -> 'edges'
+                     ) WITH ORDINALITY AS r(id, n)
+                JOIN graph.edges e ON e.id = r.id::bigint
+                ORDER BY r.n
+                """,
+                (point(0, 0), point(10, 0), Jsonb(weights)),
+            )
+            return [way_id for (way_id,) in await cur.fetchall()]
+
+    assert await ways({}) == [STRAIGHT]
+    assert await ways({"green": 1}) == [DETOUR]
+
+
 async def test_route_avoids_edges_it_already_used(
     admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, api_pool: Pool
 ) -> None:
@@ -281,7 +305,7 @@ async def test_route_keeps_to_the_area(
     assert ways == [DETOUR]
 
 
-async def test_snap_finds_the_nearest_vertex_the_activity_can_use(
+async def test_near_vertices_are_those_the_activity_can_use(
     admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
 ) -> None:
     await add_line(admin_conn, 10, [(1, 0, 0), (2, 2, 0)], {"highway": "footway"})
@@ -292,16 +316,76 @@ async def test_snap_finds_the_nearest_vertex_the_activity_can_use(
     async with api_pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT routing.snap('running', %(p)s, 100),
-                   routing.snap('cycling', %(p)s, 200),
-                   routing.snap('cycling', %(p)s, 50)
+            SELECT (SELECT array_agg(vertex ORDER BY distance_m)
+                    FROM routing.near_vertices(a.activity, %(p)s, a.max_m))
+            FROM (VALUES ('running', 100), ('cycling', 200), ('cycling', 50)) a(activity, max_m)
             """,
             {"p": near_footway},
         )
-        row = await cur.fetchone()
+        rows = await cur.fetchall()
 
-    # Cyclists may not use the footway, so they snap to the street, unless it is too far.
-    assert row == (1, 3, None)
+    # Cyclists may not use the footway, so only the street is near, unless it is too far.
+    assert rows == [([1],), ([3, 4],), (None,)]
+
+
+async def isolated_footway_beside_a_street(conn: Conn, mapper_pool: Pool) -> None:
+    """A footway joined to nothing, 111 m north of a 570 m street that starts below it."""
+    await add_line(conn, 10, [(1, 0, 1), (2, 2, 1)], {"highway": "footway"})
+    await add_line(conn, 11, [(3, 0, 0), (4, 10, 0)], {"highway": "residential"})
+    await map_pending(mapper_pool.connection)
+
+
+async def snap_points(pool: Pool, points: list[str], min_network_m: float) -> list[int] | None:
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT routing.snap_points(
+                       routing.make_profile('running'), NULL,
+                       ARRAY(SELECT p::geometry FROM unnest(%s::text[]) p), %s
+                   )
+            """,
+            (points, min_network_m),
+        )
+        row = await cur.fetchone()
+    assert row is not None
+    snapped: list[int] | None = row[0]
+    return snapped
+
+
+async def test_route_ends_snap_to_roads_that_join(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await isolated_footway_beside_a_street(admin_conn, mapper_pool)
+    # 44 m from the footway, 67 m from the street; the finish is by the street's far end.
+    start, finish = point(0, 0.6), point(10, 0.1)
+
+    assert await snap_points(api_pool, [start, finish], 0) == [3, 4]
+
+
+async def test_loop_start_snaps_to_a_network_long_enough(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await isolated_footway_beside_a_street(admin_conn, mapper_pool)
+    start = point(0, 0.6)
+
+    assert await snap_points(api_pool, [start], 0) == [1]
+    # The footway is 114 m long.
+    assert await snap_points(api_pool, [start], 200) == [3]
+    assert await snap_points(api_pool, [start], 1_000) is None
+
+
+@pytest.mark.parametrize(("points", "message"), [((40, 0), "start"), ((0, 40), "finish")])
+async def test_point_far_from_any_road_cannot_be_snapped(
+    admin_conn: Conn,
+    mapper_pool: Pool,
+    api_pool: Pool,
+    points: tuple[float, float],
+    message: str,
+) -> None:
+    await isolated_footway_beside_a_street(admin_conn, mapper_pool)
+
+    with pytest.raises(psycopg.errors.NoDataFound, match=f"no road near the {message}"):
+        await snap_points(api_pool, [point(points[0], 0), point(points[1], 0)], 0)
 
 
 async def test_only_the_api_may_plan_routes(mapper_pool: Pool, api_pool: Pool) -> None:

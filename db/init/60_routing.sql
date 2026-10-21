@@ -39,14 +39,16 @@ WHERE a.code = ANY (e.forward) OR a.code = ANY (e.backward);
 -- - doubling: the rules routing.doubled_m measures by.
 -- - score: what routing.score weighs, besides missing the target.
 -- - plan: tolerance, how far the length may miss the target; snap_m, how far a point may be from
---   the road it starts on; attempts at a goal, candidates kept from each and routes tried.
+--   the road it starts on; loop_network, how much road a loop needs around its start, as a share
+--   of the target (see routing.snap_points); attempts at a goal, candidates kept from each and
+--   routes tried.
 CREATE FUNCTION routing.defaults() RETURNS jsonb
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT '{
         "cost":     {"alpha": 0.7},
         "turns":    {"turn_m": 60, "free_deg": 30, "hairpin_deg": 120, "hairpin_m": 1000},
         "legs":     {"reuse_penalty": 4, "corridor_share": 0.5, "corridor_min_m": 300},
-        "area":     {"loop_share": 0.45, "min_m": 500},
+        "area":     {"loop_share": 0.45, "direct_share": 0.5, "min_m": 500},
         "loops":    {
             "sizes": [0.85, 1, 1.15], "ring_low": 0.27, "ring_aim": 0.3, "ring_high": 0.33,
             "bearings": 12, "corner_gap_deg": 60, "bearing_slack_deg": 15, "appeal_steps": 5
@@ -66,7 +68,10 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
             "lobe": {"sample_m": 100, "within_m": 300, "apart_m": 1000, "run_m": 300, "weight": 0.5}
         },
         "score":    {"preference": 0.3, "doubled": 2, "reused": 3},
-        "plan":     {"tolerance": 0.07, "snap_m": 200, "attempts": 2, "kept": 3, "routed": 3}
+        "plan":     {
+            "tolerance": 0.07, "snap_m": 200, "loop_network": 1,
+            "attempts": 2, "kept": 3, "routed": 3
+        }
     }'::jsonb
 $$;
 
@@ -272,14 +277,13 @@ LANGUAGE sql STABLE AS $$
     )
 $$;
 
--- The vertex nearest to p_point that p_activity can use, at most p_max_m metres away; NULL when
--- there is none. The bounding box keeps the index scan from walking the whole table when nothing
--- is near.
-CREATE FUNCTION routing.snap(
+-- The vertices p_activity can use at most p_max_m metres from p_point, and how far they are. The
+-- bounding box keeps the index scan from walking the whole table when nothing is near.
+CREATE FUNCTION routing.near_vertices(
     p_activity text, p_point geometry, p_max_m double precision
-) RETURNS bigint
+) RETURNS TABLE (vertex bigint, distance_m double precision)
 LANGUAGE sql STABLE AS $$
-    SELECT v.id
+    SELECT v.id, ST_Distance(v.geom::geography, p_point::geography)
     FROM graph.vertices v
     WHERE v.geom && ST_Buffer(p_point::geography, p_max_m)::geometry
       AND ST_DWithin(v.geom::geography, p_point::geography, p_max_m)
@@ -287,8 +291,81 @@ LANGUAGE sql STABLE AS $$
           SELECT 1 FROM routing.activity_edges e
           WHERE e.activity = p_activity AND (e.source = v.id OR e.target = v.id)
       )
-    ORDER BY v.geom <-> p_point
-    LIMIT 1
+$$;
+
+-- p_points snapped to vertices of p_profile's network in p_area, in order: within plan.snap_m of
+-- each point, and all in the same connected part of the network, so that the route can go from
+-- one to the next. The part has at least p_min_network_m of edges, which keeps a loop off a
+-- path that leads nowhere; of the parts that will do, the one nearest the points (by the sum of
+-- the distances) is taken, so a road a little farther away wins over a path cut off from the
+-- rest. Directions are ignored, so a part joined only against one-way streets counts as one.
+-- Raises no_data_found with DETAIL start_off_road (the first point) or finish_off_road (any
+-- other) when a point has no vertex near enough; returns NULL when no part will do.
+CREATE FUNCTION routing.snap_points(
+    p_profile routing.profile,
+    p_area geometry,
+    p_points geometry[],
+    p_min_network_m double precision
+) RETURNS bigint[]
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_snap_m  double precision := routing.setting(p_profile, 'plan', 'snap_m');
+    v_missing bigint;
+    v_snapped bigint[];
+BEGIN
+    SELECT min(p.i) INTO v_missing
+    FROM unnest(p_points) WITH ORDINALITY AS p(geom, i)
+    WHERE NOT EXISTS (SELECT 1 FROM routing.near_vertices(p_profile.activity, p.geom, v_snap_m));
+    IF v_missing = 1 THEN
+        RAISE EXCEPTION 'no road near the start'
+            USING ERRCODE = 'no_data_found', DETAIL = 'start_off_road';
+    ELSIF v_missing IS NOT NULL THEN
+        RAISE EXCEPTION 'no road near the finish'
+            USING ERRCODE = 'no_data_found', DETAIL = 'finish_off_road';
+    END IF;
+
+    WITH near AS MATERIALIZED (
+        SELECT p.i, n.vertex, n.distance_m
+        FROM unnest(p_points) WITH ORDINALITY AS p(geom, i),
+             routing.near_vertices(p_profile.activity, p.geom, v_snap_m) n
+    ),
+    parts AS MATERIALIZED (
+        SELECT c.node AS vertex, c.component
+        FROM pgr_connectedComponents(routing.length_sql(p_profile.activity, p_area)) c
+    ),
+    placed AS MATERIALIZED (
+        SELECT n.i, n.vertex, n.distance_m, p.component
+        FROM near n JOIN parts p USING (vertex)
+    ),
+    -- Only the parts some point is near are measured. An edge counts in the part of its source.
+    sizes AS (
+        SELECT p.component, sum(e.length_m) AS length_m
+        FROM parts p
+        JOIN graph.edges e ON e.source = p.vertex
+        WHERE p.component IN (SELECT component FROM placed)
+          AND p_profile.activity = ANY (e.forward || e.backward)
+        GROUP BY p.component
+    ),
+    chosen AS (
+        SELECT n.component
+        FROM (
+            SELECT component, i, min(distance_m) AS distance_m FROM placed GROUP BY component, i
+        ) n
+        JOIN sizes s USING (component)
+        WHERE s.length_m >= p_min_network_m
+        GROUP BY n.component
+        HAVING count(*) = cardinality(p_points)
+        ORDER BY sum(n.distance_m), n.component
+        LIMIT 1
+    )
+    SELECT array_agg(vertex ORDER BY i) INTO v_snapped
+    FROM (
+        SELECT DISTINCT ON (p.i) p.i, p.vertex
+        FROM placed p JOIN chosen USING (component)
+        ORDER BY p.i, p.distance_m, p.vertex
+    ) v;
+    RETURN v_snapped;
+END
 $$;
 
 -- Edges SQL for travelling p_sql's network backwards, so that a search from a vertex measures the
@@ -453,8 +530,10 @@ $$;
 -- of an open route is farther than (target - distance) / 2 from the line between its ends, and
 -- loop candidates lie within a third of the target of the start, so the area keeps every graph
 -- read near the route: loop_share of the target round the start of a loop, and at least min_m
--- (p_settings, the area settings). The API downloads the tiles covering it before planning, by
--- the default settings.
+-- (p_settings, the area settings). A route to a finish without a target (p_target_m NULL) keeps
+-- within direct_share of their distance of the line between them: the most pleasant way there
+-- bends away from the straight line, but not far. The API downloads the tiles covering it before
+-- planning, by the default settings.
 CREATE FUNCTION routing.search_area(
     p_start geometry,
     p_finish geometry,
@@ -475,7 +554,11 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
             ST_Buffer(
                 ST_MakeLine(p_start, p_finish)::geography,
                 greatest(
-                    (p_target_m - ST_Distance(p_start::geography, p_finish::geography)) / 2,
+                    coalesce(
+                        (p_target_m - ST_Distance(p_start::geography, p_finish::geography)) / 2,
+                        (p_settings ->> 'direct_share')::double precision
+                            * ST_Distance(p_start::geography, p_finish::geography)
+                    ),
                     (p_settings ->> 'min_m')::double precision
                 )
             )::geometry
@@ -1294,9 +1377,8 @@ LANGUAGE sql AS $$
     FROM total, shares, reused
 $$;
 
--- Plans a route of about p_target_m for p_activity from p_start to p_finish, or back to p_start
--- when p_finish is NULL, weighting edge scores by p_weights. p_settings overrides
--- routing.defaults() (see routing.make_profile); the plan settings are read here.
+-- The route from p_start to p_finish (the same vertex for a loop) that comes nearest p_target_m
+-- and scores best, as routing.route_json gives it. The plan settings are read here.
 -- Candidates are generated and scored in bulk; if the best misses the tolerance, the goal is
 -- scaled by how much it missed and candidates are tried again, up to attempts (2) times, keeping
 -- the best kept (3) of each. Evaluation leaves out the reuse penalty, so a route can come out
@@ -1304,87 +1386,49 @@ $$;
 -- too, up to routed (3) in all, and the one whose route scores best is returned. Warnings,
 -- judged on that route: too_short (the finish is farther than the target), target_missed (it
 -- misses the target by more than the tolerance).
--- Raises invalid_parameter_value for bad input, and no_data_found when there is no route; its
--- detail says why, for the API to pass on: start_off_road or finish_off_road (no road within
--- snap_m), unreachable (no way from the start to the finish) or no_loop (too few roads around
--- the start to come back by another way).
--- JIT is off: the planner's queries are mostly calls to functions it cannot compile, and their
--- cost estimates, made without knowing how many rows those return, would often pass the JIT
--- threshold and spend more time compiling than the query takes.
-CREATE FUNCTION routing.plan_route(
-    p_activity text,
-    p_start    geometry,
-    p_finish   geometry,
-    p_target_m double precision,
-    p_weights  jsonb DEFAULT '{}',
-    p_settings jsonb DEFAULT '{}'
+-- Raises no_data_found with DETAIL no_loop or unreachable when there is no candidate.
+CREATE FUNCTION routing.route_to_target(
+    p_profile  routing.profile,
+    p_area     geometry,
+    p_start    bigint,
+    p_finish   bigint,
+    p_target_m double precision
 ) RETURNS jsonb
-LANGUAGE plpgsql
-SET jit = off
-AS $$
+LANGUAGE plpgsql AS $$
 DECLARE
-    v_tolerance double precision;
-    v_snap_m    double precision;
-    v_profile   routing.profile;
-    v_area      geometry;
-    v_start     bigint;
-    v_finish    bigint;
-    v_goal_m    double precision;
+    v_tolerance  double precision := routing.setting(p_profile, 'plan', 'tolerance');
+    v_goal_m     double precision := p_target_m;
     -- All NULL until a candidate is found.
-    v_best      routing.evaluation;
-    v_retry     routing.evaluation;
+    v_best       routing.evaluation;
+    v_retry      routing.evaluation;
     -- The best few of every attempt, to route when the best one comes out wrong.
-    v_ranked    routing.evaluation[] := '{}';
-    v_try       routing.evaluation;
-    v_routed    jsonb;
-    v_score     double precision;
-    v_route     jsonb;
-    v_vias      bigint[];
+    v_ranked     routing.evaluation[] := '{}';
+    v_try        routing.evaluation;
+    v_routed     jsonb;
+    v_score      double precision;
+    v_route      jsonb;
+    v_vias       bigint[];
     v_best_score double precision;
-    v_length_m  double precision;
+    v_length_m   double precision;
 BEGIN
-    IF p_target_m IS NULL OR p_target_m <= 0 OR p_start IS NULL THEN
-        RAISE EXCEPTION 'need a start and a positive target'
-            USING ERRCODE = 'invalid_parameter_value';
-    END IF;
-    v_profile := routing.make_profile(p_activity, p_weights, p_settings);
-    v_tolerance := routing.setting(v_profile, 'plan', 'tolerance');
-    v_snap_m := routing.setting(v_profile, 'plan', 'snap_m');
-
-    v_area := routing.search_area(p_start, p_finish, p_target_m, v_profile.settings -> 'area');
-    v_start := routing.snap(p_activity, p_start, v_snap_m);
-    IF v_start IS NULL THEN
-        RAISE EXCEPTION 'no road near the start'
-            USING ERRCODE = 'no_data_found', DETAIL = 'start_off_road';
-    END IF;
-    v_finish := CASE
-        WHEN p_finish IS NULL THEN v_start
-        ELSE routing.snap(p_activity, p_finish, v_snap_m)
-    END;
-    IF v_finish IS NULL THEN
-        RAISE EXCEPTION 'no road near the finish'
-            USING ERRCODE = 'no_data_found', DETAIL = 'finish_off_road';
-    END IF;
-
-    v_goal_m := p_target_m;
-    FOR attempt IN 1 .. routing.setting(v_profile, 'plan', 'attempts')::integer LOOP
+    FOR attempt IN 1 .. routing.setting(p_profile, 'plan', 'attempts')::integer LOOP
         v_ranked := v_ranked || ARRAY(
             SELECT e
             FROM routing.evaluate(
-                v_profile,
-                v_area,
+                p_profile,
+                p_area,
                 p_target_m,
                 ARRAY(
-                    SELECT c FROM routing.loop_candidates(v_profile, v_area, v_start, v_goal_m) c
-                    WHERE v_start = v_finish
+                    SELECT c FROM routing.loop_candidates(p_profile, p_area, p_start, v_goal_m) c
+                    WHERE p_start = p_finish
                     UNION ALL
                     SELECT c
-                    FROM routing.detour_candidates(v_profile, v_area, v_start, v_finish, v_goal_m) c
-                    WHERE v_start <> v_finish
+                    FROM routing.detour_candidates(p_profile, p_area, p_start, p_finish, v_goal_m) c
+                    WHERE p_start <> p_finish
                 )
             ) e
             ORDER BY e.score
-            LIMIT routing.setting(v_profile, 'plan', 'kept')::integer
+            LIMIT routing.setting(p_profile, 'plan', 'kept')::integer
         );
         SELECT * INTO v_retry FROM unnest(v_ranked) e ORDER BY e.score LIMIT 1;
         IF FOUND AND (v_best.vias IS NULL OR v_retry.score < v_best.score) THEN
@@ -1398,7 +1442,7 @@ BEGIN
     END LOOP;
 
     IF v_best.vias IS NULL THEN
-        IF v_start = v_finish THEN
+        IF p_start = p_finish THEN
             RAISE EXCEPTION 'too few roads around the start for a loop'
                 USING ERRCODE = 'no_data_found', DETAIL = 'no_loop';
         END IF;
@@ -1410,19 +1454,19 @@ BEGIN
             SELECT DISTINCT ON (e.vias) e.* FROM unnest(v_ranked) e ORDER BY e.vias, e.score
         ) d
         ORDER BY d.score
-        LIMIT routing.setting(v_profile, 'plan', 'routed')::integer
+        LIMIT routing.setting(p_profile, 'plan', 'routed')::integer
     LOOP
-        v_routed := routing.route_json(v_profile, v_area, v_try.vias, '{}');
+        v_routed := routing.route_json(p_profile, p_area, v_try.vias, '{}');
         v_length_m := (v_routed ->> 'length_m')::double precision;
         v_score := routing.score(
             p_target_m,
             v_length_m,
-            routing.preference(v_profile.weights, v_routed -> 'scores'),
+            routing.preference(p_profile.weights, v_routed -> 'scores'),
             routing.doubled_m(
-                ST_GeomFromGeoJSON(v_routed -> 'geometry'), v_profile.settings -> 'doubling'
+                ST_GeomFromGeoJSON(v_routed -> 'geometry'), p_profile.settings -> 'doubling'
             ),
             (v_routed ->> 'reused_m')::double precision,
-            v_profile.settings -> 'score'
+            p_profile.settings -> 'score'
         );
         IF v_route IS NULL OR v_score < v_best_score THEN
             v_route := v_routed;
@@ -1441,5 +1485,72 @@ BEGIN
         END]));
     END IF;
     RETURN v_route;
+END
+$$;
+
+-- Plans a route for p_activity from p_start to p_finish, or back to p_start when p_finish is
+-- NULL, weighting edge scores by p_weights; p_settings overrides routing.defaults() (see
+-- routing.make_profile). With p_target_m, the route is about that long (see
+-- routing.route_to_target). Without it, which only a route to a finish may leave out, the route
+-- is the cheapest way there by the cost every route is found by (see routing.cost_sql): the
+-- most pleasant one, without a length to keep to, and so with no warnings.
+-- The start and finish are snapped to roads that join (see routing.snap_points), so a path cut
+-- off from the rest is not taken for the way there.
+-- Raises invalid_parameter_value for bad input, and no_data_found when there is no route; its
+-- detail says why, for the API to pass on: start_off_road or finish_off_road (no road within
+-- snap_m), unreachable (no way from the start to the finish, or both at the same place without a
+-- target) or no_loop (too few roads around the start to come back by another way).
+-- JIT is off: the planner's queries are mostly calls to functions it cannot compile, and their
+-- cost estimates, made without knowing how many rows those return, would often pass the JIT
+-- threshold and spend more time compiling than the query takes.
+CREATE FUNCTION routing.plan_route(
+    p_activity text,
+    p_start    geometry,
+    p_finish   geometry,
+    p_target_m double precision,
+    p_weights  jsonb DEFAULT '{}',
+    p_settings jsonb DEFAULT '{}'
+) RETURNS jsonb
+LANGUAGE plpgsql
+SET jit = off
+AS $$
+DECLARE
+    v_profile routing.profile;
+    v_area    geometry;
+    v_ends    bigint[];
+    v_start   bigint;
+    v_finish  bigint;
+BEGIN
+    IF p_start IS NULL OR p_target_m <= 0 OR (p_target_m IS NULL AND p_finish IS NULL) THEN
+        RAISE EXCEPTION 'need a start, and a positive target or a finish'
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    v_profile := routing.make_profile(p_activity, p_weights, p_settings);
+
+    v_area := routing.search_area(p_start, p_finish, p_target_m, v_profile.settings -> 'area');
+    v_ends := routing.snap_points(
+        v_profile,
+        v_area,
+        CASE WHEN p_finish IS NULL THEN ARRAY[p_start] ELSE ARRAY[p_start, p_finish] END,
+        CASE WHEN p_finish IS NULL
+            THEN routing.setting(v_profile, 'plan', 'loop_network') * p_target_m
+            ELSE 0
+        END
+    );
+    v_start := v_ends[1];
+    v_finish := coalesce(v_ends[2], v_start);
+    IF v_start IS NULL OR (p_target_m IS NULL AND v_start = v_finish) THEN
+        RAISE EXCEPTION '%', CASE WHEN p_finish IS NULL
+                THEN 'too few roads around the start for a loop'
+                ELSE 'the finish cannot be reached from the start'
+            END
+            USING ERRCODE = 'no_data_found',
+                  DETAIL = CASE WHEN p_finish IS NULL THEN 'no_loop' ELSE 'unreachable' END;
+    END IF;
+
+    IF p_target_m IS NULL THEN
+        RETURN routing.route_json(v_profile, v_area, ARRAY[v_start, v_finish], '{}');
+    END IF;
+    RETURN routing.route_to_target(v_profile, v_area, v_start, v_finish, p_target_m);
 END
 $$;

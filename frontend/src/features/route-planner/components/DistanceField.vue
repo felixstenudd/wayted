@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { Button } from '@/shared/ui/button'
 import { FormField } from '@/shared/ui/form-field'
 import { Input } from '@/shared/ui/input'
+import { SegmentedControl } from '@/shared/ui/segmented-control'
 
 import { formatKm, parseDistanceKm, STEP_KM, steppedKm } from '../distance'
 import { usePlannerStore } from '../store'
@@ -24,6 +25,18 @@ watch(
 		text.value = formatKm(km)
 	},
 )
+
+// From point to point: the most pleasant way however long, or one of about the distance.
+const lengthKind = computed({
+	get: () => (planner.hasTargetDistance ? 'target' : 'any'),
+	set: (kind: 'any' | 'target') => {
+		planner.hasTargetDistance = kind === 'target'
+	},
+})
+const lengthKinds = computed(() => [
+	{ value: 'any' as const, label: t('planner.distance.any') },
+	{ value: 'target' as const, label: t('planner.distance.target') },
+])
 
 const stepKm = computed(() => STEP_KM[planner.activity])
 const range = computed(() => planner.distanceRange)
@@ -51,7 +64,18 @@ function step(direction: 1 | -1): void {
 </script>
 
 <template>
+	<div v-if="planner.shape === 'point_to_point'" class="flex flex-col gap-1.5">
+		<SegmentedControl
+			v-model="lengthKind"
+			:label="t('planner.distance.kind')"
+			:options="lengthKinds"
+		/>
+		<p v-if="!planner.usesTargetDistance" class="text-small text-graphite">
+			{{ t('planner.distance.anyHint') }}
+		</p>
+	</div>
 	<FormField
+		v-if="planner.usesTargetDistance"
 		:id="ID"
 		v-slot="{ describedBy, invalid }"
 		:label="t('planner.distance.label')"

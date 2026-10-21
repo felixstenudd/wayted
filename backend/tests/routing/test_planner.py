@@ -27,7 +27,7 @@ async def plan(
     activity: str,
     start: str,
     finish: str | None,
-    target_m: float,
+    target_m: float | None,
     weights: dict[str, float] | None = None,
     settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -400,6 +400,30 @@ async def test_target_below_the_direct_route_takes_it_with_a_warning(
     assert route["warnings"] == ["too_short"]
 
 
+async def test_route_without_a_target_takes_the_direct_way(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    route = await plan(api_pool, "running", CENTRE, EAST, None)
+
+    assert route["length_m"] == pytest.approx(8 * 113.7, rel=0.01)
+    assert route["warnings"] == []
+    assert ends(route) == (coordinates(12, 12), coordinates(20, 12))
+
+
+async def test_route_without_a_target_needs_two_places(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    # Both snap to the crossing at the centre.
+    beside_centre = f"SRID=4326;POINT({ORIGIN_LON + 12 * COLUMN_STEPS * STEP + STEP / 10} "
+    beside_centre += f"{ORIGIN_LAT + 12 * STEP})"
+
+    with pytest.raises(psycopg.errors.NoDataFound, match="cannot be reached"):
+        await plan(api_pool, "running", CENTRE, beside_centre, None)
+
+
 async def test_loop_heads_for_the_park_when_green_is_preferred(
     admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, api_pool: Pool
 ) -> None:
@@ -473,6 +497,8 @@ async def test_unreachable_finish_is_an_error(
     ("target_m", "settings"),
     [
         (0, {}),
+        # A loop needs a target.
+        (None, {}),
         (3_000, {"plan": {"tolerance": 0}}),
         (3_000, {"plan": {"snap": 50}}),
         (3_000, {"plan": {"snap_m": -1}}),
@@ -480,7 +506,7 @@ async def test_unreachable_finish_is_an_error(
     ],
 )
 async def test_bad_target_or_settings_are_rejected(
-    api_pool: Pool, target_m: float, settings: dict[str, Any]
+    api_pool: Pool, target_m: float | None, settings: dict[str, Any]
 ) -> None:
     with pytest.raises(psycopg.errors.InvalidParameterValue):
         await plan(api_pool, "running", CENTRE, None, target_m, settings=settings)

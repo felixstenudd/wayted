@@ -106,6 +106,23 @@ async def test_area_in_the_graph_gets_a_route(
     assert await cur.fetchone() == (0,)
 
 
+async def test_route_to_a_finish_needs_no_target(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
+) -> None:
+    await mapped_grid(admin_conn, mapper_pool, api_pool)
+    finish = {"lon": CENTRE["lon"] + 4 * COLUMN_STEPS * STEP, "lat": CENTRE["lat"]}
+    request = {**LOOP, "shape": "point_to_point", "finish": finish}
+    del request["target_distance_m"]
+
+    res = await client.post("/routing/routes", json=request)
+
+    assert res.status_code == 200
+    properties = res.json()["properties"]
+    # Four blocks east.
+    assert properties["length_m"] == pytest.approx(4 * 113.7, rel=0.01)
+    assert properties["warnings"] == []
+
+
 async def test_tile_still_being_fetched_keeps_the_client_waiting(
     admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
 ) -> None:

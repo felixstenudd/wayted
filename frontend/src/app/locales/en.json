@@ -106,6 +106,10 @@
 		},
 		"distance": {
 			"label": "Target distance",
+			"kind": "Length",
+			"any": "Any length",
+			"target": "Set distance",
+			"anyHint": "The most pleasant way to the finish, however long it is.",
 			"unit": "km",
 			"hint": {
 				"running": "Between {min} and {max} km for a run.",

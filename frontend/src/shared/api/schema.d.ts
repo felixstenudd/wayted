@@ -369,7 +369,7 @@ export interface components {
             start: components["schemas"]["PointIn"];
             finish?: components["schemas"]["PointIn"] | null;
             /** Target Distance M */
-            target_distance_m: number;
+            target_distance_m?: number | null;
             /**
              * Preferences
              * @default {}

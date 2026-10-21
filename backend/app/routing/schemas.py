@@ -34,7 +34,8 @@ class RouteRequestIn(BaseModel):
     shape: Literal["loop", "point_to_point"]
     start: PointIn
     finish: PointIn | None = None
-    target_distance_m: int = Field(ge=1_000, le=200_000)
+    # None for the most pleasant way to the finish, however long; a loop needs one.
+    target_distance_m: int | None = Field(default=None, ge=1_000, le=200_000)
     # -1 avoids, 0 does not mind, 1 prefers.
     preferences: Annotated[dict[str, Weight], AfterValidator(_known_keys)] = {}
 
@@ -44,6 +45,8 @@ class RouteRequestIn(BaseModel):
             raise ValueError("a loop finishes at its start, so it takes no finish")
         if self.shape == "point_to_point" and self.finish is None:
             raise ValueError("a point to point route needs a finish")
+        if self.shape == "loop" and self.target_distance_m is None:
+            raise ValueError("a loop needs a target distance")
         return self
 
 
@@ -53,7 +56,8 @@ class RoutePropertiesOut(BaseModel):
     scores: dict[str, float]
     # length travelled more than once
     reused_m: float
-    # too_short: the finish is farther than the target; target_missed: no route came close
+    # too_short: the finish is farther than the target; target_missed: no route came close.
+    # Always empty without a target.
     warnings: list[RouteWarning]
 
 

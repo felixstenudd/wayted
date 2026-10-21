@@ -9,7 +9,8 @@ import type { Route } from '../types'
 
 const props = defineProps<{
 	route: Route
-	targetM: number
+	// Absent for a route without a target, which has no warnings.
+	targetM?: number | null | undefined
 }>()
 
 const i18n = useI18n()
@@ -46,7 +47,7 @@ const shares = computed(() => {
 			class="flex gap-1.5 text-graphite"
 		>
 			<TriangleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-			{{ t(`planner.route.warnings.${warning}`, { km: formatKm(targetM / 1000) }) }}
+			{{ t(`planner.route.warnings.${warning}`, { km: formatKm((targetM ?? 0) / 1000) }) }}
 		</p>
 	</div>
 </template>

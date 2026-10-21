@@ -27,6 +27,9 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	// Kept while a loop is chosen, so switching back to point to point restores it.
 	const finish = ref<LonLat | null>(null)
 	const targetDistanceKm = ref(DISTANCE_RANGES.running.defaultKm)
+	// From point to point the route may instead be the most pleasant way, however long. A loop
+	// always has a distance; this is kept for when point to point is chosen again.
+	const hasTargetDistance = ref(true)
 	// Only weights other than 0 ("don't mind") are kept.
 	const preferenceWeights = ref<Record<string, number>>({})
 	// The last press of Find routes, until the request changes.
@@ -34,6 +37,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	let searches = 0
 
 	const distanceRange = computed(() => DISTANCE_RANGES[activity.value])
+	const usesTargetDistance = computed(() => shape.value === 'loop' || hasTargetDistance.value)
 	const setWeightCount = computed(() => Object.keys(preferenceWeights.value).length)
 
 	const missingPoint = computed<MissingPoint>(() => {
@@ -49,7 +53,9 @@ export const usePlannerStore = defineStore('route-planner', () => {
 			shape: shape.value,
 			start: start.value,
 			...(shape.value === 'point_to_point' && finish.value ? { finish: finish.value } : {}),
-			target_distance_m: Math.round(targetDistanceKm.value * 1000),
+			...(usesTargetDistance.value
+				? { target_distance_m: Math.round(targetDistanceKm.value * 1000) }
+				: {}),
 			preferences: { ...preferenceWeights.value },
 		}
 	})
@@ -119,6 +125,8 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		start,
 		finish,
 		targetDistanceKm: readonly(targetDistanceKm),
+		hasTargetDistance,
+		usesTargetDistance,
 		preferenceWeights: readonly(preferenceWeights),
 		distanceRange,
 		setWeightCount,
