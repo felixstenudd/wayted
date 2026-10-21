@@ -7,13 +7,16 @@ import { isOnMarker } from './useMapClick'
 
 // Less than this is a click that wobbled, not a drag.
 const DRAG_PX = 4
+// Let go this near where it was grabbed, a drag is called off.
+const CANCEL_PX = 16
 
 const lonLat = (event: MapMouseEvent): LonLat => ({ lon: event.lngLat.lng, lat: event.lngLat.lat })
 
 /**
  * Lets a line of a layer be grabbed with the mouse and dragged: grab is where it was taken,
- * pointer where it is now, and onDrop gets both once it is let go after moving. The map does not
- * pan during the drag. hover is where the pointer is while over the line, for a handle to show.
+ * pointer where it is now, and onDrop gets both once it is let go after moving. Esc, or letting
+ * go back where it was grabbed, calls the drag off. The map does not pan during the drag. hover
+ * is where the pointer is while over the line, for a handle to show.
  */
 export function useMapLineDrag(
 	layerId: string,
@@ -23,6 +26,7 @@ export function useMapLineDrag(
 	const pointer = ref<LonLat | null>(null)
 	const hover = ref<LonLat | null>(null)
 	let pressedPx: { x: number; y: number } | null = null
+	let pointerPx: { x: number; y: number } | null = null
 	let hasMoved = false
 	let canvas: HTMLElement | null = null
 
@@ -39,6 +43,7 @@ export function useMapLineDrag(
 	const move = (event: MapMouseEvent) => {
 		if (!grab.value || !pressedPx) return
 		hasMoved ||= Math.hypot(event.point.x - pressedPx.x, event.point.y - pressedPx.y) > DRAG_PX
+		pointerPx = event.point
 		if (hasMoved) pointer.value = lonLat(event)
 	}
 	const over = (event: MapLayerMouseEvent) => {
@@ -53,12 +58,23 @@ export function useMapLineDrag(
 		hover.value = null
 		if (canvas && !grab.value) canvas.style.cursor = ''
 	}
-	const release = () => {
-		if (grab.value && hasMoved && pointer.value) onDrop(grab.value, pointer.value)
+	const end = () => {
 		grab.value = null
 		pointer.value = null
 		pressedPx = null
+		pointerPx = null
 		if (canvas) canvas.style.cursor = hover.value ? 'grab' : ''
+	}
+	const release = () => {
+		const isBack =
+			pressedPx !== null &&
+			pointerPx !== null &&
+			Math.hypot(pointerPx.x - pressedPx.x, pointerPx.y - pressedPx.y) < CANCEL_PX
+		if (grab.value && hasMoved && pointer.value && !isBack) onDrop(grab.value, pointer.value)
+		end()
+	}
+	const cancel = (event: KeyboardEvent) => {
+		if (event.key === 'Escape' && grab.value) end()
 	}
 
 	onMap(
@@ -80,7 +96,11 @@ export function useMapLineDrag(
 
 	// On the window: a drag can end outside the map.
 	window.addEventListener('mouseup', release)
-	onScopeDispose(() => window.removeEventListener('mouseup', release))
+	window.addEventListener('keydown', cancel)
+	onScopeDispose(() => {
+		window.removeEventListener('mouseup', release)
+		window.removeEventListener('keydown', cancel)
+	})
 
 	return { grab, pointer, hover }
 }

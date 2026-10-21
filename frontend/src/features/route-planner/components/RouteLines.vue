@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { FilterSpecification } from 'maplibre-gl'
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import {
+	distanceM,
 	EMPTY,
 	MapMarker,
 	ringBounds,
@@ -37,17 +38,16 @@ const editing = useRouteEditing()
 // A finger hides the line it is on, so on touch a tap places a handle that is then dragged.
 const isTouch = useMediaQuery('(pointer: coarse)')
 
-// While an edit is on its way, or the route is out of date, the course dims; the drag that made an
-// edit stays drawn until it answers.
-const dropped = ref<{ grab: LonLat; drop: LonLat } | null>(null)
+// Where the line was let go, until the edit that makes answers.
+const dropped = ref<LonLat | null>(null)
 const tapped = ref<LonLat | null>(null)
 const { grab, pointer, hover } = useMapLineDrag('route-hit', (from, to) => {
 	if (isTouch.value) return
 	const previewed = preview.answerFor(to)
-	if (!previewed) dropped.value = { grab: from, drop: to }
+	if (!previewed) dropped.value = to
 	editing.dragLine(from, to, previewed)
 })
-// While dragging, the course shows what letting go would make, where it has been previewed.
+// While dragging, what letting go would make, where it has been previewed.
 const preview = useDragPreview(grab, pointer, editing.previewDrag)
 
 // The shown option is drawn as it is now: edited, when the user has edited it.
@@ -62,7 +62,7 @@ const lines = computed<MapData>(() => ({
 						type: 'Feature' as const,
 						geometry:
 							index === planner.selectedOption && shown.value
-								? (preview.answer.value?.route.geometry ?? shown.value.geometry)
+								? shown.value.geometry
 								: route.geometry,
 						properties: { index },
 					},
@@ -120,38 +120,29 @@ useMapLayerCursor('route-options', 'pointer')
 watch(editing.isPending, (pending) => {
 	if (!pending) dropped.value = null
 })
+// While an edit is on its way, or the route is out of date, the course dims.
 const courseOpacity = () => (editing.isPending.value || planner.isStale ? 0.45 : 1)
 useMapPaint('route-line', 'line-opacity', courseOpacity)
 useMapPaint('route-edge', 'line-opacity', courseOpacity)
 
-const band = computed<MapData>(() => {
-	const from = dropped.value?.grab ?? grab.value
-	const to = dropped.value?.drop ?? pointer.value
-	if (!from || !to) return EMPTY
-	return {
-		type: 'Feature',
-		geometry: {
-			type: 'LineString',
-			coordinates: [
-				[from.lon, from.lat],
-				[to.lon, to.lat],
-			],
-		},
-		properties: {},
-	}
+// The preview is drawn over the route, see-through, so the new stretch reads as not yet made.
+const previewLine = computed<MapData>(() => {
+	const answer = preview.answer.value
+	return answer ? { ...answer.route, properties: {} } : EMPTY
 })
-useMapSource('route-band', band, [
+useMapSource('route-preview', previewLine, [
 	{
-		id: 'route-band',
+		id: 'route-preview',
 		type: 'line',
 		layout: round,
-		paint: {
-			'line-color': tokenColor('--overprint-contrast'),
-			'line-width': 2,
-			'line-dasharray': [2, 2],
-		},
+		paint: { 'line-color': tokenColor('--overprint'), 'line-width': 5, 'line-opacity': 0.55 },
 	},
 ])
+// The held handle: at the pointer while dragging, then at the drop until the edit answers.
+const held = computed(() => pointer.value ?? grab.value ?? dropped.value)
+watch(grab, (from) => planner.setDraggingLine(from !== null))
+onScopeDispose(() => planner.setDraggingLine(false))
+
 // The handle under the pointer, on a mouse: where a drag would take the line from.
 const ghost = computed(() => (!isTouch.value && !grab.value && hover.value) || null)
 
@@ -160,8 +151,13 @@ useMapClick(['route-options', 'route-hit'], (feature, at) => {
 	tapped.value = isTouch.value && feature?.layerId === 'route-hit' ? at : null
 })
 
+// Dropped back where it was tapped, a touch drag is called off.
+const TAP_CANCEL_M = 10
+
 function dragTapped(to: LonLat): void {
-	if (tapped.value) editing.dragLine(tapped.value, to)
+	if (tapped.value && distanceM(tapped.value, to) > TAP_CANCEL_M) {
+		editing.dragLine(tapped.value, to)
+	}
 	tapped.value = null
 }
 
@@ -211,6 +207,9 @@ const labels = computed(() => {
 		<span
 			class="block size-4 rounded-full border-2 border-overprint-contrast bg-overprint opacity-70"
 		/>
+	</MapMarker>
+	<MapMarker v-if="held" :lon-lat="held" class="pointer-events-none">
+		<span class="block size-5 rounded-full border-2 border-overprint-contrast bg-overprint" />
 	</MapMarker>
 	<EditHandles
 		:handles="

@@ -44,6 +44,9 @@ const targetKm = computed(() => formatKm((planner.search?.request.target_distanc
 			<TriangleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
 			{{ t(`planner.route.warnings.${warning}`, { km: targetKm }) }}
 		</p>
+		<p v-if="planner.isDraggingLine" role="status" class="text-small text-graphite">
+			{{ t('planner.edit.dragging') }}
+		</p>
 		<p v-if="planner.editError" role="alert" class="flex gap-1.5 text-small text-contour">
 			<CircleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
 			{{

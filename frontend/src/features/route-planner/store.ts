@@ -65,6 +65,8 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	const pendingOption = ref<number | null>(null)
 	// Why the last edit found no way, until the next one.
 	const editError = ref<EditError | null>(null)
+	// The route line is being dragged, which the panel says how to finish or call off.
+	const isDraggingLine = ref(false)
 	// The route last saved from this search, and its edges then, to tell whether it changed since.
 	// Saving chooses it: the other options are let go.
 	const saved = shallowRef<{ id: number; edges: string } | null>(null)
@@ -179,6 +181,10 @@ export const usePlannerStore = defineStore('route-planner', () => {
 
 	function setEditError(error: EditError | null): void {
 		editError.value = error
+	}
+
+	function setDraggingLine(isDragging: boolean): void {
+		isDraggingLine.value = isDragging
 	}
 
 	function markSaved(id: number, route: Route): void {
@@ -342,6 +348,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		editHandles,
 		pendingOption: readonly(pendingOption),
 		editError: readonly(editError),
+		isDraggingLine: readonly(isDraggingLine),
 		saved: readonly(saved),
 		isChosen,
 		findRoutes,
@@ -353,6 +360,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		undoEdit,
 		discardEdit,
 		setEditError,
+		setDraggingLine,
 		markSaved,
 		changeSettings,
 		setActivity,

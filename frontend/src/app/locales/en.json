@@ -239,7 +239,8 @@
 			},
 			"handle": "Change {n}: drag to move it, or open for more",
 			"removeChange": "Remove this change",
-			"tapped": "Drag this onto another road"
+			"tapped": "Drag this onto another road, or drop it back where it was to cancel",
+			"dragging": "Let go to keep this change. Press Esc to cancel."
 		},
 		"save": {
 			"submit": "Save route",
