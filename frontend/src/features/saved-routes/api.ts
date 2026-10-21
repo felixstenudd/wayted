@@ -42,11 +42,15 @@ export function useSaveRoute() {
 	})
 }
 
-export function useSavedRoute(id: MaybeRefOrGetter<number>) {
+export function useSavedRoute(
+	id: MaybeRefOrGetter<number>,
+	isEnabled: MaybeRefOrGetter<boolean> = true,
+) {
 	const auth = useAuthStore()
 	return useQuery({
 		queryKey: computed(() => savedRouteKey(toValue(id))),
 		queryFn: () => auth.authedRequest<SavedRoute>(`/logbook/routes/${toValue(id)}`),
+		enabled: computed(() => toValue(isEnabled)),
 	})
 }
 

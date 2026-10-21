@@ -12,6 +12,7 @@ import type {
 	RouteSearch,
 	RouteShape,
 	Route,
+	SavedPlan,
 	RouteEdit,
 	ThroughPoint,
 	ThroughPointPlacement,
@@ -186,6 +187,32 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		isChangingSettings.value = isChanging
 	}
 
+	/** Sets everything up as plan says, and finds routes for it. */
+	function loadPlan(plan: SavedPlan): void {
+		activity.value = plan.activity
+		shape.value = plan.shape
+		start.value = { ...plan.start }
+		finish.value = plan.shape === 'point_to_point' ? { ...plan.finish } : null
+		hasTargetDistance.value = plan.targetDistanceM !== null
+		if (plan.targetDistanceM !== null) setTargetDistanceKm(plan.targetDistanceM / 1000)
+		preferenceWeights.value = Object.fromEntries(
+			Object.entries(plan.preferences).filter(([, weight]) => weight !== 0),
+		)
+		throughPoints.value = plan.waypoints.map((waypoint) => {
+			throughPointIds += 1
+			return {
+				id: throughPointIds,
+				lonLat: { lon: waypoint.lon, lat: waypoint.lat },
+				placement:
+					waypoint.at === 'after'
+						? { at: 'after' as const, afterKm: (waypoint.after_m ?? 0) / 1000 }
+						: { at: waypoint.at === 'asap' ? ('asap' as const) : ('any' as const) },
+			}
+		})
+		editingThroughPointId.value = null
+		findRoutes()
+	}
+
 	function setActivity(next: Activity): void {
 		activity.value = next
 		const { minKm, maxKm, defaultKm } = distanceRange.value
@@ -314,6 +341,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		saved: readonly(saved),
 		isChosen,
 		findRoutes,
+		loadPlan,
 		selectOption,
 		confirmOption,
 		cancelOption,

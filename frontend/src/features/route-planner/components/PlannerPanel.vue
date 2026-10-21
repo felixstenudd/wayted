@@ -6,6 +6,7 @@ import { useShownRoute } from '../composables/useShownRoute'
 import { usePlannerStore } from '../store'
 import DistanceField from './DistanceField.vue'
 import FindRoutes from './FindRoutes.vue'
+import PlanAgainNotice from './PlanAgainNotice.vue'
 import PreferenceSection from './PreferenceSection.vue'
 import RouteKindFields from './RouteKindFields.vue'
 import RoutePoints from './RoutePoints.vue'
@@ -38,6 +39,7 @@ const editingPoint = computed(() =>
 
 <template>
 	<div v-if="layout === 'panel'" class="flex flex-col">
+		<div class="px-5 pt-5 empty:hidden"><PlanAgainNotice /></div>
 		<div v-if="isShowingRoute" class="p-5">
 			<h1 class="sr-only">{{ t('planner.title') }}</h1>
 			<RouteView layout="panel" />

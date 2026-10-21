@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronLeft, CircleAlert, Ellipsis, PenLine, Trash2 } from '@lucide/vue'
+import { ChevronLeft, CircleAlert, Ellipsis, PenLine, Repeat, Trash2 } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
@@ -211,6 +211,12 @@ const details = computed(() => {
 					{{ t('savedRoutes.stretch.start') }}
 				</Button>
 			</div>
+			<Button variant="secondary" as-child>
+				<RouterLink :to="{ name: 'planner', query: { from: route.id } }">
+					<Repeat />
+					{{ t('savedRoutes.detail.planAgain') }}
+				</RouterLink>
+			</Button>
 			<StretchReviewList :route="route" :just-saved="isStretchJustSaved" />
 			<DeleteRoute v-if="isDeleting" :route="route" @keep="isDeleting = false" />
 		</template>

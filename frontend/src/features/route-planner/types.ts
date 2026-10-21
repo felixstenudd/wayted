@@ -31,6 +31,21 @@ export interface DistanceRange {
 	defaultKm: number
 }
 
+/** A through point as the planner takes it, and as a saved route keeps it. */
+export type Waypoint = RouteRequestIn['waypoints'][number]
+
+/** What a route was planned from, to set the planner up with it again. */
+export interface SavedPlan {
+	activity: Activity
+	shape: RouteShape
+	start: LonLat
+	finish: LonLat
+	// null for the most pleasant way to the finish, however long
+	targetDistanceM: number | null
+	preferences: Record<string, number>
+	waypoints: readonly Waypoint[]
+}
+
 /** Where on the route a through point goes. */
 export type ThroughPointPlacement =
 	{ at: 'any' } | { at: 'asap' } | { at: 'after'; afterKm: number }

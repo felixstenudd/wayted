@@ -407,6 +407,49 @@ describe('route edits', () => {
 	})
 })
 
+describe('loadPlan', () => {
+	it('sets the planner up as a saved route was planned, and finds routes again', () => {
+		const planner = usePlannerStore()
+
+		planner.loadPlan({
+			activity: 'cycling',
+			shape: 'point_to_point',
+			start: UMEA,
+			finish: TAVLEBORG,
+			targetDistanceM: null,
+			preferences: { green: 0.5 },
+			waypoints: [{ lon: 20.28, lat: 63.825, at: 'after', after_m: 3_000 }],
+		})
+
+		expect(planner.routeRequest).toEqual({
+			activity: 'cycling',
+			shape: 'point_to_point',
+			start: UMEA,
+			finish: TAVLEBORG,
+			preferences: { green: 0.5 },
+			waypoints: [{ lon: 20.28, lat: 63.825, at: 'after', after_m: 3_000 }],
+		})
+		expect(planner.search?.request).toEqual(planner.routeRequest)
+	})
+
+	it('takes a loop with its distance', () => {
+		const planner = usePlannerStore()
+
+		planner.loadPlan({
+			activity: 'running',
+			shape: 'loop',
+			start: UMEA,
+			finish: UMEA,
+			targetDistanceM: 8_000,
+			preferences: {},
+			waypoints: [],
+		})
+
+		expect(planner.routeRequest).toMatchObject({ shape: 'loop', target_distance_m: 8_000 })
+		expect(planner.routeRequest).not.toHaveProperty('finish')
+	})
+})
+
 describe('stored defaults', () => {
 	it('become the weights while the sliders are untouched', () => {
 		const planner = usePlannerStore()

@@ -9,6 +9,7 @@ import { useThroughPointNumbers } from '../composables/useThroughPointNumbers'
 import { usePlannerStore } from '../store'
 import DistanceField from './DistanceField.vue'
 import FindRoutes from './FindRoutes.vue'
+import PlanAgainNotice from './PlanAgainNotice.vue'
 import EditedBar from './EditedBar.vue'
 import RouteHead from './RouteHead.vue'
 import RouteOptions from './RouteOptions.vue'
@@ -34,6 +35,7 @@ const isShowingRoute = computed(() => shown.value !== null && !planner.isChangin
 	</div>
 	<!-- What a phone shows at the sheet's lowest stop: enough to go. -->
 	<div v-else class="flex flex-col gap-3">
+		<PlanAgainNotice />
 		<template v-if="isShowingRoute">
 			<RouteOptions />
 			<EditedBar />

@@ -249,6 +249,16 @@
 			"nameMissing": "Give the route a name.",
 			"failed": "The route could not be saved. Check your connection, then try again."
 		},
+		"planAgain": {
+			"loading": "Loading your route…",
+			"title": "Replace the route in the planner?",
+			"body": "The route in the planner is not saved. Planning “{name}” again will replace it.",
+			"confirm": "Plan again",
+			"keep": "Keep my route",
+			"missing": "This route is no longer in your routes. Plan a new one here.",
+			"failed": "Your route could not be loaded. Check your connection, then try again.",
+			"dismiss": "OK"
+		},
 		"settingsLine": {
 			"summary": "{activity}, {shape}, {distance}",
 			"shapes": {
@@ -362,7 +372,8 @@
 			"loading": "Loading the route…",
 			"missingTitle": "Route not found",
 			"missing": "This route doesn't exist or was deleted.",
-			"loadFailed": "The route could not be loaded. Check your connection, then try again."
+			"loadFailed": "The route could not be loaded. Check your connection, then try again.",
+			"planAgain": "Plan again"
 		},
 		"rename": {
 			"start": "Rename",
