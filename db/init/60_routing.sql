@@ -48,6 +48,9 @@ WHERE a.code = ANY (e.forward) OR a.code = ANY (e.backward);
 --   they may share (overlap); how much worse than the best an option may score (margin); how much
 --   longer than the best an option of a route without a target may be (longer); and how long,
 --   from the start of planning, options are looked for (budget_ms). See routing.segment_route.
+-- - edit: how far either side of where a route is grabbed an edit may change it, at least
+--   window_min_m and window_share times the drag; and how far around that stretch its new way
+--   is looked for (area_m). See routing.reroute.
 CREATE FUNCTION routing.defaults() RETURNS jsonb
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT '{
@@ -81,7 +84,8 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
         "options":  {
             "count": 3, "routed": 8, "overlap": 0.5, "margin": 0.15, "longer": 0.25,
             "budget_ms": 10000
-        }
+        },
+        "edit":     {"window_min_m": 300, "window_share": 1.5, "area_m": 1000}
     }'::jsonb
 $$;
 
@@ -2247,5 +2251,211 @@ BEGIN
             FROM jsonb_array_elements(v_options) WITH ORDINALITY AS u(o, n)
         ), '[]')
     );
+END
+$$;
+
+-- A route along p_edge_ids, travelled from source to target where p_forward says so, in the form
+-- routing.route_json gives (without scores): its line, length, the length travelled more than
+-- once, the edges and their directions, and no warnings.
+CREATE FUNCTION routing.steps_json(p_edge_ids bigint[], p_forward boolean[]) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    WITH path AS MATERIALIZED (
+        SELECT s.n, e.id, e.length_m, s.forward,
+               CASE WHEN s.forward THEN e.geom ELSE ST_Reverse(e.geom) END AS geom
+        FROM unnest(p_edge_ids, p_forward) WITH ORDINALITY AS s (id, forward, n)
+        JOIN graph.edges e ON e.id = s.id
+    ),
+    total AS (
+        SELECT sum(length_m ORDER BY n) AS length_m FROM path
+    ),
+    reused AS (
+        SELECT coalesce(sum(length_m * (times - 1)), 0) AS length_m
+        FROM (SELECT min(length_m) AS length_m, count(*) AS times FROM path GROUP BY id) u
+    )
+    SELECT jsonb_build_object(
+        'geometry', (SELECT ST_AsGeoJSON(ST_MakeLine(geom ORDER BY n))::jsonb FROM path),
+        'length_m', total.length_m,
+        'reused_m', reused.length_m,
+        'edges', (SELECT to_jsonb(array_agg(id ORDER BY n)) FROM path),
+        'forward', (SELECT to_jsonb(array_agg(forward ORDER BY n)) FROM path),
+        'warnings', '[]'::jsonb
+    )
+    FROM total, reused
+$$;
+
+-- p_activity's route along p_edge_ids (in travel order, from source to target where p_forward
+-- says so) changed where it was grabbed at p_grab, so that it passes p_drop: the stretch from the
+-- junction at or before edit.window_min_m, or window_share times the drag, before the grab to the
+-- one as far after it is routed again through the edge p_activity may use nearest p_drop (within
+-- plan.snap_m), in whichever direction is shorter. Everything outside the stretch stays as it
+-- was. The new way is the cheapest by the activity's own cost, highway class and turns, without
+-- preferences, so an edit goes the way it was dragged; edges outside the stretch pay the reuse
+-- penalty. Without p_drop, the stretch is routed again with nothing to pass, which takes an edit
+-- back out. p_settings overrides routing.defaults() as in routing.make_profile.
+-- Returns the route as routing.route_out gives it, warned against p_target_m (NULL: no target) as
+-- a planned one is, with handle: where p_drop came onto the road, a GeoJSON point (NULL without
+-- p_drop).
+-- Raises invalid_parameter_value for edges that are not in the graph, do not join up or may not
+-- be used that way, and no_data_found with DETAIL drop_off_road (no road near p_drop) or
+-- unreachable.
+CREATE FUNCTION routing.reroute(
+    p_activity text,
+    p_edge_ids bigint[],
+    p_forward  boolean[],
+    p_grab     geometry,
+    p_drop     geometry,
+    p_target_m double precision DEFAULT NULL,
+    p_settings jsonb DEFAULT '{}'
+) RETURNS jsonb
+LANGUAGE plpgsql
+SET jit = off
+AS $$
+DECLARE
+    v_profile  routing.profile := routing.make_profile(p_activity, '{}', p_settings);
+    v_n        integer := cardinality(p_edge_ids);
+    -- Per edge in travel order: the vertex it is entered from and left at, and where it ends
+    -- along the route.
+    v_enter    bigint[];
+    v_leave    bigint[];
+    v_end_m    double precision[];
+    v_line     geometry;
+    v_grab_m   double precision;
+    v_reach_m  double precision;
+    -- The stretch is edges v_first + 1 .. v_last - 1.
+    v_first    integer;
+    v_last     integer;
+    v_area     geometry;
+    v_edge     record;
+    v_handle   geometry;
+    v_tries    bigint[][];
+    v_stretch  bigint[];
+    v_forward  boolean[];
+    v_best_ids bigint[];
+    v_best_fw  boolean[];
+    v_best_m   double precision;
+    v_m        double precision;
+    v_route    jsonb;
+BEGIN
+    SELECT array_agg(t.enter ORDER BY t.n), array_agg(t.leave ORDER BY t.n),
+           array_agg(t.end_m ORDER BY t.n)
+    INTO v_enter, v_leave, v_end_m
+    FROM (
+        SELECT s.n,
+               CASE WHEN s.forward THEN e.source ELSE e.target END AS enter,
+               CASE WHEN s.forward THEN e.target ELSE e.source END AS leave,
+               sum(e.length_m) OVER (ORDER BY s.n) AS end_m
+        FROM unnest(p_edge_ids, p_forward) WITH ORDINALITY AS s (id, forward, n)
+        JOIN graph.edges e ON e.id = s.id
+        WHERE p_activity = ANY (CASE WHEN s.forward THEN e.forward ELSE e.backward END)
+    ) t;
+    IF v_n = 0 OR cardinality(p_forward) <> v_n OR coalesce(cardinality(v_enter), 0) <> v_n
+        OR EXISTS (SELECT FROM generate_series(1, v_n - 1) i WHERE v_leave[i] <> v_enter[i + 1])
+    THEN
+        RAISE EXCEPTION 'the edges must be in the graph, join up and allow %', p_activity
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+
+    -- In Web Mercator, where shares of the line's length are true to those in metres.
+    v_line := ST_Transform(
+        ST_GeomFromGeoJSON(routing.steps_json(p_edge_ids, p_forward) -> 'geometry'), 3857
+    );
+    v_grab_m := ST_LineLocatePoint(v_line, ST_Transform(p_grab, 3857)) * v_end_m[v_n];
+    v_reach_m := greatest(
+        routing.setting(v_profile, 'edit', 'window_min_m'),
+        routing.setting(v_profile, 'edit', 'window_share')
+            * coalesce(ST_Distance(p_grab::geography, p_drop::geography), 0)
+    );
+    SELECT coalesce(max(i), 0) INTO v_first
+    FROM generate_series(1, v_n) i
+    WHERE v_end_m[i] <= v_grab_m - v_reach_m;
+    SELECT coalesce(min(i), v_n + 1) INTO v_last
+    FROM generate_series(1, v_n) i
+    WHERE coalesce(v_end_m[i - 1], 0) >= v_grab_m + v_reach_m;
+
+    v_area := ST_Buffer(
+        ST_Collect(ARRAY[
+            ST_Transform(ST_LineSubstring(
+                v_line,
+                coalesce(v_end_m[v_first], 0) / v_end_m[v_n],
+                coalesce(v_end_m[v_last - 1], v_end_m[v_n]) / v_end_m[v_n]
+            ), 4326),
+            coalesce(p_drop, p_grab)
+        ])::geography,
+        routing.setting(v_profile, 'edit', 'area_m')
+    )::geometry;
+
+    IF p_drop IS NULL THEN
+        v_tries := ARRAY[ARRAY[
+            coalesce(v_leave[v_first], v_enter[1]), coalesce(v_enter[v_last], v_leave[v_n])
+        ]];
+    ELSE
+        SELECT a.source, a.target, a.forward, a.backward, a.geom INTO v_edge
+        FROM routing.activity_edges a
+        WHERE a.activity = p_activity
+          AND a.geom && ST_Buffer(
+              p_drop::geography, routing.setting(v_profile, 'plan', 'snap_m')
+          )::geometry
+          AND ST_DWithin(
+              a.geom::geography, p_drop::geography, routing.setting(v_profile, 'plan', 'snap_m')
+          )
+        ORDER BY ST_Distance(a.geom::geography, p_drop::geography)
+        LIMIT 1;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'no road near where the route was dropped'
+                USING ERRCODE = 'no_data_found', DETAIL = 'drop_off_road';
+        END IF;
+        v_handle := ST_ClosestPoint(v_edge.geom, p_drop);
+        v_tries := '{}';
+        IF v_edge.forward THEN
+            v_tries := v_tries || ARRAY[ARRAY[
+                coalesce(v_leave[v_first], v_enter[1]), v_edge.source, v_edge.target,
+                coalesce(v_enter[v_last], v_leave[v_n])
+            ]];
+        END IF;
+        IF v_edge.backward THEN
+            v_tries := v_tries || ARRAY[ARRAY[
+                coalesce(v_leave[v_first], v_enter[1]), v_edge.target, v_edge.source,
+                coalesce(v_enter[v_last], v_leave[v_n])
+            ]];
+        END IF;
+    END IF;
+
+    FOR i IN 1 .. array_length(v_tries, 1) LOOP
+        BEGIN
+            SELECT array_agg(r.edge_id ORDER BY r.step),
+                   array_agg(r.vertex = e.source ORDER BY r.step),
+                   coalesce(sum(e.length_m), 0)
+            INTO v_stretch, v_forward, v_m
+            FROM routing.route_edges(
+                v_profile,
+                v_area,
+                ARRAY(SELECT unnest(v_tries[i:i][:])),
+                p_edge_ids[1:v_first] || p_edge_ids[v_last:]
+            ) r
+            JOIN graph.edges e ON e.id = r.edge_id;
+        EXCEPTION WHEN no_data_found THEN
+            CONTINUE;
+        END;
+        IF v_best_m IS NULL OR v_m < v_best_m THEN
+            v_best_ids := coalesce(v_stretch, '{}');
+            v_best_fw := coalesce(v_forward, '{}');
+            v_best_m := v_m;
+        END IF;
+    END LOOP;
+    IF v_best_m IS NULL THEN
+        RAISE EXCEPTION 'no way through where the route was dropped'
+            USING ERRCODE = 'no_data_found', DETAIL = 'unreachable';
+    END IF;
+
+    v_route := routing.steps_json(
+        p_edge_ids[1:v_first] || v_best_ids || p_edge_ids[v_last:],
+        p_forward[1:v_first] || v_best_fw || p_forward[v_last:]
+    );
+    v_route := jsonb_set(v_route, '{warnings}', routing.length_warnings(
+        (v_route ->> 'length_m')::double precision, p_target_m,
+        routing.setting(v_profile, 'plan', 'tolerance'), false
+    ));
+    RETURN routing.route_out(v_route)
+        || jsonb_build_object('handle', ST_AsGeoJSON(v_handle)::jsonb);
 END
 $$;

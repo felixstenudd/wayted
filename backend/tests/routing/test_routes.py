@@ -258,3 +258,64 @@ async def test_bad_waypoints_are_refused(client: httpx.AsyncClient, waypoint: ob
     res = await client.post("/routing/routes", json={**LOOP, "waypoints": [waypoint]})
 
     assert res.status_code == 422
+
+
+async def test_edit_moves_the_route_onto_the_road_it_was_dropped_on(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
+) -> None:
+    await mapped_grid(admin_conn, mapper_pool, api_pool)
+    found = await client.post("/routing/routes", json=LOOP)
+    route = found.json()["features"][0]
+    on_route = route["geometry"]["coordinates"][len(route["geometry"]["coordinates"]) // 2]
+
+    res = await client.post(
+        "/routing/routes/reroute",
+        json={
+            "activity": "running",
+            "edges": route["properties"]["edges"],
+            "grab": {"lon": on_route[0], "lat": on_route[1]},
+            "drop": {"lon": on_route[0] + 2 * COLUMN_STEPS * STEP, "lat": on_route[1]},
+            "target_distance_m": 2_000,
+        },
+    )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["route"]["type"] == "Feature"
+    assert body["route"]["properties"]["edges"] != route["properties"]["edges"]
+    assert body["handle"]["type"] == "Point"
+
+
+async def test_edit_dropped_far_from_any_road_has_no_route(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
+) -> None:
+    await mapped_grid(admin_conn, mapper_pool, api_pool)
+    route = (await client.post("/routing/routes", json=LOOP)).json()["features"][0]
+
+    res = await client.post(
+        "/routing/routes/reroute",
+        json={
+            "activity": "running",
+            "edges": route["properties"]["edges"],
+            "grab": CENTRE,
+            "drop": {"lon": CENTRE["lon"], "lat": ORIGIN_LAT + 40 * STEP},
+        },
+    )
+
+    assert res.status_code == 422
+    assert res.json() == {"detail": "drop_off_road"}
+
+
+async def test_edit_of_edges_that_do_not_join_up_is_refused(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
+) -> None:
+    await mapped_grid(admin_conn, mapper_pool, api_pool)
+    route = (await client.post("/routing/routes", json=LOOP)).json()["features"][0]
+    edges = route["properties"]["edges"]
+
+    res = await client.post(
+        "/routing/routes/reroute",
+        json={"activity": "running", "edges": edges[:2] + edges[4:], "grab": CENTRE, "drop": None},
+    )
+
+    assert res.status_code == 422

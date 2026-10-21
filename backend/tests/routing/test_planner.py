@@ -56,7 +56,7 @@ def ends(route: dict[str, Any]) -> tuple[list[float], list[float]]:
     return coordinates[0], coordinates[-1]
 
 
-def coordinates(column: int, row: int) -> object:
+def coordinates(column: float, row: float) -> object:
     """A grid crossing as GeoJSON coordinates, to compare with approximately."""
     return pytest.approx([ORIGIN_LON + column * COLUMN_STEPS * STEP, ORIGIN_LAT + row * STEP])
 

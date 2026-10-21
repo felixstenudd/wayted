@@ -3,7 +3,7 @@ Plans routes with routing.plan_route in the database. The map data around a rout
 and scored first: prepare queues what is missing and says when everything is in the graph.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast, get_args
 
@@ -27,6 +27,9 @@ type WaypointAt = Literal["any", "asap", "after"]
 type RouteWarning = Literal["too_short", "target_missed"]
 
 REASONS: frozenset[str] = frozenset(get_args(Reason.__value__))
+# The detail of routing.reroute's no_data_found errors.
+type RerouteReason = Literal["drop_off_road", "unreachable"]
+REROUTE_REASONS: frozenset[str] = frozenset(get_args(RerouteReason.__value__))
 
 # The longest a request may hold a connection; a route that takes longer is not worth waiting for.
 PLAN_TIMEOUT = "30s"
@@ -68,6 +71,17 @@ UNSCORED_IN_BOUNDS = """
 
 SET_TIMEOUT = f"SET LOCAL statement_timeout = '{PLAN_TIMEOUT}'"
 
+REROUTE = """
+    SELECT routing.reroute(
+        %(activity)s,
+        %(edge_ids)s::bigint[],
+        %(forward)s::boolean[],
+        ST_Point(%(grab_lon)s, %(grab_lat)s, 4326),
+        ST_Point(%(drop_lon)s, %(drop_lat)s, 4326),
+        %(target_m)s
+    )
+"""
+
 PLAN_ROUTE = f"""
     SELECT routing.plan_route(
         %(activity)s, {POINTS}, %(target_m)s, %(weights)s, '{{}}', %(waypoints)s
@@ -81,6 +95,18 @@ class NoRoute(Exception):
     def __init__(self, reason: Reason) -> None:
         super().__init__(reason)
         self.reason: Reason = reason
+
+
+class NoReroute(Exception):
+    """The database found no way for an edit; reason says why."""
+
+    def __init__(self, reason: RerouteReason) -> None:
+        super().__init__(reason)
+        self.reason: RerouteReason = reason
+
+
+class InvalidEdges(Exception):
+    """The edges to edit are not a route the activity can travel."""
 
 
 class PlanningTimeout(Exception):
@@ -226,4 +252,60 @@ def _planned(route: dict[str, Any]) -> PlannedRoute:
         warnings=route["warnings"],
         edges=[EdgeStep(**step) for step in route["edges"]],
         waypoint_order=route["waypoint_order"],
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class Edit:
+    activity: Activity
+    # the route as it is, in travel order
+    edges: Sequence[EdgeStep]
+    # where on the route it was grabbed
+    grab: Coordinate
+    # where it was dropped; None takes an edit back out
+    drop: Coordinate | None
+    # for the warnings; None for a route without a target
+    target_m: float | None
+
+
+async def reroute(
+    conn: AsyncConnection[TupleRow], edit: Edit
+) -> tuple[PlannedRoute, Coordinate | None]:
+    """
+    The route with the stretch around edit.grab routed again through the road nearest edit.drop,
+    and where the drop came onto that road.
+
+    Raises InvalidEdges for edges that are not a route, NoReroute when there is no way, and
+    PlanningTimeout when it takes too long.
+    """
+    params = {
+        "activity": edit.activity,
+        "edge_ids": [e.edge_id for e in edit.edges],
+        "forward": [e.forward for e in edit.edges],
+        "grab_lon": edit.grab.lon,
+        "grab_lat": edit.grab.lat,
+        "drop_lon": edit.drop.lon if edit.drop else None,
+        "drop_lat": edit.drop.lat if edit.drop else None,
+        "target_m": edit.target_m,
+    }
+    try:
+        async with conn.transaction():
+            await conn.execute(SET_TIMEOUT)
+            cur = await conn.execute(REROUTE, params)
+            row = await cur.fetchone()
+    except psycopg.errors.InvalidParameterValue as e:
+        raise InvalidEdges(e.diag.message_primary or "") from None
+    except psycopg.errors.NoDataFound as e:
+        reason = e.diag.message_detail
+        if reason not in REROUTE_REASONS:
+            raise
+        raise NoReroute(cast(RerouteReason, reason)) from None
+    except psycopg.errors.QueryCanceled:
+        raise PlanningTimeout(f"Editing took longer than {PLAN_TIMEOUT}.") from None
+    assert row is not None
+    route: dict[str, Any] = row[0]
+    handle = route["handle"]
+    return (
+        _planned(route | {"waypoint_order": []}),
+        Coordinate(*handle["coordinates"]) if handle else None,
     )

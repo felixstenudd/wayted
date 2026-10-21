@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.auth.dependencies import UserId
 from app.dependencies import Conn
-from app.geojson import LineString
+from app.geojson import LineString, Point
 
 from . import service
 from .attributes import ROUTE_ATTRIBUTES
@@ -15,10 +15,13 @@ from .schemas import (
     AttributeOut,
     AttributeScoreOut,
     EdgeStepOut,
+    NoRerouteOut,
     NoRouteOut,
     PlannedRouteOut,
     PlannedRoutesOut,
     PreparingOut,
+    RerouteIn,
+    RerouteOut,
     RoutePropertiesOut,
     RouteRequestIn,
 )
@@ -85,6 +88,44 @@ async def routes(
     except service.PlanningTimeout as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from None
     return PlannedRoutesOut(features=[_feature(route) for route in found])
+
+
+@router.post(
+    "/routes/reroute",
+    responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": NoRerouteOut,
+            "description": "No way for the edit, or the edges are not a route",
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Editing took too long"},
+    },
+)
+async def reroute(_: UserId, request: RerouteIn, db_conn: Conn) -> RerouteOut:
+    """
+    Move the stretch of a route around where it was grabbed onto the road where it was dropped,
+    and score the result. The rest of the route stays as it is.
+    """
+    edit = service.Edit(
+        activity=request.activity,
+        edges=[service.EdgeStep(edge_id=e.edge_id, forward=e.forward) for e in request.edges],
+        grab=service.Coordinate(lon=request.grab.lon, lat=request.grab.lat),
+        drop=service.Coordinate(lon=request.drop.lon, lat=request.drop.lat)
+        if request.drop
+        else None,
+        target_m=request.target_distance_m,
+    )
+    try:
+        route, handle = await service.reroute(db_conn, edit)
+    except service.NoReroute as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, e.reason) from None
+    except service.InvalidEdges as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
+    except service.PlanningTimeout as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from None
+    return RerouteOut(
+        route=_feature(route),
+        handle=Point(type="Point", coordinates=(handle.lon, handle.lat)) if handle else None,
+    )
 
 
 def _feature(route: service.PlannedRoute) -> PlannedRouteOut:

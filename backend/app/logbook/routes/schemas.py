@@ -6,7 +6,7 @@ from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 from app.logbook.route_reviews.schemas import RouteReviewOut
 from app.logbook.text import NO_NUL
 from app.routing.attributes import KEYS
-from app.routing.schemas import AttributeScoreOut
+from app.routing.schemas import AttributeScoreOut, EdgeStepIn
 
 type Activity = Literal["running", "cycling"]
 type Shape = Literal["loop", "point_to_point"]
@@ -28,13 +28,6 @@ def _known_keys(preferences: dict[str, float]) -> dict[str, float]:
 class LineString(BaseModel):
     type: Literal["LineString"]
     coordinates: list[Position]
-
-
-class EdgeStepIn(BaseModel):
-    # within bigint, the graph's id type
-    edge_id: int = Field(ge=-(2**63), le=2**63 - 1)
-    # whether the route runs from the edge's source to its target
-    forward: bool
 
 
 class RouteIn(BaseModel):

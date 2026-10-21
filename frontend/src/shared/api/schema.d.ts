@@ -336,6 +336,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/routing/routes/reroute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reroute
+         * @description Move the stretch of a route around where it was grabbed onto the road where it was dropped,
+         *     and score the result. The rest of the route stays as it is.
+         */
+        post: operations["reroute_routing_routes_reroute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -452,6 +473,13 @@ export interface components {
             password: string;
         };
         /**
+         * NoRerouteOut
+         * @description Why the edit found no way.
+         */
+        NoRerouteOut: {
+            detail: components["schemas"]["RerouteReason"];
+        };
+        /**
          * NoRouteOut
          * @description Why no route was found.
          */
@@ -486,6 +514,15 @@ export interface components {
             type: "FeatureCollection";
             /** Features */
             features: components["schemas"]["PlannedRouteOut"][];
+        };
+        /** Point */
+        Point: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "Point";
+            coordinates: components["schemas"]["Position"];
         };
         /** PointIn */
         PointIn: {
@@ -563,6 +600,27 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** RerouteIn */
+        RerouteIn: {
+            /**
+             * Activity
+             * @enum {string}
+             */
+            activity: "running" | "cycling";
+            /** Edges */
+            edges: components["schemas"]["EdgeStepIn"][];
+            grab: components["schemas"]["PointIn"];
+            drop?: components["schemas"]["PointIn"] | null;
+            /** Target Distance M */
+            target_distance_m?: number | null;
+        };
+        /** RerouteOut */
+        RerouteOut: {
+            route: components["schemas"]["PlannedRouteOut"];
+            handle: components["schemas"]["Point"] | null;
+        };
+        /** @enum {string} */
+        RerouteReason: "drop_off_road" | "unreachable";
         /** RouteEdgeOut */
         RouteEdgeOut: {
             /** Seq */
@@ -1558,6 +1616,46 @@ export interface operations {
                 };
             };
             /** @description Planning took too long */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reroute_routing_routes_reroute_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RerouteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerouteOut"];
+                };
+            };
+            /** @description No way for the edit, or the edges are not a route */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoRerouteOut"];
+                };
+            };
+            /** @description Editing took too long */
             503: {
                 headers: {
                     [name: string]: unknown;

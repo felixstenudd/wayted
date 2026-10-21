@@ -2,10 +2,10 @@ from typing import Annotated, Literal, Self
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
-from app.geojson import Feature, LineString
+from app.geojson import Feature, LineString, Point
 
 from .attributes import KEYS, Group
-from .service import Reason, RouteWarning
+from .service import Reason, RerouteReason, RouteWarning
 
 
 class AttributeOut(BaseModel):
@@ -70,6 +70,13 @@ class AttributeScoreOut(BaseModel):
     coverage: float
 
 
+class EdgeStepIn(BaseModel):
+    # within bigint, the graph's id type
+    edge_id: int = Field(ge=-(2**63), le=2**63 - 1)
+    # whether the route runs from the edge's source to its target
+    forward: bool
+
+
 class EdgeStepOut(BaseModel):
     edge_id: int
     # whether the route runs from the edge's source to its target
@@ -87,7 +94,8 @@ class RoutePropertiesOut(BaseModel):
     warnings: list[RouteWarning]
     # in travel order, as saving the route takes them
     edges: list[EdgeStepOut]
-    # indexes into the request's waypoints, in the order the route passes them
+    # indexes into the request's waypoints, in the order the route passes them; empty for an
+    # edited route, which passes them as it was planned to
     waypoint_order: list[int]
 
 
@@ -107,6 +115,30 @@ class PreparingOut(BaseModel):
     """The map data around the route is still being downloaded or scored; ask again shortly."""
 
     status: Literal["preparing"] = "preparing"
+
+
+class RerouteIn(BaseModel):
+    activity: Literal["running", "cycling"]
+    # the route as it is, in travel order
+    edges: list[EdgeStepIn] = Field(min_length=1)
+    # where on the route it was grabbed
+    grab: PointIn
+    # where it was dropped; leave out to take an edit back out
+    drop: PointIn | None = None
+    # for the warnings; leave out for a route without a target
+    target_distance_m: int | None = Field(default=None, ge=1_000, le=200_000)
+
+
+class RerouteOut(BaseModel):
+    route: PlannedRouteOut
+    # where the drop came onto the road, for its handle; null without a drop
+    handle: Point | None
+
+
+class NoRerouteOut(BaseModel):
+    """Why the edit found no way."""
+
+    detail: RerouteReason
 
 
 class NoRouteOut(BaseModel):
