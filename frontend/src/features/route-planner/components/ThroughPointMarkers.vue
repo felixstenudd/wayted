@@ -91,8 +91,8 @@ function setOpen(id: number, open: boolean): void {
 			</PopoverTrigger>
 			<PopoverContent
 				aria-labelledby="through-point-popover-title"
-				@interact-outside="leaveToMap"
 				class="flex flex-col gap-3"
+				@interact-outside="leaveToMap"
 			>
 				<h2 id="through-point-popover-title" class="text-title">{{ nameOf(point.id) }}</h2>
 				<ThroughPointSettings

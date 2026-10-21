@@ -62,10 +62,21 @@ export type RerouteReason = components['schemas']['RerouteReason']
 /** What POST /routing/routes/reroute answers: the edited route, and where its handle goes. */
 export type RerouteAnswer = components['schemas']['RerouteOut']
 
+/** How far the stretch a drag moved reaches before and after its handle, along the route. */
+export interface EditReach {
+	beforeM: number
+	afterM: number
+}
+
+/** Where a drag of the line came onto a road, and the stretch it moved. */
+export interface EditHandle extends EditReach {
+	at: LonLat
+}
+
 /** One state of an edited route: the route, and the handles where it was dragged to get there. */
 export interface EditStep {
 	route: Route
-	handles: LonLat[]
+	handles: EditHandle[]
 }
 
 /** The user's edits to one of the routes found: its steps, the route as found first. */

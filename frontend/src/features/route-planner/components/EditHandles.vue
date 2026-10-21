@@ -10,6 +10,8 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/shared/
 defineProps<{
 	/** Where earlier drags of the line came onto a road. */
 	handles: readonly LonLat[]
+	/** While an edit is on its way, the handles stay where they are. */
+	locked: boolean
 	/** On a touch screen, the spot of the line last tapped, ready to be dragged. */
 	tapped: LonLat | null
 }>()
@@ -43,7 +45,7 @@ function setOpen(index: number, open: boolean): void {
 		:key="`${handle.lon},${handle.lat}`"
 		:lon-lat="handle"
 		control
-		draggable
+		:draggable="!locked"
 		@move="move(index, $event)"
 	>
 		<Popover :open="openIndex === index" @update:open="setOpen(index, $event)">
@@ -73,7 +75,7 @@ function setOpen(index: number, open: boolean): void {
 		:key="`tapped-${tapped.lon},${tapped.lat}`"
 		:lon-lat="tapped"
 		:label="t('planner.edit.tapped')"
-		draggable
+		:draggable="!locked"
 		@move="emit('dragTapped', $event)"
 	>
 		<span class="grid size-11 place-items-center">

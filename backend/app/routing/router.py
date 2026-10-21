@@ -113,18 +113,23 @@ async def reroute(_: UserId, request: RerouteIn, db_conn: Conn) -> RerouteOut:
         if request.drop
         else None,
         target_m=request.target_distance_m,
+        before_m=request.before_m,
+        after_m=request.after_m,
     )
     try:
-        route, handle = await service.reroute(db_conn, edit)
+        rerouted = await service.reroute(db_conn, edit)
     except service.NoReroute as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, e.reason) from None
     except service.InvalidEdges as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e)) from None
     except service.PlanningTimeout as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from None
+    handle = rerouted.handle
     return RerouteOut(
-        route=_feature(route),
+        route=_feature(rerouted.route),
         handle=Point(type="Point", coordinates=(handle.lon, handle.lat)) if handle else None,
+        before_m=rerouted.before_m,
+        after_m=rerouted.after_m,
     )
 
 

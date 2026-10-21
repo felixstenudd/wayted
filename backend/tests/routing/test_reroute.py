@@ -3,11 +3,14 @@ from typing import Any
 import psycopg
 import pytest
 
-from ..graph.raw_data import Conn
-from .network_data import grid_point, node_id
+from ..graph.raw_data import ORIGIN_LAT, ORIGIN_LON, STEP, Conn
+from .network_data import COLUMN_STEPS, grid_point, node_id
 from .test_planner import Pool, coordinates, ends, grid, passed, plan
 
 pytestmark = pytest.mark.db
+
+ORIGINS = (ORIGIN_LON, ORIGIN_LAT)
+STEPS = (COLUMN_STEPS * STEP, STEP)
 
 WEST = grid_point(2, 12)
 EAST = grid_point(22, 12)
@@ -19,12 +22,13 @@ async def reroute(
     grab: str,
     drop: str | None,
     target_m: float | None = None,
+    reach: tuple[float, float] | None = None,
     activity: str = "running",
 ) -> dict[str, Any]:
     steps = route["edges"]
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT routing.reroute(%s, %s::bigint[], %s::boolean[], %s, %s, %s)",
+            "SELECT routing.reroute(%s, %s::bigint[], %s::boolean[], %s, %s, %s, %s, %s)",
             (
                 activity,
                 [s["edge_id"] for s in steps],
@@ -32,6 +36,7 @@ async def reroute(
                 grab,
                 drop,
                 target_m,
+                *(reach or (None, None)),
             ),
         )
         row = await cur.fetchone()
@@ -177,3 +182,34 @@ async def test_an_edit_carries_on_the_way_the_route_was_going(
 
     assert turns_back(edited) == []
     assert ends(edited) == (coordinates(2, 12), coordinates(22, 12))
+
+
+async def test_dropping_on_a_road_from_the_start_carries_on_from_it(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    route = await straight(admin_conn, mapper_pool, api_pool)
+
+    # Grabbed a block from the start and dropped on the street leading north from it.
+    edited = await reroute(api_pool, route, grid_point(3, 12), grid_point(2, 12.5))
+
+    assert turns_back(edited) == []
+    _, off_m = await passed(api_pool, edited, 2, 12.5)
+    assert off_m < 1
+    assert ends(edited) == (coordinates(2, 12), coordinates(22, 12))
+
+
+async def test_a_change_comes_back_out_over_the_stretch_it_moved(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    route = await straight(admin_conn, mapper_pool, api_pool)
+    # A long drag, four rows north, moves a long stretch.
+    edited = await reroute(api_pool, route, grid_point(12, 12), grid_point(12.5, 16))
+    handle = edited["handle"]["coordinates"]
+    at = grid_point(*[(c - o) / s for c, o, s in zip(handle, ORIGINS, STEPS, strict=True)])
+
+    undone = await reroute(
+        api_pool, edited, at, None, reach=(edited["before_m"], edited["after_m"])
+    )
+
+    assert edited["before_m"] > 300
+    assert undone["length_m"] == pytest.approx(route["length_m"], rel=0.01)

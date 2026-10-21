@@ -127,12 +127,19 @@ class RerouteIn(BaseModel):
     drop: PointIn | None = None
     # for the warnings; leave out for a route without a target
     target_distance_m: int | None = Field(default=None, ge=1_000, le=200_000)
+    # an earlier edit's before_m and after_m, to take that edit back out over all it moved
+    before_m: float | None = Field(default=None, ge=0, le=200_000)
+    after_m: float | None = Field(default=None, ge=0, le=200_000)
 
 
 class RerouteOut(BaseModel):
     route: PlannedRouteOut
     # where the drop came onto the road, for its handle; null without a drop
     handle: Point | None
+    # how far the new stretch reaches before and after the handle along the route; send them back
+    # to take the edit out again. Null without a drop.
+    before_m: float | None
+    after_m: float | None
 
 
 class NoRerouteOut(BaseModel):

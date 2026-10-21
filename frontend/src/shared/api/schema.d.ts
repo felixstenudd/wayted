@@ -613,11 +613,19 @@ export interface components {
             drop?: components["schemas"]["PointIn"] | null;
             /** Target Distance M */
             target_distance_m?: number | null;
+            /** Before M */
+            before_m?: number | null;
+            /** After M */
+            after_m?: number | null;
         };
         /** RerouteOut */
         RerouteOut: {
             route: components["schemas"]["PlannedRouteOut"];
             handle: components["schemas"]["Point"] | null;
+            /** Before M */
+            before_m: number | null;
+            /** After M */
+            after_m: number | null;
         };
         /** @enum {string} */
         RerouteReason: "drop_off_road" | "unreachable";

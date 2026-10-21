@@ -12,6 +12,7 @@ export {
 	boundsPolygon,
 	circlePolygon,
 	distanceM,
+	distanceToLineM,
 	EMPTY,
 	ringBounds,
 	type Bounds,

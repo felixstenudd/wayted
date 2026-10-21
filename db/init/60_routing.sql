@@ -1396,7 +1396,9 @@ BEGIN
                 routing.turns_sql(
                     routing.cost_sql(p_profile, v_leg_area, v_used),
                     p_profile,
-                    CASE WHEN i = 1 THEN ARRAY[p_vias[1]] END,
+                    -- The first leg routed leaves its via any way; the legs before it, if any,
+                    -- went nowhere.
+                    CASE WHEN v_step = 0 THEN ARRAY[p_vias[i]] END,
                     ARRAY[p_vias[i + 1]]
                 ),
                 v_from,
@@ -2291,10 +2293,13 @@ $$;
 -- was. The new way is the cheapest by the activity's own cost, highway class and turns, without
 -- preferences, so an edit goes the way it was dragged; edges outside the stretch pay the reuse
 -- penalty. Without p_drop, the stretch is routed again with nothing to pass, which takes an edit
--- back out. p_settings overrides routing.defaults() as in routing.make_profile.
+-- back out; p_before_m and p_after_m, what an earlier edit returned, make the stretch reach at
+-- least that far before and after the grab, so it covers all that edit moved. p_settings
+-- overrides routing.defaults() as in routing.make_profile.
 -- Returns the route as routing.route_out gives it, warned against p_target_m (NULL: no target) as
 -- a planned one is, with handle: where p_drop came onto the road, a GeoJSON point (NULL without
--- p_drop).
+-- p_drop); and before_m and after_m, how far the new stretch reaches before and after the handle
+-- along the new route (NULL without p_drop).
 -- Raises invalid_parameter_value for edges that are not in the graph, do not join up or may not
 -- be used that way, and no_data_found with DETAIL drop_off_road (no road near p_drop) or
 -- unreachable.
@@ -2305,6 +2310,8 @@ CREATE FUNCTION routing.reroute(
     p_grab     geometry,
     p_drop     geometry,
     p_target_m double precision DEFAULT NULL,
+    p_before_m double precision DEFAULT NULL,
+    p_after_m  double precision DEFAULT NULL,
     p_settings jsonb DEFAULT '{}'
 ) RETURNS jsonb
 LANGUAGE plpgsql
@@ -2321,6 +2328,9 @@ DECLARE
     v_line     geometry;
     v_grab_m   double precision;
     v_reach_m  double precision;
+    v_new_line geometry;
+    v_handle_m double precision;
+    v_from_m   double precision;
     -- The stretch is edges v_first + 1 .. v_last - 1.
     v_first    integer;
     v_last     integer;
@@ -2367,10 +2377,10 @@ BEGIN
     );
     SELECT coalesce(max(i), 0) INTO v_first
     FROM generate_series(1, v_n) i
-    WHERE v_end_m[i] <= v_grab_m - v_reach_m;
+    WHERE v_end_m[i] <= v_grab_m - greatest(v_reach_m, coalesce(p_before_m, 0));
     SELECT coalesce(min(i), v_n + 1) INTO v_last
     FROM generate_series(1, v_n) i
-    WHERE coalesce(v_end_m[i - 1], 0) >= v_grab_m + v_reach_m;
+    WHERE coalesce(v_end_m[i - 1], 0) >= v_grab_m + greatest(v_reach_m, coalesce(p_after_m, 0));
 
     v_area := ST_Buffer(
         ST_Collect(ARRAY[
@@ -2455,7 +2465,18 @@ BEGIN
         (v_route ->> 'length_m')::double precision, p_target_m,
         routing.setting(v_profile, 'plan', 'tolerance'), false
     ));
-    RETURN routing.route_out(v_route)
-        || jsonb_build_object('handle', ST_AsGeoJSON(v_handle)::jsonb);
+    -- How far the new stretch reaches before and after the handle along the new route, for taking
+    -- this edit back out over all of it.
+    IF v_handle IS NOT NULL THEN
+        v_new_line := ST_Transform(ST_GeomFromGeoJSON(v_route -> 'geometry'), 3857);
+        v_handle_m := ST_LineLocatePoint(v_new_line, ST_Transform(v_handle, 3857))
+            * (v_route ->> 'length_m')::double precision;
+        v_from_m := coalesce(v_end_m[v_first], 0);
+    END IF;
+    RETURN routing.route_out(v_route) || jsonb_build_object(
+        'handle', ST_AsGeoJSON(v_handle)::jsonb,
+        'before_m', greatest(v_handle_m - v_from_m, 0),
+        'after_m', greatest(v_from_m + v_best_m - v_handle_m, 0)
+    );
 END
 $$;

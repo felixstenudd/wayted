@@ -110,4 +110,25 @@ export function ringBounds(ring: readonly (readonly number[])[]): Bounds {
 	}
 }
 
+/** Shortest distance in metres from point to a line of [lon, lat]; for lines a few km long. */
+export function distanceToLineM(point: LonLat, line: readonly (readonly number[])[]): number {
+	// Metres east and north of point, flat at this scale.
+	const metresPerDegree = (Math.PI * EARTH_RADIUS_M) / 180
+	const across = metresPerDegree * Math.cos(toRadians(point.lat))
+	const toXY = (position: readonly number[]): [number, number] => [
+		((position[0] ?? 0) - point.lon) * across,
+		((position[1] ?? 0) - point.lat) * metresPerDegree,
+	]
+	const points = line.map(toXY)
+	let nearestM = points[0] ? Math.hypot(...points[0]) : Infinity
+	points.slice(1).forEach(([bx, by], index) => {
+		const [ax, ay] = points[index] ?? [bx, by]
+		const lengthSq = (bx - ax) ** 2 + (by - ay) ** 2
+		const share =
+			lengthSq === 0 ? 0 : clamp(-(ax * (bx - ax) + ay * (by - ay)) / lengthSq, 0, 1)
+		nearestM = Math.min(nearestM, Math.hypot(ax + share * (bx - ax), ay + share * (by - ay)))
+	})
+	return nearestM
+}
+
 export const EMPTY: MapData = { type: 'FeatureCollection', features: [] }

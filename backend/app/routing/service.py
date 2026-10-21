@@ -78,7 +78,9 @@ REROUTE = """
         %(forward)s::boolean[],
         ST_Point(%(grab_lon)s, %(grab_lat)s, 4326),
         ST_Point(%(drop_lon)s, %(drop_lat)s, 4326),
-        %(target_m)s
+        %(target_m)s,
+        %(before_m)s,
+        %(after_m)s
     )
 """
 
@@ -266,14 +268,25 @@ class Edit:
     drop: Coordinate | None
     # for the warnings; None for a route without a target
     target_m: float | None
+    # how far before and after the grab to reroute at least: an earlier edit's, to take it out
+    before_m: float | None = None
+    after_m: float | None = None
 
 
-async def reroute(
-    conn: AsyncConnection[TupleRow], edit: Edit
-) -> tuple[PlannedRoute, Coordinate | None]:
+@dataclass(frozen=True, slots=True)
+class Rerouted:
+    route: PlannedRoute
+    # where the drop came onto the road; None without a drop
+    handle: Coordinate | None
+    # how far the new stretch reaches before and after the handle; None without a drop
+    before_m: float | None
+    after_m: float | None
+
+
+async def reroute(conn: AsyncConnection[TupleRow], edit: Edit) -> Rerouted:
     """
     The route with the stretch around edit.grab routed again through the road nearest edit.drop,
-    and where the drop came onto that road.
+    where the drop came onto that road, and how far the stretch reached.
 
     Raises InvalidEdges for edges that are not a route, NoReroute when there is no way, and
     PlanningTimeout when it takes too long.
@@ -287,6 +300,8 @@ async def reroute(
         "drop_lon": edit.drop.lon if edit.drop else None,
         "drop_lat": edit.drop.lat if edit.drop else None,
         "target_m": edit.target_m,
+        "before_m": edit.before_m,
+        "after_m": edit.after_m,
     }
     try:
         async with conn.transaction():
@@ -305,7 +320,9 @@ async def reroute(
     assert row is not None
     route: dict[str, Any] = row[0]
     handle = route["handle"]
-    return (
-        _planned(route | {"waypoint_order": []}),
-        Coordinate(*handle["coordinates"]) if handle else None,
+    return Rerouted(
+        route=_planned(route | {"waypoint_order": []}),
+        handle=Coordinate(*handle["coordinates"]) if handle else None,
+        before_m=route["before_m"],
+        after_m=route["after_m"],
     )

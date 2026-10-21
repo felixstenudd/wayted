@@ -13,6 +13,7 @@ import type {
 	RouteShape,
 	Route,
 	SavedPlan,
+	EditHandle,
 	RouteEdit,
 	ThroughPoint,
 	ThroughPointPlacement,
@@ -157,10 +158,10 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	}
 
 	const editedRoute = computed<Route | null>(() => edit.value?.steps.at(-1)?.route ?? null)
-	const editHandles = computed<LonLat[]>(() => edit.value?.steps.at(-1)?.handles ?? [])
+	const editHandles = computed<EditHandle[]>(() => edit.value?.steps.at(-1)?.handles ?? [])
 
 	/** Adds an edit of the shown option; original is that option as found, for the first one. */
-	function applyEdit(original: Route, next: Route, handles: LonLat[]): void {
+	function applyEdit(original: Route, next: Route, handles: EditHandle[]): void {
 		const steps =
 			edit.value?.option === selectedOption.value
 				? edit.value.steps

@@ -40,6 +40,10 @@ watch(
 	() => props.lonLat,
 	({ lon, lat }) => marker?.setLngLat([lon, lat]),
 )
+watch(
+	() => props.draggable,
+	(draggable) => marker?.setDraggable(draggable),
+)
 
 // Before Vue removes the element, so MapLibre lets go of it first.
 onBeforeUnmount(() => {

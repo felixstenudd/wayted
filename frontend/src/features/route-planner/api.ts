@@ -7,7 +7,7 @@ import { storedPreferencesKey } from '@/features/route'
 
 import { PREPARING_POLL_MS, routeState, shouldPoll, type RouteState } from './route'
 import { usePlannerStore } from './store'
-import type { RerouteAnswer, Route, RouteAnswer, StoredPreferences } from './types'
+import type { EditReach, RerouteAnswer, Route, RouteAnswer, StoredPreferences } from './types'
 
 /**
  * The route for the planner's current search. The backend answers 202 until the map data around
@@ -85,13 +85,15 @@ export interface RerouteInput {
 	route: Route
 	grab: LonLat
 	drop: LonLat | null
+	/** An earlier edit's stretch, which the new one covers at least: to move or take out that edit. */
+	reach?: EditReach | null
 }
 
 /** Asks for route with the part around grab moved onto the road nearest drop; without drop, tidied. */
 export function useRerouteRequest(): (input: RerouteInput) => Promise<RerouteAnswer> {
 	const auth = useAuthStore()
 	const planner = usePlannerStore()
-	return ({ route, grab, drop }) => {
+	return ({ route, grab, drop, reach }) => {
 		const request = planner.search?.request
 		if (!request)
 			return Promise.reject(new Error('There is no search whose route could be edited.'))
@@ -105,6 +107,7 @@ export function useRerouteRequest(): (input: RerouteInput) => Promise<RerouteAns
 				...(request.target_distance_m
 					? { target_distance_m: request.target_distance_m }
 					: {}),
+				...(reach ? { before_m: reach.beforeM, after_m: reach.afterM } : {}),
 			},
 		})
 	}

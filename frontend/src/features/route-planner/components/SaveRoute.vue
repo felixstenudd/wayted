@@ -72,7 +72,7 @@ function submit(): void {
 			// Where the user dragged the route is kept as through points, for planning it again.
 			waypoints: [
 				...request.waypoints.map((waypoint) => ({ ...waypoint })),
-				...planner.editHandles.map((handle) => ({ ...handle, at: 'any' as const })),
+				...planner.editHandles.map((handle) => ({ ...handle.at, at: 'any' as const })),
 			],
 			edges: route.properties.edges.map((step) => ({ ...step })),
 		},

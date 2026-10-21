@@ -339,6 +339,7 @@ describe('route options', () => {
 })
 
 describe('route edits', () => {
+	const handle = (at: { lon: number; lat: number }) => ({ at, beforeM: 300, afterM: 300 })
 	const route = (lengthM: number): Route => ({
 		type: 'Feature',
 		geometry: { type: 'LineString', coordinates: [] },
@@ -362,24 +363,24 @@ describe('route edits', () => {
 		const planner = searched()
 		planner.selectOption(1)
 
-		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
+		planner.applyEdit(route(8_000), route(8_300), [handle(TAVLEBORG)])
 
 		expect(planner.edit?.option).toBe(1)
 		expect(planner.edit?.steps.map((step) => step.route.properties.length_m)).toEqual([
 			8_000, 8_300,
 		])
 		expect(planner.editedRoute?.properties.length_m).toBe(8_300)
-		expect(planner.editHandles).toEqual([TAVLEBORG])
+		expect(planner.editHandles).toEqual([handle(TAVLEBORG)])
 	})
 
 	it('step back one at a time, until there is nothing left to undo', () => {
 		const planner = searched()
-		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
-		planner.applyEdit(route(8_000), route(8_500), [TAVLEBORG, UMEA])
+		planner.applyEdit(route(8_000), route(8_300), [handle(TAVLEBORG)])
+		planner.applyEdit(route(8_000), route(8_500), [handle(TAVLEBORG), handle(UMEA)])
 
 		planner.undoEdit()
 		expect(planner.editedRoute?.properties.length_m).toBe(8_300)
-		expect(planner.editHandles).toEqual([TAVLEBORG])
+		expect(planner.editHandles).toEqual([handle(TAVLEBORG)])
 
 		planner.undoEdit()
 		expect(planner.edit).toBeNull()
@@ -387,7 +388,7 @@ describe('route edits', () => {
 
 	it('ask before another option is shown, and lose the edits once it is', () => {
 		const planner = searched()
-		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
+		planner.applyEdit(route(8_000), route(8_300), [handle(TAVLEBORG)])
 
 		planner.selectOption(2)
 		expect(planner.selectedOption).toBe(0)
@@ -401,7 +402,7 @@ describe('route edits', () => {
 
 	it('keep going when the switch is called off', () => {
 		const planner = searched()
-		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
+		planner.applyEdit(route(8_000), route(8_300), [handle(TAVLEBORG)])
 		planner.selectOption(2)
 
 		planner.cancelOption()
@@ -426,7 +427,7 @@ describe('route edits', () => {
 
 	it('are gone with the next search', () => {
 		const planner = searched()
-		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
+		planner.applyEdit(route(8_000), route(8_300), [handle(TAVLEBORG)])
 
 		planner.findRoutes()
 
