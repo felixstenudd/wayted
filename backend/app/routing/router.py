@@ -13,6 +13,8 @@ from . import service
 from .attributes import ROUTE_ATTRIBUTES
 from .schemas import (
     AttributeOut,
+    AttributeScoreOut,
+    EdgeStepOut,
     NoRouteOut,
     PlannedRouteOut,
     PreparingOut,
@@ -79,8 +81,12 @@ async def routes(
         geometry=LineString(**route.geometry),
         properties=RoutePropertiesOut(
             length_m=route.length_m,
-            scores=route.scores,
+            scores={
+                k: AttributeScoreOut(mean=v.mean, coverage=v.coverage)
+                for k, v in route.scores.items()
+            },
             reused_m=route.reused_m,
             warnings=route.warnings,
+            edges=[EdgeStepOut(edge_id=e.edge_id, forward=e.forward) for e in route.edges],
         ),
     )

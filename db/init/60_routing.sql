@@ -1402,9 +1402,40 @@ BEGIN
 END
 $$;
 
--- The route through p_vias as the API returns it: the line in travel order, its length, the
--- length-weighted share of every edge score along it, the length travelled more than once, the
--- edge ids in order and p_warnings.
+-- How a route along p_edge_ids (in travel order; an edge travelled twice counts twice) scores, as
+-- the API and saved routes describe it: per score key, the mean over the length that has the key,
+-- and the share of the route's length that has it (coverage), both to four decimals. Keys no edge
+-- has are left out.
+CREATE FUNCTION routing.route_scores(p_edge_ids bigint[]) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    WITH legs AS (
+        SELECT e.length_m, e.scores
+        FROM unnest(p_edge_ids) AS s (id)
+        JOIN graph.edges e ON e.id = s.id
+    ),
+    total AS (
+        SELECT sum(length_m) AS length_m FROM legs
+    ),
+    scored AS (
+        SELECT kv.key, sum(l.length_m * kv.value::float8) AS weighted, sum(l.length_m) AS length_m
+        FROM legs l
+        CROSS JOIN LATERAL jsonb_each(l.scores) kv
+        GROUP BY kv.key
+    )
+    SELECT coalesce(
+        jsonb_object_agg(s.key, jsonb_build_object(
+            'mean', round((s.weighted / s.length_m)::numeric, 4),
+            'coverage', round((s.length_m / total.length_m)::numeric, 4)
+        )) FILTER (WHERE s.length_m > 0),
+        '{}'
+    )
+    FROM scored s, total
+$$;
+
+-- The route through p_vias as the planner works with it: the line in travel order, its length,
+-- the length-weighted share of every edge score along it, the length travelled more than once,
+-- the edge ids in order, whether each is travelled from its source to its target (forward), and
+-- p_warnings. routing.route_out turns it into what the API returns.
 CREATE FUNCTION routing.route_json(
     p_profile routing.profile, p_area geometry, p_vias bigint[], p_warnings text[]
 ) RETURNS jsonb
@@ -1415,6 +1446,7 @@ LANGUAGE sql AS $$
             e.id,
             e.length_m,
             e.scores,
+            r.vertex = e.source AS forward,
             -- pgRouting gives the vertex an edge is entered from; turn the rest around.
             CASE WHEN r.vertex = e.source THEN e.geom ELSE ST_Reverse(e.geom) END AS geom
         FROM routing.route_edges(p_profile, p_area, p_vias) r
@@ -1443,6 +1475,7 @@ LANGUAGE sql AS $$
         'scores', shares.scores,
         'reused_m', reused.length_m,
         'edges', (SELECT to_jsonb(array_agg(id ORDER BY step)) FROM path),
+        'forward', (SELECT to_jsonb(array_agg(forward ORDER BY step)) FROM path),
         'warnings', to_jsonb(p_warnings)
     )
     FROM total, shares, reused
@@ -1527,7 +1560,7 @@ END
 $$;
 
 -- p_a followed by p_b, as much of routing.route_json as carrying a route on needs: the line,
--- the length and the edges. p_a may be NULL, for nothing before.
+-- the length and the edges with their directions. p_a may be NULL, for nothing before.
 CREATE FUNCTION routing.joined(p_a jsonb, p_b jsonb) RETURNS jsonb
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT CASE WHEN p_a IS NULL THEN p_b ELSE jsonb_build_object(
@@ -1535,7 +1568,8 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
             ST_GeomFromGeoJSON(p_a -> 'geometry'), ST_GeomFromGeoJSON(p_b -> 'geometry')
         ))::jsonb,
         'length_m', (p_a ->> 'length_m')::double precision + (p_b ->> 'length_m')::double precision,
-        'edges', (p_a -> 'edges') || (p_b -> 'edges')
+        'edges', (p_a -> 'edges') || (p_b -> 'edges'),
+        'forward', (p_a -> 'forward') || (p_b -> 'forward')
     ) END
 $$;
 
@@ -1675,6 +1709,30 @@ BEGIN
 END
 $$;
 
+-- A route from routing.route_json as the API returns it: the line, length, reused length and
+-- warnings, the edges in travel order as {edge_id, forward}, and the scores as
+-- routing.route_scores gives them.
+CREATE FUNCTION routing.route_out(p_route jsonb) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    WITH steps AS (
+        SELECT e.id::bigint AS edge_id, f.forward::boolean AS forward, e.n
+        FROM jsonb_array_elements_text(p_route -> 'edges') WITH ORDINALITY AS e (id, n)
+        JOIN jsonb_array_elements_text(p_route -> 'forward') WITH ORDINALITY AS f (forward, n)
+            ON f.n = e.n
+    )
+    SELECT jsonb_build_object(
+        'geometry', p_route -> 'geometry',
+        'length_m', p_route -> 'length_m',
+        'reused_m', p_route -> 'reused_m',
+        'warnings', p_route -> 'warnings',
+        'edges', (
+            SELECT jsonb_agg(jsonb_build_object('edge_id', edge_id, 'forward', forward) ORDER BY n)
+            FROM steps
+        ),
+        'scores', routing.route_scores(ARRAY(SELECT edge_id FROM steps ORDER BY n))
+    )
+$$;
+
 -- Plans a route for p_activity from p_start to p_finish, or back to p_start when p_finish is
 -- NULL, weighting edge scores by p_weights; p_settings overrides routing.defaults() (see
 -- routing.make_profile). With p_target_m, the route is about that long; without it, which only a
@@ -1688,7 +1746,8 @@ $$;
 -- to the length still to go before it, one to the end to what is left of the target, and one
 -- to an any waypoint to its share of the length still to go to the next of those, by straight
 -- distance. A piece to where the last one ended is left out, but for a loop with nothing else.
--- The whole route is then routed through all their vias in one go.
+-- The whole route is then routed through all their vias in one go, and returned as
+-- routing.route_out gives it.
 -- The points are snapped to roads that join (see routing.snap_points), so a path cut off from
 -- the rest is not taken for the way there.
 -- Warnings, judged on the route: too_short (the direct way through the points is longer than
@@ -1865,6 +1924,6 @@ BEGIN
             ELSE 'target_missed'
         END]));
     END IF;
-    RETURN v_route;
+    RETURN routing.route_out(v_route);
 END
 $$;

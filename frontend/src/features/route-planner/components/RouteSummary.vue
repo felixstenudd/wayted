@@ -25,6 +25,7 @@ const name = (key: string) =>
 const shares = computed(() => {
 	const percent = new Intl.NumberFormat(i18n.locale.value, { style: 'percent' })
 	return Object.entries(props.route.properties.scores)
+		.map(([key, { mean, coverage }]) => [key, mean * coverage] as const)
 		.filter(([, share]) => share >= 0.005)
 		.sort(([, a], [, b]) => b - a)
 		.map(([key, share]) =>

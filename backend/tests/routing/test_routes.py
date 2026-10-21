@@ -30,8 +30,8 @@ LOOP: dict[str, Any] = {
     "shape": "loop",
     "start": CENTRE,
     "target_distance_m": 2_000,
-    # water is not scored yet and is dropped.
-    "preferences": {"green": 0.5, "water": 1},
+    # bridges are not scored yet and are dropped.
+    "preferences": {"green": 0.5, "bridges": 1},
 }
 QUERY = service.RouteQuery(
     activity="running",
@@ -102,6 +102,10 @@ async def test_area_in_the_graph_gets_a_route(
     assert properties["length_m"] == pytest.approx(2_000, rel=0.07)
     assert properties["warnings"] == []
     assert properties["reused_m"] >= 0
+    # The grid has nothing to score, so there is nothing known about any attribute.
+    assert properties["scores"] == {}
+    steps = properties["edges"]
+    assert steps and all(set(step) == {"edge_id", "forward"} for step in steps)
     cur = await admin_conn.execute("SELECT count(*) FROM raw.pending_tiles")
     assert await cur.fetchone() == (0,)
 

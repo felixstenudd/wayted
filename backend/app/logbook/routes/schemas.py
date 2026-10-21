@@ -6,6 +6,7 @@ from pydantic import AfterValidator, BaseModel, Field, StringConstraints
 from app.logbook.route_reviews.schemas import RouteReviewOut
 from app.logbook.text import NO_NUL
 from app.routing.attributes import KEYS
+from app.routing.schemas import AttributeScoreOut
 
 type Activity = Literal["running", "cycling"]
 type Shape = Literal["loop", "point_to_point"]
@@ -47,12 +48,6 @@ class RouteIn(BaseModel):
 
 class RenameIn(BaseModel):
     name: Name
-
-
-class AttributeScoreOut(BaseModel):
-    mean: float
-    # share of the route's length that has a score for the attribute
-    coverage: float
 
 
 class RouteEdgeOut(BaseModel):

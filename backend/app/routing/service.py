@@ -87,15 +87,31 @@ class RouteQuery:
 
 
 @dataclass(frozen=True, slots=True)
+class EdgeStep:
+    edge_id: int
+    # whether the route runs from the edge's source to its target
+    forward: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AttributeScore:
+    # mean over the length that has a score for the attribute
+    mean: float
+    # share of the route's length that has one
+    coverage: float
+
+
+@dataclass(frozen=True, slots=True)
 class PlannedRoute:
     # GeoJSON LineString in travel order
     geometry: dict[str, Any]
     length_m: float
-    # score key -> length-weighted share along the route, 0..1
-    scores: dict[str, float]
+    scores: dict[str, AttributeScore]
     # length travelled more than once
     reused_m: float
     warnings: list[RouteWarning]
+    # in travel order
+    edges: list[EdgeStep]
 
 
 def _params(query: RouteQuery) -> dict[str, Any]:
@@ -161,7 +177,8 @@ async def plan(conn: AsyncConnection[TupleRow], query: RouteQuery) -> PlannedRou
     return PlannedRoute(
         geometry=route["geometry"],
         length_m=route["length_m"],
-        scores=route["scores"],
+        scores={key: AttributeScore(**score) for key, score in route["scores"].items()},
         reused_m=route["reused_m"],
         warnings=route["warnings"],
+        edges=[EdgeStep(**step) for step in route["edges"]],
     )

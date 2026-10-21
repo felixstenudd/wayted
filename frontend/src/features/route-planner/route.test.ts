@@ -14,7 +14,7 @@ const ROUTE: Route = {
 			[20.3, 63.83],
 		],
 	},
-	properties: { length_m: 2_500, scores: {}, reused_m: 0, warnings: [] },
+	properties: { length_m: 2_500, scores: {}, reused_m: 0, warnings: [], edges: [] },
 }
 const PREPARING = { status: 'preparing' } as const
 

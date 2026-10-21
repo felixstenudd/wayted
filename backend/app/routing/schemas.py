@@ -50,15 +50,29 @@ class RouteRequestIn(BaseModel):
         return self
 
 
+class AttributeScoreOut(BaseModel):
+    mean: float
+    # share of the route's length that has a score for the attribute
+    coverage: float
+
+
+class EdgeStepOut(BaseModel):
+    edge_id: int
+    # whether the route runs from the edge's source to its target
+    forward: bool
+
+
 class RoutePropertiesOut(BaseModel):
     length_m: float
-    # attribute key -> length-weighted share of the route, 0..1, for the attributes that are scored
-    scores: dict[str, float]
+    # for the attributes that are scored
+    scores: dict[str, AttributeScoreOut]
     # length travelled more than once
     reused_m: float
     # too_short: the finish is farther than the target; target_missed: no route came close.
     # Always empty without a target.
     warnings: list[RouteWarning]
+    # in travel order, as saving the route takes them
+    edges: list[EdgeStepOut]
 
 
 class PlannedRouteOut(Feature[LineString, RoutePropertiesOut]):

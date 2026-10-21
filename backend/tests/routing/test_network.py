@@ -274,10 +274,10 @@ async def test_planned_route_without_a_target_takes_the_park_when_green_is_prefe
             cur = await conn.execute(
                 """
                 SELECT e.way_id
-                FROM jsonb_array_elements_text(
+                FROM jsonb_array_elements(
                          routing.plan_route('running', %s, %s, NULL, %s) -> 'edges'
-                     ) WITH ORDINALITY AS r(id, n)
-                JOIN graph.edges e ON e.id = r.id::bigint
+                     ) WITH ORDINALITY AS r(step, n)
+                JOIN graph.edges e ON e.id = (r.step ->> 'edge_id')::bigint
                 ORDER BY r.n
                 """,
                 (point(0, 0), point(10, 0), Jsonb(weights)),

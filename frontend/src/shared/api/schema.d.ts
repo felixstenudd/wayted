@@ -420,6 +420,13 @@ export interface components {
             /** Forward */
             forward: boolean;
         };
+        /** EdgeStepOut */
+        EdgeStepOut: {
+            /** Edge Id */
+            edge_id: number;
+            /** Forward */
+            forward: boolean;
+        };
         /** @enum {string} */
         Group: "surroundings" | "streets" | "sights" | "surface";
         /** HTTPValidationError */
@@ -609,12 +616,14 @@ export interface components {
             length_m: number;
             /** Scores */
             scores: {
-                [key: string]: number;
+                [key: string]: components["schemas"]["AttributeScoreOut"];
             };
             /** Reused M */
             reused_m: number;
             /** Warnings */
             warnings: components["schemas"]["RouteWarning"][];
+            /** Edges */
+            edges: components["schemas"]["EdgeStepOut"][];
         };
         /** RouteRequestIn */
         RouteRequestIn: {

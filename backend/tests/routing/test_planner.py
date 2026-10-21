@@ -116,10 +116,10 @@ async def test_route_line_is_continuous_and_matches_its_edges(
         cur = await conn.execute(
             """
             SELECT ST_Length(ST_GeomFromGeoJSON(%s)::geography),
-                   (SELECT sum(length_m) FROM graph.edges e, jsonb_array_elements_text(%s) i
-                    WHERE e.id = i::bigint)
+                   (SELECT sum(length_m) FROM graph.edges e, unnest(%s::bigint[]) i
+                    WHERE e.id = i)
             """,
-            (Jsonb(route["geometry"]), Jsonb(route["edges"])),
+            (Jsonb(route["geometry"]), [step["edge_id"] for step in route["edges"]]),
         )
         row = await cur.fetchone()
 
@@ -128,6 +128,62 @@ async def test_route_line_is_continuous_and_matches_its_edges(
     assert route["geometry"]["type"] == "LineString"
     assert line_m == pytest.approx(route["length_m"], rel=1e-3)
     assert edges_m == pytest.approx(route["length_m"])
+
+
+async def test_route_edges_say_which_way_each_is_travelled(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool, one_way_rows=frozenset({12}))
+
+    route = await plan(api_pool, "cycling", CENTRE, None, 3_000)
+
+    steps = route["edges"]
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT CASE WHEN s.forward THEN e.source ELSE e.target END,
+                   CASE WHEN s.forward THEN e.target ELSE e.source END,
+                   'cycling' = ANY (CASE WHEN s.forward THEN e.forward ELSE e.backward END)
+            FROM unnest(%s::bigint[], %s::boolean[]) WITH ORDINALITY s (edge_id, forward, n)
+            JOIN graph.edges e ON e.id = s.edge_id
+            ORDER BY s.n
+            """,
+            ([s["edge_id"] for s in steps], [s["forward"] for s in steps]),
+        )
+        travelled = await cur.fetchall()
+
+    assert len(travelled) == len(steps)
+    # Each edge starts where the one before ends, in a direction the activity may go.
+    assert all(allowed for _, _, allowed in travelled)
+    assert all(a[1] == b[0] for a, b in zip(travelled, travelled[1:], strict=False))
+    assert travelled[0][0] == travelled[-1][1] == node_id(12, 12)
+
+
+async def test_route_scores_say_how_much_is_known_and_how_it_scores_there(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    cur = await admin_conn.execute(
+        """
+        UPDATE graph.edges SET scores = CASE source
+            WHEN %(a)s THEN '{"green": 1, "water": 0.5}'::jsonb ELSE '{"green": 0}'::jsonb END
+        WHERE (source, target) IN ((%(a)s, %(b)s), (%(b)s, %(c)s))
+        RETURNING id, length_m
+        """,
+        {"a": node_id(0, 0), "b": node_id(1, 0), "c": node_id(2, 0)},
+    )
+    (first, first_m), (second, second_m) = sorted(await cur.fetchall())
+
+    async with api_pool.connection() as conn:
+        cur = await conn.execute("SELECT routing.route_scores(%s)", ([first, second],))
+        row = await cur.fetchone()
+
+    assert row is not None
+    share = first_m / (first_m + second_m)
+    assert row[0] == {
+        "green": {"mean": pytest.approx(share, abs=1e-4), "coverage": 1},
+        "water": {"mean": 0.5, "coverage": pytest.approx(share, abs=1e-4)},
+    }
 
 
 async def test_route_runs_from_start_to_finish_at_about_the_target(
@@ -445,8 +501,9 @@ async def test_loop_heads_for_the_park_when_green_is_preferred(
     preferred = await plan(api_pool, "running", CENTRE, None, 4_000, {"green": 1})
     avoided = await plan(api_pool, "running", CENTRE, None, 4_000, {"green": -1})
 
-    assert preferred["scores"]["green"] > 0.5
-    assert avoided["scores"]["green"] < 0.1
+    assert preferred["scores"]["green"]["mean"] > 0.5
+    assert avoided["scores"]["green"]["mean"] < 0.1
+    assert preferred["scores"]["green"]["coverage"] == 1
     assert preferred["length_m"] == pytest.approx(4_000, rel=TOLERANCE)
 
 
