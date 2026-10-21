@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { needsCoverageNote, profileRows, scoreWord } from './profile'
+import { needsCoverageNote, profileRows, scoreMessage, scoreWord } from './profile'
 
 describe('scoreWord', () => {
 	it('puts a share of the route into one of five words', () => {
@@ -47,5 +47,19 @@ describe('needsCoverageNote', () => {
 	it('notes coverage when under nine tenths of the route is known', () => {
 		expect(needsCoverageNote(0.89)).toBe(true)
 		expect(needsCoverageNote(0.9)).toBe(false)
+	})
+})
+
+describe('scoreMessage', () => {
+	const has = (path: string) => path.startsWith('route.profile.attributeWords.prepared.')
+
+	it("says it in the attribute's own words when it has them", () => {
+		expect(scoreMessage('prepared', 0.8, has)).toBe(
+			'route.profile.attributeWords.prepared.mostly',
+		)
+	})
+
+	it('falls back to the plain words', () => {
+		expect(scoreMessage('bridges', 0.3, has)).toBe('route.profile.words.some')
 	})
 })

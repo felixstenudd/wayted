@@ -516,6 +516,36 @@
 				"some": "Some",
 				"aLot": "A lot",
 				"mostly": "Mostly"
+			},
+			"attributeWords": {
+				"green": {
+					"none": "Not in parks",
+					"aLittle": "A little in parks",
+					"some": "Partly in parks",
+					"aLot": "Much in parks",
+					"mostly": "Mostly in parks"
+				},
+				"nature": {
+					"none": "No nature",
+					"aLittle": "A little nature",
+					"some": "Some nature",
+					"aLot": "Lots of nature",
+					"mostly": "Mostly nature"
+				},
+				"water": {
+					"none": "Away from water",
+					"aLittle": "A little by water",
+					"some": "Partly by water",
+					"aLot": "Much by water",
+					"mostly": "Mostly by water"
+				},
+				"prepared": {
+					"none": "Rough",
+					"aLittle": "Mostly rough",
+					"some": "Mixed",
+					"aLot": "Mostly prepared",
+					"mostly": "Prepared"
+				}
 			}
 		},
 		"name": {

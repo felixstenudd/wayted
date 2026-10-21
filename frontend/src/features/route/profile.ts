@@ -20,6 +20,20 @@ export function scoreWord(mean: number): ScoreWord {
 	return 'mostly'
 }
 
+/**
+ * The message for a score of one attribute: its own words, such as "Mostly prepared", when it has
+ * them, else the plain word.
+ */
+export function scoreMessage(
+	attributeKey: string,
+	mean: number,
+	hasMessage: (path: string) => boolean,
+): string {
+	const word = scoreWord(mean)
+	const own = `route.profile.attributeWords.${attributeKey}.${word}`
+	return hasMessage(own) ? own : `route.profile.words.${word}`
+}
+
 export const needsCoverageNote = (coverage: number) => coverage < COVERAGE_NOTE_BELOW
 
 /**

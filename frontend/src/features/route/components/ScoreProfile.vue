@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import { useRouteAttributes } from '../api'
 import { humanizeKey, weightMessage } from '../attributes'
-import { needsCoverageNote, profileRows, scoreWord } from '../profile'
+import { needsCoverageNote, profileRows, scoreMessage } from '../profile'
 import type { AttributeScore } from '../types'
 import AttributeSymbol from './AttributeSymbol.vue'
 
@@ -34,7 +34,7 @@ const rows = computed(() =>
 	).map((row) => ({
 		...row,
 		name: name(row.key),
-		word: t(`route.profile.words.${scoreWord(row.mean)}`),
+		word: t(scoreMessage(row.key, row.mean, (path) => i18n.te(path))),
 		wanted:
 			row.weight === 0
 				? null
@@ -61,19 +61,20 @@ const rows = computed(() =>
 		<p v-if="rows.length === 0" class="text-small text-graphite">
 			{{ t('route.profile.empty') }}
 		</p>
-		<ul v-else class="flex flex-col gap-2.5">
-			<li v-for="row in rows" :key="row.key" class="flex items-center gap-2">
-				<AttributeSymbol :attribute-key="row.key" />
-				<div class="flex w-32 shrink-0 flex-col">
-					<span class="text-body" :class="{ 'font-semibold': row.wanted }">{{
-						row.name
-					}}</span>
-					<span v-if="row.wanted" class="text-caption text-graphite">{{
-						row.wanted
-					}}</span>
-					<span v-if="row.known" class="text-caption text-graphite">{{ row.known }}</span>
+		<ul v-else class="flex flex-col gap-3.5">
+			<!-- The word says what the route is like; the bar below shows it, unknown part hatched. -->
+			<li v-for="row in rows" :key="row.key" class="flex flex-col gap-1.5">
+				<div class="flex items-center gap-2">
+					<AttributeSymbol :attribute-key="row.key" />
+					<span class="min-w-0 flex-1 text-body" :class="{ 'font-semibold': row.wanted }">
+						{{ row.name }}
+					</span>
+					<span class="text-small font-semibold">
+						{{ row.word }}
+						<span class="sr-only">{{ row.spoken }}</span>
+					</span>
 				</div>
-				<div class="relative flex-1" aria-hidden="true">
+				<div class="relative ml-6" aria-hidden="true">
 					<div class="relative h-2 overflow-hidden rounded-full bg-line">
 						<span
 							class="absolute inset-y-0 left-0 rounded-full bg-ink"
@@ -92,10 +93,13 @@ const rows = computed(() =>
 						:style="{ left: `${100 - row.unknownPercent}%` }"
 					/>
 				</div>
-				<span class="w-16 shrink-0 text-right text-small font-semibold">
-					{{ row.word }}
-					<span class="sr-only">{{ row.spoken }}</span>
-				</span>
+				<p
+					v-if="row.wanted || row.known"
+					class="ml-6 flex flex-col text-caption text-graphite"
+				>
+					<span v-if="row.wanted">{{ row.wanted }}</span>
+					<span v-if="row.known">{{ row.known }}</span>
+				</p>
 			</li>
 		</ul>
 	</section>
