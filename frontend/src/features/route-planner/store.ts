@@ -11,6 +11,7 @@ import type {
 	RouteSearch,
 	RouteShape,
 	ThroughPoint,
+	ThroughPointPlacement,
 } from './types'
 
 export const DISTANCE_RANGES: Record<Activity, DistanceRange> = {
@@ -40,6 +41,8 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	// In the order added, which the planner keeps only for points placed as soon as possible.
 	const throughPoints = ref<ThroughPoint[]>([])
 	let throughPointIds = 0
+	// The through point whose settings are open, on the map or in the sheet.
+	const editingThroughPointId = ref<number | null>(null)
 	// Only weights other than 0 ("don't mind") are kept.
 	const preferenceWeights = ref<Record<string, number>>({})
 	// The user's stored weights, once loaded; the planner starts from them.
@@ -139,12 +142,24 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		)
 	}
 
+	function setThroughPointPlacement(id: number, placement: ThroughPointPlacement): void {
+		throughPoints.value = throughPoints.value.map((point) =>
+			point.id === id ? { ...point, placement } : point,
+		)
+	}
+
 	function removeThroughPoint(id: number): void {
 		throughPoints.value = throughPoints.value.filter((point) => point.id !== id)
+		if (editingThroughPointId.value === id) editingThroughPointId.value = null
 	}
 
 	function clearThroughPoints(): void {
 		throughPoints.value = []
+		editingThroughPointId.value = null
+	}
+
+	function editThroughPoint(id: number | null): void {
+		editingThroughPointId.value = id
 	}
 
 	function setTargetDistanceKm(km: number): void {
@@ -200,6 +215,7 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		hasTargetDistance,
 		usesTargetDistance,
 		throughPoints: readonly(throughPoints),
+		editingThroughPointId: readonly(editingThroughPointId),
 		preferenceWeights: readonly(preferenceWeights),
 		distanceRange,
 		setWeightCount,
@@ -212,8 +228,10 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		placeNextPoint,
 		addThroughPoint,
 		moveThroughPoint,
+		setThroughPointPlacement,
 		removeThroughPoint,
 		clearThroughPoints,
+		editThroughPoint,
 		setTargetDistanceKm,
 		weightOf,
 		setWeight,

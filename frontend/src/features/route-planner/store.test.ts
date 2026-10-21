@@ -215,6 +215,32 @@ describe('through points', () => {
 		expect(planner.throughPoints).toEqual([])
 	})
 
+	it('can go first, or after a distance, as the planner takes them', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		const first = planner.addThroughPoint(TAVLEBORG)
+		const later = planner.addThroughPoint(NYDALA)
+
+		planner.setThroughPointPlacement(first, { at: 'asap' })
+		planner.setThroughPointPlacement(later, { at: 'after', afterKm: 2.5 })
+
+		expect(planner.routeRequest?.waypoints).toEqual([
+			{ ...TAVLEBORG, at: 'asap' },
+			{ ...NYDALA, at: 'after', after_m: 2_500 },
+		])
+	})
+
+	it('stop being edited once removed', () => {
+		const planner = usePlannerStore()
+		const point = planner.addThroughPoint(TAVLEBORG)
+		planner.editThroughPoint(point)
+		expect(planner.editingThroughPointId).toBe(point)
+
+		planner.removeThroughPoint(point)
+
+		expect(planner.editingThroughPointId).toBeNull()
+	})
+
 	it('make a found route stale when they change', () => {
 		const planner = usePlannerStore()
 		planner.start = UMEA

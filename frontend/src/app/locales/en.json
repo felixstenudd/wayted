@@ -228,11 +228,30 @@
 				"afterFinishHint": "Add them once the start and finish are placed.",
 				"clickHint": "Click the map to add one.",
 				"routeShownHint": "Add one at the centre of the map.",
-				"addedHint": "1 added. Drag it on the map to move it. | {n} added. Drag them on the map to move them.",
+				"addedHint": "1 added. Drag it to move it, or click it for more. | {n} added. Drag them to move them, or click one for more.",
 				"addAtCenter": "Add a through point at the centre of the map",
 				"removeAll": "Remove all through points",
 				"marker": "Through point",
-				"numberedMarker": "Through point {n}"
+				"numberedMarker": "Through point {n}",
+				"change": "{name}: change where it goes",
+				"remove": "Remove through point",
+				"afterLabel": "Distance into the route",
+				"afterTag": "{km} km",
+				"soonTag": {
+					"one": "{n}st",
+					"two": "{n}nd",
+					"few": "{n}rd",
+					"other": "{n}th"
+				},
+				"placement": {
+					"any": "Wherever it fits",
+					"anyHint": "The planner picks the order.",
+					"asap": "As soon as possible",
+					"asapHint": "Straight there, before the rest.",
+					"after": "After a distance",
+					"afterHint": "About this far into the route."
+				},
+				"done": "Done"
 			},
 			"locationErrors": {
 				"denied": "Location access is off for this site. Allow it in your browser settings, or click the map to place the start.",

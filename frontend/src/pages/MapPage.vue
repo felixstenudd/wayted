@@ -5,7 +5,12 @@ import { useRoute } from 'vue-router'
 
 import { AccountMenu } from '@/features/auth'
 import { MapView, provideMap } from '@/features/map'
-import { PlannerEssentials, PlannerMap, PlannerPanel } from '@/features/route-planner'
+import {
+	PlannerEssentials,
+	PlannerMap,
+	PlannerPanel,
+	usePlannerStore,
+} from '@/features/route-planner'
 import {
 	RouteCourse,
 	RouteDetailPanel,
@@ -92,6 +97,15 @@ watch(
 	(stage) => {
 		if (stage === 'pick') sheetStop.value = 0
 		else if (stage === 'reasons') sheetStop.value = 1
+	},
+)
+
+// A through point's settings open in the sheet, which rises far enough to show them.
+const planner = usePlannerStore()
+watch(
+	() => planner.editingThroughPointId,
+	(id) => {
+		if (id !== null && !hasRoomForPanel.value) sheetStop.value = 1
 	},
 )
 
