@@ -6,6 +6,7 @@ import { ScoreProfile } from '@/features/route'
 
 import { useShownRoute } from '../composables/useShownRoute'
 import { usePlannerStore } from '../store'
+import EditedBar from './EditedBar.vue'
 import RouteHead from './RouteHead.vue'
 import RouteOptions from './RouteOptions.vue'
 import SettingsLine from './SettingsLine.vue'
@@ -31,6 +32,7 @@ const request = computed(() => planner.search?.request ?? null)
 		/>
 		<template v-if="layout === 'panel'">
 			<RouteOptions />
+			<EditedBar />
 			<RouteHead />
 		</template>
 		<ScoreProfile :scores="shown.properties.scores" :preferences="request.preferences" />

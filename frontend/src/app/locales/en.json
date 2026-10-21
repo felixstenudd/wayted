@@ -212,7 +212,29 @@
 			"short": "{km} km short",
 			"spoken": "Route {letter}, {km}. {fit}",
 			"group": "Route options",
-			"show": "Show {name}"
+			"show": "Show {name}",
+			"edited": "Edited"
+		},
+		"edit": {
+			"title": "Edited route",
+			"changes": "1 change | {n} changes",
+			"fromOption": "From route {from}, {changes}",
+			"undo": "Undo",
+			"discard": "Discard changes",
+			"updating": "Updating…",
+			"lose": "Your changes to route {from} will be lost.",
+			"show": "Show route {to}",
+			"keep": "Keep editing",
+			"errors": {
+				"dropOffRoad": {
+					"running": "There is no road for a run there. Drop it on a road or path.",
+					"cycling": "There is no road for a ride there. Drop it on a road or path."
+				},
+				"unreachable": "That spot cannot be reached from the rest of the route. Try a road nearby.",
+				"signedOut": "You have been signed out. Sign in again to change the route.",
+				"tooSlow": "Changing the route took too long. Try a smaller change.",
+				"unexpected": "The route could not be changed right now. Check your connection, then try again."
+			}
 		},
 		"settingsLine": {
 			"summary": "{activity}, {shape}, {distance}",

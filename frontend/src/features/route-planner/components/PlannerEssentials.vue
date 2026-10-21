@@ -9,6 +9,7 @@ import { useThroughPointNumbers } from '../composables/useThroughPointNumbers'
 import { usePlannerStore } from '../store'
 import DistanceField from './DistanceField.vue'
 import FindRoutes from './FindRoutes.vue'
+import EditedBar from './EditedBar.vue'
 import RouteHead from './RouteHead.vue'
 import RouteOptions from './RouteOptions.vue'
 
@@ -34,6 +35,7 @@ const isShowingRoute = computed(() => shown.value !== null && !planner.isChangin
 	<div v-else class="flex flex-col gap-3">
 		<template v-if="isShowingRoute">
 			<RouteOptions />
+			<EditedBar />
 			<RouteHead />
 		</template>
 		<DistanceField v-else />

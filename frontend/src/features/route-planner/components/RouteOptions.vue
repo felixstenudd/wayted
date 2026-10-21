@@ -23,6 +23,7 @@ const options = computed(() =>
 		return {
 			value: String(index),
 			letter: optionLetter(index),
+			isEdited: planner.edit?.option === index,
 			km: t('planner.route.length', { km: formatKm(route.properties.length_m / 1000) }),
 			fit:
 				fit === null
@@ -68,7 +69,10 @@ const options = computed(() =>
 				{{ option.letter }}
 			</span>
 			<span class="text-body font-semibold text-ink">{{ option.km }}</span>
-			<span v-if="option.fit" class="text-caption text-graphite">{{ option.fit }}</span>
+			<span v-if="option.isEdited" class="text-caption font-semibold text-ink">
+				{{ t('planner.options.edited') }}
+			</span>
+			<span v-else-if="option.fit" class="text-caption text-graphite">{{ option.fit }}</span>
 		</RadioGroupItem>
 	</RadioGroupRoot>
 </template>

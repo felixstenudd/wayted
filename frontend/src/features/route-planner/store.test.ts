@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { usePlannerStore } from './store'
+import type { Route } from './types'
 
 const UMEA = { lon: 20.26, lat: 63.82 }
 const TAVLEBORG = { lon: 20.3, lat: 63.83 }
@@ -307,6 +308,89 @@ describe('route options', () => {
 
 		planner.findRoutes()
 		expect(planner.selectedOption).toBe(0)
+	})
+})
+
+describe('route edits', () => {
+	const route = (lengthM: number): Route => ({
+		type: 'Feature',
+		geometry: { type: 'LineString', coordinates: [] },
+		properties: {
+			length_m: lengthM,
+			scores: {},
+			reused_m: 0,
+			warnings: [],
+			edges: [],
+			waypoint_order: [],
+		},
+	})
+	const searched = () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.findRoutes()
+		return planner
+	}
+
+	it('stack up on the option they were made to, with the handles of each', () => {
+		const planner = searched()
+		planner.selectOption(1)
+
+		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
+
+		expect(planner.edit?.option).toBe(1)
+		expect(planner.edit?.steps.map((step) => step.route.properties.length_m)).toEqual([
+			8_000, 8_300,
+		])
+		expect(planner.editedRoute?.properties.length_m).toBe(8_300)
+		expect(planner.editHandles).toEqual([TAVLEBORG])
+	})
+
+	it('step back one at a time, until there is nothing left to undo', () => {
+		const planner = searched()
+		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
+		planner.applyEdit(route(8_000), route(8_500), [TAVLEBORG, UMEA])
+
+		planner.undoEdit()
+		expect(planner.editedRoute?.properties.length_m).toBe(8_300)
+		expect(planner.editHandles).toEqual([TAVLEBORG])
+
+		planner.undoEdit()
+		expect(planner.edit).toBeNull()
+	})
+
+	it('ask before another option is shown, and lose the edits once it is', () => {
+		const planner = searched()
+		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
+
+		planner.selectOption(2)
+		expect(planner.selectedOption).toBe(0)
+		expect(planner.pendingOption).toBe(2)
+
+		planner.confirmOption()
+		expect(planner.selectedOption).toBe(2)
+		expect(planner.edit).toBeNull()
+		expect(planner.pendingOption).toBeNull()
+	})
+
+	it('keep going when the switch is called off', () => {
+		const planner = searched()
+		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
+		planner.selectOption(2)
+
+		planner.cancelOption()
+
+		expect(planner.selectedOption).toBe(0)
+		expect(planner.editedRoute?.properties.length_m).toBe(8_300)
+		expect(planner.pendingOption).toBeNull()
+	})
+
+	it('are gone with the next search', () => {
+		const planner = searched()
+		planner.applyEdit(route(8_000), route(8_300), [TAVLEBORG])
+
+		planner.findRoutes()
+
+		expect(planner.edit).toBeNull()
 	})
 })
 

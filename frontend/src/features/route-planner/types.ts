@@ -42,6 +42,23 @@ export interface ThroughPoint {
 	placement: ThroughPointPlacement
 }
 
+/** Why an edit found no way. */
+export type RerouteReason = components['schemas']['RerouteReason']
+/** What POST /routing/routes/reroute answers: the edited route, and where its handle goes. */
+export type RerouteAnswer = components['schemas']['RerouteOut']
+
+/** One state of an edited route: the route, and the handles where it was dragged to get there. */
+export interface EditStep {
+	route: Route
+	handles: LonLat[]
+}
+
+/** The user's edits to one of the routes found: its steps, the route as found first. */
+export interface RouteEdit {
+	option: number
+	steps: EditStep[]
+}
+
 /** Which point the user still has to place before routes can be found. */
 export type MissingPoint = 'start' | 'finish' | null
 

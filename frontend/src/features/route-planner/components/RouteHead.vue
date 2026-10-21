@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { TriangleAlert } from '@lucide/vue'
+import { CircleAlert, TriangleAlert } from '@lucide/vue'
+import { useIsMutating } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { rerouteKey } from '../api'
 import { useShownRoute } from '../composables/useShownRoute'
 import { formatKm } from '../distance'
 import { optionLetter } from '../options'
@@ -11,6 +13,8 @@ import { usePlannerStore } from '../store'
 const { t } = useI18n()
 const planner = usePlannerStore()
 const { routes, shown } = useShownRoute()
+const rerouting = useIsMutating({ mutationKey: rerouteKey })
+const isRerouting = computed(() => rerouting.value > 0)
 
 const targetKm = computed(() => formatKm((planner.search?.request.target_distance_m ?? 0) / 1000))
 </script>
@@ -19,8 +23,14 @@ const targetKm = computed(() => formatKm((planner.search?.request.target_distanc
 	<!-- The shown route's length, which option it is, and why it misses the target if it does. -->
 	<div v-if="shown" role="status" class="flex flex-col gap-1">
 		<div class="flex items-baseline justify-between gap-3">
-			<p class="text-heading">
-				{{ t('planner.route.length', { km: formatKm(shown.properties.length_m / 1000) }) }}
+			<p class="text-heading" :class="{ 'text-graphite': isRerouting }">
+				{{
+					isRerouting
+						? t('planner.edit.updating')
+						: t('planner.route.length', {
+								km: formatKm(shown.properties.length_m / 1000),
+							})
+				}}
 			</p>
 			<p v-if="routes.length > 1" class="text-small text-graphite">
 				{{ t('planner.options.name', { letter: optionLetter(planner.selectedOption) }) }}
@@ -33,6 +43,16 @@ const targetKm = computed(() => formatKm((planner.search?.request.target_distanc
 		>
 			<TriangleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
 			{{ t(`planner.route.warnings.${warning}`, { km: targetKm }) }}
+		</p>
+		<p v-if="planner.editError" role="alert" class="flex gap-1.5 text-small text-contour">
+			<CircleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+			{{
+				planner.editError === 'dropOffRoad'
+					? t(
+							`planner.edit.errors.dropOffRoad.${planner.search?.request.activity ?? 'running'}`,
+						)
+					: t(`planner.edit.errors.${planner.editError}`)
+			}}
 		</p>
 	</div>
 </template>

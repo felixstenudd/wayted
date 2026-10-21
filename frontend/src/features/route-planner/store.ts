@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
-import { computed, readonly, ref, watch } from 'vue'
+import { computed, readonly, ref, shallowRef, watch } from 'vue'
 
 import type { LonLat } from '@/features/map'
 
+import type { EditError } from './editError'
 import type {
 	Activity,
 	DistanceRange,
@@ -10,6 +11,8 @@ import type {
 	RouteRequest,
 	RouteSearch,
 	RouteShape,
+	Route,
+	RouteEdit,
 	ThroughPoint,
 	ThroughPointPlacement,
 } from './types'
@@ -54,6 +57,13 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	const selectedOption = ref(0)
 	// Routes are shown with their settings folded away; this unfolds them.
 	const isChangingSettings = ref(false)
+	// The user's working copy of the option they edit, kept until the next search. Not mirrored
+	// server data: each step is a route the user made.
+	const edit = shallowRef<RouteEdit | null>(null)
+	// An option asked for while another one has edits, waiting for the user to say they may go.
+	const pendingOption = ref<number | null>(null)
+	// Why the last edit found no way, until the next one.
+	const editError = ref<EditError | null>(null)
 
 	const distanceRange = computed(() => DISTANCE_RANGES[activity.value])
 	const usesTargetDistance = computed(() => shape.value === 'loop' || hasTargetDistance.value)
@@ -96,8 +106,11 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	watch(
 		routeRequest,
 		(request) => {
-			if (JSON.stringify(request) !== JSON.stringify(search.value?.request))
-				search.value = null
+			if (JSON.stringify(request) === JSON.stringify(search.value?.request)) return
+			search.value = null
+			edit.value = null
+			pendingOption.value = null
+			editError.value = null
 		},
 		{ flush: 'sync' },
 	)
@@ -109,11 +122,54 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		search.value = { id: searches, request: routeRequest.value, startedAt: Date.now() }
 		selectedOption.value = 0
 		isChangingSettings.value = false
+		edit.value = null
+		pendingOption.value = null
+		editError.value = null
 		return true
 	}
 
+	/** Shows another option; if the shown one has edits, asks first (see pendingOption). */
 	function selectOption(index: number): void {
-		selectedOption.value = index
+		if (edit.value && edit.value.option !== index) pendingOption.value = index
+		else selectedOption.value = index
+	}
+
+	function confirmOption(): void {
+		if (pendingOption.value === null) return
+		edit.value = null
+		selectedOption.value = pendingOption.value
+		pendingOption.value = null
+	}
+
+	function cancelOption(): void {
+		pendingOption.value = null
+	}
+
+	const editedRoute = computed<Route | null>(() => edit.value?.steps.at(-1)?.route ?? null)
+	const editHandles = computed<LonLat[]>(() => edit.value?.steps.at(-1)?.handles ?? [])
+
+	/** Adds an edit of the shown option; original is that option as found, for the first one. */
+	function applyEdit(original: Route, next: Route, handles: LonLat[]): void {
+		const steps =
+			edit.value?.option === selectedOption.value
+				? edit.value.steps
+				: [{ route: original, handles: [] }]
+		edit.value = { option: selectedOption.value, steps: [...steps, { route: next, handles }] }
+	}
+
+	function undoEdit(): void {
+		if (!edit.value) return
+		const steps = edit.value.steps.slice(0, -1)
+		edit.value = steps.length > 1 ? { ...edit.value, steps } : null
+	}
+
+	function discardEdit(): void {
+		edit.value = null
+		editError.value = null
+	}
+
+	function setEditError(error: EditError | null): void {
+		editError.value = error
 	}
 
 	function changeSettings(isChanging: boolean): void {
@@ -240,8 +296,19 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		search: readonly(search),
 		selectedOption: readonly(selectedOption),
 		isChangingSettings: readonly(isChangingSettings),
+		edit: readonly(edit),
+		editedRoute,
+		editHandles,
+		pendingOption: readonly(pendingOption),
+		editError: readonly(editError),
 		findRoutes,
 		selectOption,
+		confirmOption,
+		cancelOption,
+		applyEdit,
+		undoEdit,
+		discardEdit,
+		setEditError,
 		changeSettings,
 		setActivity,
 		placeNextPoint,
