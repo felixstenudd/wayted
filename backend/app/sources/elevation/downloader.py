@@ -14,16 +14,23 @@ LAYER = "elevation"
 
 LAYER_ZOOM = "SELECT zoom FROM ref.source_layers WHERE code = %(layer)s"
 
-# The source files are read once a store, split so a tile is cut from a few small rasters
-# instead of the whole file.
+# The source files are read once a store, cut to the rectangle (with room for the tiles'
+# margins) and split, so a tile is cut from a few small rasters instead of the whole file.
 CREATE_SOURCE = """
     CREATE TEMP TABLE elevation_source (n int NOT NULL, rast raster NOT NULL) ON COMMIT DROP
 """
 
 LOAD_SOURCE = """
     INSERT INTO elevation_source (n, rast)
-    SELECT f.n, ST_Tile(ST_FromGDALRaster(f.bytes), 100, 100)
+    SELECT f.n, ST_Tile(c.rast, 100, 100)
     FROM unnest(%(files)s::bytea[]) WITH ORDINALITY AS f(bytes, n)
+    CROSS JOIN LATERAL (
+        SELECT ST_Clip(
+            ST_FromGDALRaster(f.bytes),
+            ST_Expand(ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326), 0.01)
+        ) AS rast
+    ) c
+    WHERE c.rast IS NOT NULL
 """
 
 # Each tile is cut one cell wider than itself on every side, from every file it reaches into.
@@ -103,7 +110,17 @@ class ElevationDownloader:
         zoom: int = row[0]
         tiles = sorted(tiles_for_bounds(payload.bounds, zoom), key=lambda t: (t.y, t.x))
         await conn.execute(CREATE_SOURCE)
-        await conn.execute(LOAD_SOURCE, {"files": list(payload.files)})
+        bounds = payload.bounds
+        await conn.execute(
+            LOAD_SOURCE,
+            {
+                "files": list(payload.files),
+                "west": bounds.west,
+                "south": bounds.south,
+                "east": bounds.east,
+                "north": bounds.north,
+            },
+        )
         await conn.execute(
             STORE_TILES, {"z": zoom, "xs": [t.x for t in tiles], "ys": [t.y for t in tiles]}
         )

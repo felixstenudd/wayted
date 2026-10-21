@@ -35,6 +35,70 @@ AREA_SHARE = """
 """
 
 
+# How much the edge climbs and drops for its length, from heights sampled every sample_m along
+# it. A height is the mean of the point and four points smooth_m north, east, south and west of
+# it, each blended between the cells of the elevation tile it lies in (any of the tiles a point
+# is in: their margins hold the same cells), which evens out trees and roofs. Ups and downs
+# count alike, through enrich.height_change with threshold_m, and at least the difference
+# between the ends once that is ends_m or more, so a long even hill split into short edges that
+# each rise less than threshold_m still counts. Without the smoothing and ends_m, noise on a
+# short edge would read as a steep one. The height model sees the deck of a bridge as the valley
+# below it, so bridges and tunnels count only their ends; ferries count nothing. An average
+# change of full_grade (the share of the length) or more scores 1; an edge without heights, such
+# as at sea, scores 0.
+HEIGHT_CHANGE = """
+    WITH edges AS (
+        SELECT e.id, e.geom, e.length_m,
+               coalesce(w.tags ->> 'bridge', 'no') <> 'no'
+                   OR coalesce(w.tags ->> 'tunnel', 'no') <> 'no' AS level,
+               w.tags ->> 'route' = 'ferry' AND NOT w.tags ? 'highway' AS ferry
+        FROM claimed_edges c
+        JOIN graph.edges e USING (id)
+        JOIN graph.ways w ON w.id = e.way_id
+    ),
+    samples AS (
+        SELECT e.id, (d).path[1] AS n, h.height
+        FROM edges e
+        CROSS JOIN LATERAL ST_DumpPoints(
+            ST_Segmentize(e.geom::geography, %(sample_m)s)::geometry
+        ) d
+        CROSS JOIN LATERAL (
+            SELECT avg((
+                SELECT ST_Value(t.rast, 1, o.point, true, 'bilinear')
+                FROM raw.elevation_tiles t
+                WHERE ST_Intersects(ST_ConvexHull(t.rast), o.point)
+                LIMIT 1
+            )) AS height
+            FROM (
+                SELECT (d).geom AS point
+                UNION ALL
+                SELECT ST_Project((d).geom::geography, %(smooth_m)s, radians(a))::geometry
+                FROM unnest(ARRAY[0, 90, 180, 270]) a
+            ) o
+        ) h
+        WHERE NOT e.ferry
+    ),
+    profiles AS (
+        SELECT id, array_agg(height ORDER BY n) AS heights
+        FROM samples
+        WHERE height IS NOT NULL
+        GROUP BY id
+    )
+    SELECT e.id AS edge_id,
+           CASE WHEN p.heights IS NULL OR e.length_m = 0 THEN 0 ELSE least(
+               greatest(
+                   CASE WHEN e.level THEN 0
+                        ELSE enrich.height_change(p.heights, %(threshold_m)s) END,
+                   CASE WHEN abs(p.heights[cardinality(p.heights)] - p.heights[1]) >= %(ends_m)s
+                        THEN abs(p.heights[cardinality(p.heights)] - p.heights[1])
+                        ELSE 0 END
+               ) / e.length_m / %(full_grade)s,
+               1
+           ) END AS value
+    FROM edges e LEFT JOIN profiles p USING (id)
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class Attribute(ABC):
     key: str  # the key in graph.edges.scores
@@ -69,3 +133,27 @@ class AreaShare(Attribute):
     @property
     def reach_m(self) -> float:
         return self.radius_m
+
+
+@dataclass(frozen=True, slots=True)
+class HeightChange(Attribute):
+    """Edges are queued for it when their elevation tiles change, not by feature layers."""
+
+    sample_m: float
+    smooth_m: float
+    threshold_m: float
+    ends_m: float
+    full_grade: float
+
+    def score_query(self) -> tuple[str, dict[str, Any]]:
+        return HEIGHT_CHANGE, {
+            "sample_m": self.sample_m,
+            "smooth_m": self.smooth_m,
+            "threshold_m": self.threshold_m,
+            "ends_m": self.ends_m,
+            "full_grade": self.full_grade,
+        }
+
+    @property
+    def reach_m(self) -> float:
+        return 0

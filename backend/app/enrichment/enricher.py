@@ -16,10 +16,11 @@ class BatchResult:
     ways_claimed: int
     relations_claimed: int
     nodes_claimed: int
+    elevation_tiles_claimed: int
     features_built: int
     features_deleted: int
     features_skipped: int  # a missing member way or node, not closed, or empty
-    edges_queued: int  # by changed features
+    edges_queued: int  # by changed features and heights
     edges_scored: int
 
 
@@ -49,7 +50,8 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
         ways_claimed = (await conn.execute(queries.CLAIM_WAYS, params)).rowcount
         relations_claimed = (await conn.execute(queries.CLAIM_RELATIONS, params)).rowcount
         nodes_claimed = (await conn.execute(queries.CLAIM_NODES, params)).rowcount
-        if ways_claimed == 0 and relations_claimed == 0 and nodes_claimed == 0:
+        elevation_claimed = (await conn.execute(queries.CLAIM_ELEVATION, params)).rowcount
+        if (ways_claimed, relations_claimed, nodes_claimed, elevation_claimed) == (0, 0, 0, 0):
             cur = await conn.execute(queries.HAS_PENDING_EDGES)
             row = await cur.fetchone()
             if row is None or not row[0]:
@@ -72,6 +74,7 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
                 edges_queued += (
                     await conn.execute(queries.QUEUE_NEAR_CHANGED, queue_params)
                 ).rowcount
+        edges_queued += (await conn.execute(queries.QUEUE_ON_CHANGED_ELEVATION)).rowcount
         # Sees the edges queued just above, so most are scored in this batch.
         edges_scored = (await conn.execute(queries.CLAIM_EDGES, params)).rowcount
         await conn.execute("ANALYZE claimed_edges")
@@ -81,6 +84,7 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
         ways_claimed=ways_claimed,
         relations_claimed=relations_claimed,
         nodes_claimed=nodes_claimed,
+        elevation_tiles_claimed=elevation_claimed,
         features_built=built,
         features_deleted=deleted,
         features_skipped=skipped,

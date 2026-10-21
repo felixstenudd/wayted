@@ -9,6 +9,9 @@ CREATE_WORK_TABLES = """
     ) ON COMMIT DROP;
     CREATE TEMP TABLE changed_features (layer text NOT NULL, geom geometry NOT NULL) ON COMMIT DROP;
     CREATE TEMP TABLE claimed_edges (id bigint PRIMARY KEY) ON COMMIT DROP;
+    CREATE TEMP TABLE changed_elevation (
+        z smallint, x int, y int, PRIMARY KEY (z, x, y)
+    ) ON COMMIT DROP;
 """
 
 # Claims queue rows, not ids: an element queued again by a download that is still open keeps its
@@ -38,6 +41,15 @@ CLAIM_NODES = """
         RETURNING node_id
     )
     INSERT INTO moved_nodes SELECT DISTINCT node_id FROM claimed
+"""
+
+CLAIM_ELEVATION = """
+    WITH claimed AS (
+        DELETE FROM enrich.pending_elevation
+        WHERE id IN (SELECT id FROM enrich.pending_elevation ORDER BY id LIMIT %(batch_size)s)
+        RETURNING z, x, y
+    )
+    INSERT INTO changed_elevation SELECT DISTINCT z, x, y FROM claimed
 """
 
 # Each claimed element itself, and the features built from a claimed way or a way through a
@@ -70,6 +82,14 @@ QUEUE_NEAR_CHANGED = """
     FROM changed_features c
     JOIN graph.edges e ON e.geom && enrich.expand_m(c.geom, %(reach_m)s)
     WHERE c.layer = %(layer)s AND ST_Intersects(c.geom, enrich.expand_m(e.geom, %(reach_m)s))
+"""
+
+# Edges whose heights a changed elevation tile may have changed: those whose box meets it.
+QUEUE_ON_CHANGED_ELEVATION = """
+    INSERT INTO graph.pending_edges (edge_id)
+    SELECT DISTINCT e.id
+    FROM changed_elevation t
+    JOIN graph.edges e ON e.geom && ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326)
 """
 
 CLAIM_EDGES = """

@@ -24,6 +24,8 @@ GRANT SELECT ON ALL TABLES IN SCHEMA ref, raw TO wayted_enricher;
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA enrich TO wayted_enricher;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA enrich TO wayted_enricher;
 GRANT SELECT, UPDATE (scores) ON graph.edges TO wayted_enricher;
+-- Way tags, such as bridge and tunnel, change how an edge is scored.
+GRANT SELECT ON graph.ways TO wayted_enricher;
 GRANT SELECT, INSERT, DELETE ON graph.pending_edges TO wayted_enricher;
 GRANT USAGE ON SEQUENCE graph.pending_edges_id_seq TO wayted_enricher;
 

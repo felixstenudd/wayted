@@ -70,7 +70,8 @@ def test_attributes_are_scored_when_the_enricher_scores_them(client: TestClient)
     res = client.get("/routing/attributes")
 
     scored = {a["key"] for a in res.json() if a["scored"]}
-    assert scored == {a.key for a in ATTRIBUTES}
+    # Hills are scored, but not offered for routes yet.
+    assert scored == {a.key for a in ATTRIBUTES} - {"hills"}
 
 
 @pytest.mark.parametrize(
