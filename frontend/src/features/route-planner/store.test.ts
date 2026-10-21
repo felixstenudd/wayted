@@ -273,6 +273,17 @@ describe('findRoutes', () => {
 		expect(planner.search?.id).not.toBe(first?.id)
 	})
 
+	it('keeps the search when the request is set again to what it was', () => {
+		const planner = usePlannerStore()
+		planner.receiveDefaults({ green: 0.5 })
+		planner.start = UMEA
+		planner.findRoutes()
+
+		planner.receiveDefaults({ green: 0.5 })
+
+		expect(planner.search).not.toBeNull()
+	})
+
 	it('drops the search once the request changes', () => {
 		const planner = usePlannerStore()
 		planner.start = UMEA
@@ -281,6 +292,21 @@ describe('findRoutes', () => {
 		planner.setWeight('green', 1)
 
 		expect(planner.search).toBeNull()
+	})
+})
+
+describe('route options', () => {
+	it('start at the best, and step to others until the next search', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.findRoutes()
+		expect(planner.selectedOption).toBe(0)
+
+		planner.selectOption(2)
+		expect(planner.selectedOption).toBe(2)
+
+		planner.findRoutes()
+		expect(planner.selectedOption).toBe(0)
 	})
 })
 

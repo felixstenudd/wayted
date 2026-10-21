@@ -2,12 +2,15 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { useShownRoute } from '../composables/useShownRoute'
 import { usePlannerStore } from '../store'
 import DistanceField from './DistanceField.vue'
 import FindRoutes from './FindRoutes.vue'
 import PreferenceSection from './PreferenceSection.vue'
 import RouteKindFields from './RouteKindFields.vue'
 import RoutePoints from './RoutePoints.vue'
+import RouteView from './RouteView.vue'
+import SettingsLine from './SettingsLine.vue'
 import ThroughPointSettings from './ThroughPointSettings.vue'
 
 defineProps<{
@@ -20,6 +23,11 @@ defineProps<{
 
 const { t } = useI18n()
 const planner = usePlannerStore()
+const { shown } = useShownRoute()
+
+// Two phases: setting up, then the routes found with their settings folded into one line.
+const isShowingRoute = computed(() => shown.value !== null && !planner.isChangingSettings)
+const plannedWith = computed(() => (shown.value ? (planner.search?.request ?? null) : null))
 
 // On a phone a through point's settings take the sheet over; on a desktop they open on the map.
 const editingPoint = computed(() =>
@@ -29,8 +37,18 @@ const editingPoint = computed(() =>
 
 <template>
 	<div v-if="layout === 'panel'" class="flex flex-col">
-		<div class="flex flex-col gap-5 p-5">
-			<h1 class="text-heading">{{ t('planner.title') }}</h1>
+		<div v-if="isShowingRoute" class="p-5">
+			<h1 class="sr-only">{{ t('planner.title') }}</h1>
+			<RouteView layout="panel" />
+		</div>
+		<div v-else class="flex flex-col gap-5 p-5">
+			<SettingsLine
+				v-if="plannedWith"
+				:request="plannedWith"
+				:action="t('planner.settingsLine.done')"
+				@action="planner.changeSettings(false)"
+			/>
+			<h1 :class="plannedWith ? 'sr-only' : 'text-heading'">{{ t('planner.title') }}</h1>
 			<RouteKindFields />
 			<RoutePoints />
 			<DistanceField />
@@ -48,8 +66,18 @@ const editingPoint = computed(() =>
 			id-prefix="through-point-sheet"
 		/>
 	</div>
+	<div v-else-if="isShowingRoute" class="border-t border-line pt-4">
+		<h1 class="sr-only">{{ t('planner.title') }}</h1>
+		<RouteView layout="sheet" />
+	</div>
 	<div v-else class="flex flex-col gap-5 border-t border-line pt-4">
 		<h1 class="sr-only">{{ t('planner.title') }}</h1>
+		<SettingsLine
+			v-if="plannedWith"
+			:request="plannedWith"
+			:action="t('planner.settingsLine.done')"
+			@action="planner.changeSettings(false)"
+		/>
 		<RouteKindFields />
 		<RoutePoints />
 		<PreferenceSection />

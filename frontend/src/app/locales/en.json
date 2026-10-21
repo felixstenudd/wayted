@@ -199,11 +199,31 @@
 		},
 		"route": {
 			"length": "{km} km",
-			"share": "{name} {percent}",
 			"warnings": {
 				"too_short": "The direct way is longer than {km} km, so this route takes it.",
 				"target_missed": "No route close to {km} km was found here, so this is the nearest one."
 			}
+		},
+		"options": {
+			"label": "Route options",
+			"name": "Route {letter}",
+			"close": "Close to {km} km",
+			"long": "{km} km long",
+			"short": "{km} km short",
+			"spoken": "Route {letter}, {km}. {fit}"
+		},
+		"settingsLine": {
+			"summary": "{activity}, {shape}, {distance}",
+			"shapes": {
+				"loop": "loop",
+				"point_to_point": "A to B"
+			},
+			"anyLength": "any length",
+			"preferred": "{names} preferred",
+			"avoided": "{names} avoided",
+			"noPreferences": "No preferences set",
+			"change": "Change",
+			"done": "Done"
 		},
 		"points": {
 			"label": "Points on the route",
@@ -434,7 +454,7 @@
 	},
 	"route": {
 		"profile": {
-			"title": "Route profile",
+			"title": "How it fits",
 			"empty": "This area hasn't been scored yet, so there is nothing to show.",
 			"wanted": "You wanted: {weight}",
 			"known": "Scored for {percent}% of the route",

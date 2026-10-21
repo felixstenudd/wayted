@@ -4,16 +4,22 @@ import { useI18n } from 'vue-i18n'
 
 import { Button } from '@/shared/ui/button'
 
+import { useShownRoute } from '../composables/useShownRoute'
 import { useThroughPointNumbers } from '../composables/useThroughPointNumbers'
 import { usePlannerStore } from '../store'
 import DistanceField from './DistanceField.vue'
 import FindRoutes from './FindRoutes.vue'
+import RouteHead from './RouteHead.vue'
+import RouteOptions from './RouteOptions.vue'
 
 const { t } = useI18n()
 const planner = usePlannerStore()
 const { nameOf } = useThroughPointNumbers()
 
+const { shown } = useShownRoute()
+
 const editingId = computed(() => planner.editingThroughPointId)
+const isShowingRoute = computed(() => shown.value !== null && !planner.isChangingSettings)
 </script>
 
 <template>
@@ -26,7 +32,11 @@ const editingId = computed(() => planner.editingThroughPointId)
 	</div>
 	<!-- What a phone shows at the sheet's lowest stop: enough to go. -->
 	<div v-else class="flex flex-col gap-3">
-		<DistanceField />
+		<template v-if="isShowingRoute">
+			<RouteOptions />
+			<RouteHead />
+		</template>
+		<DistanceField v-else />
 		<FindRoutes />
 	</div>
 </template>

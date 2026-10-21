@@ -50,6 +50,10 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	// The last press of Find routes, until the request changes.
 	const search = ref<RouteSearch | null>(null)
 	let searches = 0
+	// Which of the routes found is shown, the best first.
+	const selectedOption = ref(0)
+	// Routes are shown with their settings folded away; this unfolds them.
+	const isChangingSettings = ref(false)
 
 	const distanceRange = computed(() => DISTANCE_RANGES[activity.value])
 	const usesTargetDistance = computed(() => shape.value === 'loop' || hasTargetDistance.value)
@@ -87,12 +91,13 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		}
 	})
 
-	// A route found for other settings is stale. Sync, so a change and a search in one tick
-	// keep the search.
+	// A route found for other settings is stale. Compared by value, since setting the same weights
+	// again builds an equal request. Sync, so a change and a search in one tick keep the search.
 	watch(
 		routeRequest,
-		() => {
-			search.value = null
+		(request) => {
+			if (JSON.stringify(request) !== JSON.stringify(search.value?.request))
+				search.value = null
 		},
 		{ flush: 'sync' },
 	)
@@ -102,7 +107,17 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		if (routeRequest.value === null) return false
 		searches += 1
 		search.value = { id: searches, request: routeRequest.value, startedAt: Date.now() }
+		selectedOption.value = 0
+		isChangingSettings.value = false
 		return true
+	}
+
+	function selectOption(index: number): void {
+		selectedOption.value = index
+	}
+
+	function changeSettings(isChanging: boolean): void {
+		isChangingSettings.value = isChanging
 	}
 
 	function setActivity(next: Activity): void {
@@ -223,7 +238,11 @@ export const usePlannerStore = defineStore('route-planner', () => {
 		missingPoint,
 		routeRequest,
 		search: readonly(search),
+		selectedOption: readonly(selectedOption),
+		isChangingSettings: readonly(isChangingSettings),
 		findRoutes,
+		selectOption,
+		changeSettings,
 		setActivity,
 		placeNextPoint,
 		addThroughPoint,
