@@ -154,16 +154,16 @@ describe('placeNextPoint', () => {
 	it('places the start first', () => {
 		const planner = usePlannerStore()
 
-		expect(planner.placeNextPoint(UMEA)).toBe(true)
+		expect(planner.placeNextPoint(UMEA, false)).toBe(true)
 		expect(planner.start).toEqual(UMEA)
 	})
 
 	it('places the finish next, from point to point', () => {
 		const planner = usePlannerStore()
 		planner.shape = 'point_to_point'
-		planner.placeNextPoint(UMEA)
+		planner.placeNextPoint(UMEA, false)
 
-		expect(planner.placeNextPoint(TAVLEBORG)).toBe(true)
+		expect(planner.placeNextPoint(TAVLEBORG, false)).toBe(true)
 		expect(planner.finish).toEqual(TAVLEBORG)
 	})
 })
@@ -173,10 +173,10 @@ describe('through points', () => {
 
 	it('are added by map clicks once the start is placed', () => {
 		const planner = usePlannerStore()
-		planner.placeNextPoint(UMEA)
+		planner.placeNextPoint(UMEA, false)
 
-		expect(planner.placeNextPoint(TAVLEBORG)).toBe(true)
-		planner.placeNextPoint(NYDALA)
+		expect(planner.placeNextPoint(TAVLEBORG, false)).toBe(true)
+		planner.placeNextPoint(NYDALA, false)
 
 		expect(planner.throughPoints.map((point) => point.lonLat)).toEqual([TAVLEBORG, NYDALA])
 		expect(planner.start).toEqual(UMEA)
@@ -187,8 +187,17 @@ describe('through points', () => {
 		planner.start = UMEA
 		planner.findRoutes()
 
-		expect(planner.placeNextPoint(TAVLEBORG)).toBe(false)
+		expect(planner.placeNextPoint(TAVLEBORG, true)).toBe(false)
 		expect(planner.throughPoints).toEqual([])
+	})
+
+	it('are added by map clicks after a search that showed no route', () => {
+		const planner = usePlannerStore()
+		planner.start = UMEA
+		planner.findRoutes()
+
+		expect(planner.placeNextPoint(TAVLEBORG, false)).toBe(true)
+		expect(planner.throughPoints.map((point) => point.lonLat)).toEqual([TAVLEBORG])
 	})
 
 	it('go to the planner wherever they fit, in the order added', () => {
@@ -284,6 +293,19 @@ describe('findRoutes', () => {
 		planner.receiveDefaults({ green: 0.5 })
 
 		expect(planner.search).not.toBeNull()
+		expect(planner.isStale).toBe(false)
+	})
+
+	it('keeps the search when a weight is set back to what it was', () => {
+		const planner = usePlannerStore()
+		planner.setWeight('green', 0.5)
+		planner.setWeight('water', 0.5)
+		planner.start = UMEA
+		planner.findRoutes()
+
+		planner.setWeight('green', 0)
+		planner.setWeight('green', 0.5)
+
 		expect(planner.isStale).toBe(false)
 	})
 

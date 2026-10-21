@@ -6,6 +6,7 @@ import { RouterLink } from 'vue-router'
 
 import { suggestRouteName } from '@/features/route'
 import { useSaveRoute } from '@/features/saved-routes'
+import { ApiError } from '@/shared/api'
 import { Button } from '@/shared/ui/button'
 import { FormField } from '@/shared/ui/form-field'
 import { Input } from '@/shared/ui/input'
@@ -87,7 +88,10 @@ function submit(): void {
 
 const error = computed(() => {
 	if (isNameMissing.value) return t('planner.save.nameMissing')
-	return save.isError.value ? t('planner.save.failed') : undefined
+	if (!save.isError.value) return undefined
+	// The edges no longer join up: the map was built again under the route.
+	const isRouteChanged = save.error.value instanceof ApiError && save.error.value.status === 422
+	return t(isRouteChanged ? 'planner.save.routeChanged' : 'planner.save.failed')
 })
 </script>
 

@@ -7,7 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { rerouteKey } from '../api'
 import { useShownRoute } from '../composables/useShownRoute'
 import { formatKm } from '../distance'
-import { optionLetter } from '../options'
+import { optionLetter, routeFit } from '../options'
 import { usePlannerStore } from '../store'
 
 const { t } = useI18n()
@@ -17,6 +17,17 @@ const rerouting = useIsMutating({ mutationKey: rerouteKey })
 const isRerouting = computed(() => rerouting.value > 0)
 
 const targetKm = computed(() => formatKm((planner.search?.request.target_distance_m ?? 0) / 1000))
+// The planner's warnings explain what it found; an edited route is the user's own, so it is only
+// said how far off the target it is.
+const isEdited = computed(() => planner.edit?.option === planner.selectedOption)
+const editedFit = computed(() => {
+	if (!isEdited.value || !shown.value || shown.value.properties.warnings.length === 0) return null
+	const fit = routeFit(shown.value.properties.length_m, planner.search?.request.target_distance_m)
+	return fit && fit.kind !== 'close' ? fit : null
+})
+const plannerWarnings = computed(() =>
+	isEdited.value ? [] : (shown.value?.properties.warnings ?? []),
+)
 </script>
 
 <template>
@@ -36,8 +47,17 @@ const targetKm = computed(() => formatKm((planner.search?.request.target_distanc
 				{{ t('planner.options.name', { letter: optionLetter(planner.selectedOption) }) }}
 			</p>
 		</div>
+		<p v-if="editedFit" class="flex gap-1.5 text-small text-graphite">
+			<TriangleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+			{{
+				t(editedFit.kind === 'long' ? 'planner.edit.longer' : 'planner.edit.shorter', {
+					km: formatKm(editedFit.km),
+					target: targetKm,
+				})
+			}}
+		</p>
 		<p
-			v-for="warning in shown.properties.warnings"
+			v-for="warning in plannerWarnings"
 			:key="warning"
 			class="flex gap-1.5 text-small text-graphite"
 		>

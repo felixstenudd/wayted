@@ -2128,6 +2128,9 @@ DECLARE
     v_tolerance double precision;
     v_count     integer;
     v_until     timestamptz;
+    -- How long the last option took to put together, to stop before one would run past v_until.
+    v_took      interval := '0';
+    v_began     timestamptz;
     v_varied    jsonb;
     v_rest      jsonb;
     v_option    jsonb;
@@ -2196,8 +2199,17 @@ BEGIN
 
     -- Each option takes the varied piece's place, and the pieces after it are planned anew.
     v_varied := v_plan -> 'varied';
+    -- Planning the pieces after the varied one again takes about as long as planning them did.
+    IF (v_plan ->> 'pieces')::integer > 1 THEN
+        v_took := clock_timestamp() - (v_until
+            - make_interval(secs => routing.setting(v_profile, 'options', 'budget_ms') / 1000));
+    END IF;
     FOR v_option IN SELECT o FROM jsonb_array_elements(v_varied -> 'options') o LOOP
-        EXIT WHEN clock_timestamp() > v_until;
+        IF v_began IS NOT NULL THEN
+            v_took := clock_timestamp() - v_began;
+        END IF;
+        EXIT WHEN clock_timestamp() + v_took > v_until;
+        v_began := clock_timestamp();
         IF (v_plan ->> 'pieces')::integer = 1 THEN
             v_option := v_option - 'vias' || jsonb_build_object(
                 'direct', (v_option ->> 'direct')::boolean OR NOT (v_varied ->> 'targeted')::boolean

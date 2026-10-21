@@ -319,3 +319,5 @@ async def test_edit_of_edges_that_do_not_join_up_is_refused(
     )
 
     assert res.status_code == 422
+    # Edges stop joining up when the map is built again under a route found earlier.
+    assert res.json() == {"detail": "route_changed"}

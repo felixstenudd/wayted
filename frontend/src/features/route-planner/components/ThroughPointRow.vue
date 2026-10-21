@@ -6,11 +6,13 @@ import { useI18n } from 'vue-i18n'
 import { useMapView } from '@/features/map'
 import { Button } from '@/shared/ui/button'
 
+import { useShownRoute } from '../composables/useShownRoute'
 import { usePlannerStore } from '../store'
 import PointRow from './PointRow.vue'
 
 const { t } = useI18n()
 const planner = usePlannerStore()
+const { shown } = useShownRoute()
 const { center } = useMapView()
 
 const count = computed(() => planner.throughPoints.length)
@@ -20,7 +22,7 @@ const hint = computed(() => {
 	if (planner.missingPoint === 'start') return t('planner.points.through.afterStartHint')
 	if (planner.missingPoint === 'finish') return t('planner.points.through.afterFinishHint')
 	// While a route is shown a map click adds nothing; the button still does.
-	if (planner.search !== null) return t('planner.points.through.routeShownHint')
+	if (shown.value !== null) return t('planner.points.through.routeShownHint')
 	return t('planner.points.through.clickHint')
 })
 

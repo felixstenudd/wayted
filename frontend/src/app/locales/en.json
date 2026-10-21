@@ -233,6 +233,7 @@
 					"cycling": "There is no road for a ride there. Drop it on a road or path."
 				},
 				"unreachable": "That spot cannot be reached from the rest of the route. Try a road nearby.",
+				"routeChanged": "The map here was updated after these routes were found. Choose Change, then Find routes, to get routes on the new map.",
 				"signedOut": "You have been signed out. Sign in again to change the route.",
 				"tooSlow": "Changing the route took too long. Try a smaller change.",
 				"unexpected": "The route could not be changed right now. Check your connection, then try again."
@@ -240,7 +241,9 @@
 			"handle": "Change {n}: drag to move it, or open for more",
 			"removeChange": "Remove this change",
 			"tapped": "Drag this onto another road, or drop it back where it was to cancel",
-			"dragging": "Let go to keep this change. Press Esc to cancel."
+			"dragging": "Let go to keep this change. Press Esc to cancel.",
+			"longer": "{km} km longer than your {target} km.",
+			"shorter": "{km} km shorter than your {target} km."
 		},
 		"save": {
 			"submit": "Save route",
@@ -251,7 +254,8 @@
 			"view": "View in your routes",
 			"nameMissing": "Give the route a name.",
 			"failed": "The route could not be saved. Check your connection, then try again.",
-			"asItIs": "Save the route as it is"
+			"asItIs": "Save the route as it is",
+			"routeChanged": "The map here was updated after this route was found, so it can no longer be saved. Choose Change, then Find routes, to get routes on the new map."
 		},
 		"planAgain": {
 			"loading": "Loading your route…",

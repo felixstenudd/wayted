@@ -111,11 +111,18 @@ export const usePlannerStore = defineStore('route-planner', () => {
 
 	// Routes found for other settings stay, with their edits, until the user finds routes again;
 	// they are out of date meanwhile. Compared by value, since setting the same weights again
-	// builds an equal request.
+	// builds an equal request, in whatever order they were set.
+	const byValue = (request: RouteRequest | null) =>
+		request &&
+		JSON.stringify({
+			...request,
+			preferences: Object.fromEntries(
+				Object.entries(request.preferences).sort(([a], [b]) => a.localeCompare(b)),
+			),
+		})
 	const isStale = computed(
 		() =>
-			search.value !== null &&
-			JSON.stringify(routeRequest.value) !== JSON.stringify(search.value.request),
+			search.value !== null && byValue(routeRequest.value) !== byValue(search.value.request),
 	)
 
 	function clearSearch(): void {
@@ -235,10 +242,10 @@ export const usePlannerStore = defineStore('route-planner', () => {
 	 * is shown a click adds nothing, so a stray one does not throw the route away. Returns whether
 	 * the click placed anything.
 	 */
-	function placeNextPoint(at: LonLat): boolean {
+	function placeNextPoint(at: LonLat, isRouteShown: boolean): boolean {
 		if (missingPoint.value === 'start') start.value = at
 		else if (missingPoint.value === 'finish') finish.value = at
-		else if (search.value === null) addThroughPoint(at)
+		else if (!isRouteShown) addThroughPoint(at)
 		else return false
 		return true
 	}

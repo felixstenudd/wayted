@@ -28,7 +28,9 @@ type RouteWarning = Literal["too_short", "target_missed"]
 
 REASONS: frozenset[str] = frozenset(get_args(Reason.__value__))
 # The detail of routing.reroute's no_data_found errors.
-type RerouteReason = Literal["drop_off_road", "unreachable"]
+# route_changed: the edges no longer join up, as when the map was built again under a route found
+# earlier.
+type RerouteReason = Literal["drop_off_road", "unreachable", "route_changed"]
 REROUTE_REASONS: frozenset[str] = frozenset(get_args(RerouteReason.__value__))
 
 # The longest a request may hold a connection; a route that takes longer is not worth waiting for.
@@ -105,10 +107,6 @@ class NoReroute(Exception):
     def __init__(self, reason: RerouteReason) -> None:
         super().__init__(reason)
         self.reason: RerouteReason = reason
-
-
-class InvalidEdges(Exception):
-    """The edges to edit are not a route the activity can travel."""
 
 
 class PlanningTimeout(Exception):
@@ -288,7 +286,7 @@ async def reroute(conn: AsyncConnection[TupleRow], edit: Edit) -> Rerouted:
     The route with the stretch around edit.grab routed again through the road nearest edit.drop,
     where the drop came onto that road, and how far the stretch reached.
 
-    Raises InvalidEdges for edges that are not a route, NoReroute when there is no way, and
+    Raises NoReroute when there is no way or the edges are not a route, and
     PlanningTimeout when it takes too long.
     """
     params = {
@@ -308,8 +306,8 @@ async def reroute(conn: AsyncConnection[TupleRow], edit: Edit) -> Rerouted:
             await conn.execute(SET_TIMEOUT)
             cur = await conn.execute(REROUTE, params)
             row = await cur.fetchone()
-    except psycopg.errors.InvalidParameterValue as e:
-        raise InvalidEdges(e.diag.message_primary or "") from None
+    except psycopg.errors.InvalidParameterValue:
+        raise NoReroute("route_changed") from None
     except psycopg.errors.NoDataFound as e:
         reason = e.diag.message_detail
         if reason not in REROUTE_REASONS:

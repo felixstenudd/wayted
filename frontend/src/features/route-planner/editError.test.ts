@@ -8,6 +8,7 @@ describe('editError', () => {
 	it.each([
 		['drop_off_road', 'dropOffRoad'],
 		['unreachable', 'unreachable'],
+		['route_changed', 'routeChanged'],
 	])('names an edit with no way because of %s "%s"', (reason, key) => {
 		expect(editError(new ApiError(422, reason))).toBe(key)
 	})

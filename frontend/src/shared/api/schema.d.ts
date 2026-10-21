@@ -628,7 +628,7 @@ export interface components {
             after_m: number | null;
         };
         /** @enum {string} */
-        RerouteReason: "drop_off_road" | "unreachable";
+        RerouteReason: "drop_off_road" | "unreachable" | "route_changed";
         /** RouteEdgeOut */
         RouteEdgeOut: {
             /** Seq */
