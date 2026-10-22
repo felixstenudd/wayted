@@ -5,48 +5,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.geojson import FeatureCollection, LineString, Point
 from app.sources.queue import Status
 from app.sources.tiles import MAX_LATITUDE
 
 MAX_RADIUS_M = 40_000
-
-type Position = tuple[float, float]
-
-
-class Point(BaseModel):
-    type: Literal["Point"]
-    coordinates: Position
-
-
-class LineString(BaseModel):
-    type: Literal["LineString"]
-    coordinates: list[Position]
-
-
-class Polygon(BaseModel):
-    type: Literal["Polygon"]
-    coordinates: list[list[Position]]
-
-
-class MultiLineString(BaseModel):
-    type: Literal["MultiLineString"]
-    coordinates: list[list[Position]]
-
-
-class MultiPolygon(BaseModel):
-    type: Literal["MultiPolygon"]
-    coordinates: list[list[list[Position]]]
-
-
-class Feature[Geometry, Properties](BaseModel):
-    type: Literal["Feature"] = "Feature"
-    geometry: Geometry
-    properties: Properties
-
-
-class FeatureCollection[Geometry, Properties](BaseModel):
-    type: Literal["FeatureCollection"] = "FeatureCollection"
-    features: list[Feature[Geometry, Properties]]
 
 
 class FetchedTileOut(BaseModel):

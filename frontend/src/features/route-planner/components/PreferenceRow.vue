@@ -2,12 +2,15 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import {
+	AttributeSymbol,
+	WEIGHT_DETENTS,
+	weightMessage,
+	type RouteAttribute,
+} from '@/features/route'
 import { BipolarSlider } from '@/shared/ui/bipolar-slider'
 
-import { WEIGHT_DETENTS, weightMessage } from '../attributes'
 import { usePlannerStore } from '../store'
-import type { RouteAttribute } from '../types'
-import AttributeSymbol from './AttributeSymbol.vue'
 
 const props = defineProps<{ attribute: RouteAttribute; name: string }>()
 

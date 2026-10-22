@@ -1,11 +1,12 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, BaseModel, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
 
 from app.logbook.route_reviews.schemas import RouteReviewOut
 from app.logbook.text import NO_NUL
 from app.routing.attributes import KEYS
+from app.routing.schemas import AttributeScoreOut, EdgeStepIn, WaypointIn
 
 type Activity = Literal["running", "cycling"]
 type Shape = Literal["loop", "point_to_point"]
@@ -29,30 +30,26 @@ class LineString(BaseModel):
     coordinates: list[Position]
 
 
-class EdgeStepIn(BaseModel):
-    # within bigint, the graph's id type
-    edge_id: int = Field(ge=-(2**63), le=2**63 - 1)
-    # whether the route runs from the edge's source to its target
-    forward: bool
-
-
 class RouteIn(BaseModel):
     name: Name
     activity: Activity
     shape: Shape
-    target_distance_m: int = Field(ge=1_000, le=200_000)
+    # None for the most pleasant way to a finish, however long; a loop needs one.
+    target_distance_m: int | None = Field(default=None, ge=1_000, le=200_000)
     preferences: Annotated[dict[str, Weight], AfterValidator(_known_keys)] = {}
+    # the through points it was planned through, for planning it again
+    waypoints: list[WaypointIn] = []
     edges: list[EdgeStepIn] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _loop_has_target(self) -> Self:
+        if self.shape == "loop" and self.target_distance_m is None:
+            raise ValueError("a loop needs a target distance")
+        return self
 
 
 class RenameIn(BaseModel):
     name: Name
-
-
-class AttributeScoreOut(BaseModel):
-    mean: float
-    # share of the route's length that has a score for the attribute
-    coverage: float
 
 
 class RouteEdgeOut(BaseModel):
@@ -78,8 +75,9 @@ class RouteOut(BaseModel):
     name: str
     activity: Activity
     shape: Shape
-    target_distance_m: int
+    target_distance_m: int | None
     preferences: dict[str, float]
+    waypoints: list[WaypointIn]
     distance_m: float
     scores: dict[str, AttributeScoreOut]
     geometry: LineString

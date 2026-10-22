@@ -81,9 +81,12 @@ watchEffect(() => {
 	background-color: var(--sunken);
 }
 
-/* The group clips anything outside it, so the focus ring is drawn inside. */
+/* The group clips anything outside it, so the focus ring is drawn inside. MapLibre turns
+   outlines off on its buttons, so ours is set again here. */
 :deep(.maplibregl-ctrl button:focus:focus-visible) {
 	box-shadow: none;
+	border-radius: 9999px;
+	outline: 2px solid var(--focus-ring);
 	outline-offset: -3px;
 }
 

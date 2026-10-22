@@ -324,8 +324,33 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Routes */
+        /**
+         * Routes
+         * @description Plan a route, with up to two options that go other ways. Answers 202 while the map data
+         *     around it is downloaded and scored; the client asks again until it gets the routes.
+         */
         post: operations["routes_routing_routes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/routing/routes/reroute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reroute
+         * @description Move the stretch of a route around where it was grabbed onto the road where it was dropped,
+         *     and score the result. The rest of the route stays as it is.
+         */
+        post: operations["reroute_routing_routes_reroute_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -416,6 +441,13 @@ export interface components {
             /** Forward */
             forward: boolean;
         };
+        /** EdgeStepOut */
+        EdgeStepOut: {
+            /** Edge Id */
+            edge_id: number;
+            /** Forward */
+            forward: boolean;
+        };
         /** @enum {string} */
         Group: "surroundings" | "streets" | "sights" | "surface";
         /** HTTPValidationError */
@@ -439,6 +471,58 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * NoRerouteOut
+         * @description Why the edit found no way.
+         */
+        NoRerouteOut: {
+            detail: components["schemas"]["RerouteReason"];
+        };
+        /**
+         * NoRouteOut
+         * @description Why no route was found.
+         */
+        NoRouteOut: {
+            detail: components["schemas"]["Reason"];
+        };
+        /**
+         * PlannedRouteOut
+         * @description The route as a GeoJSON Feature, its line in travel order.
+         */
+        PlannedRouteOut: {
+            /**
+             * Type
+             * @default Feature
+             * @constant
+             */
+            type: "Feature";
+            geometry: components["schemas"]["LineString"];
+            properties: components["schemas"]["RoutePropertiesOut"];
+        };
+        /**
+         * PlannedRoutesOut
+         * @description One to three routes that go different ways, the best first, as a GeoJSON
+         *     FeatureCollection.
+         */
+        PlannedRoutesOut: {
+            /**
+             * Type
+             * @default FeatureCollection
+             * @constant
+             */
+            type: "FeatureCollection";
+            /** Features */
+            features: components["schemas"]["PlannedRouteOut"][];
+        };
+        /** Point */
+        Point: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "Point";
+            coordinates: components["schemas"]["Position"];
         };
         /** PointIn */
         PointIn: {
@@ -474,6 +558,20 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /**
+         * PreparingOut
+         * @description The map data around the route is still being downloaded or scored; ask again shortly.
+         */
+        PreparingOut: {
+            /**
+             * Status
+             * @default preparing
+             * @constant
+             */
+            status: "preparing";
+        };
+        /** @enum {string} */
+        Reason: "start_off_road" | "waypoint_off_road" | "finish_off_road" | "unreachable" | "no_loop";
         /** ReasonOut */
         ReasonOut: {
             /** Code */
@@ -502,6 +600,35 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** RerouteIn */
+        RerouteIn: {
+            /**
+             * Activity
+             * @enum {string}
+             */
+            activity: "running" | "cycling";
+            /** Edges */
+            edges: components["schemas"]["EdgeStepIn"][];
+            grab: components["schemas"]["PointIn"];
+            drop?: components["schemas"]["PointIn"] | null;
+            /** Target Distance M */
+            target_distance_m?: number | null;
+            /** Before M */
+            before_m?: number | null;
+            /** After M */
+            after_m?: number | null;
+        };
+        /** RerouteOut */
+        RerouteOut: {
+            route: components["schemas"]["PlannedRouteOut"];
+            handle: components["schemas"]["Point"] | null;
+            /** Before M */
+            before_m: number | null;
+            /** After M */
+            after_m: number | null;
+        };
+        /** @enum {string} */
+        RerouteReason: "drop_off_road" | "unreachable" | "route_changed";
         /** RouteEdgeOut */
         RouteEdgeOut: {
             /** Seq */
@@ -518,7 +645,7 @@ export interface components {
             activity: components["schemas"]["Activity"];
             shape: components["schemas"]["Shape"];
             /** Target Distance M */
-            target_distance_m: number;
+            target_distance_m?: number | null;
             /**
              * Preferences
              * @default {}
@@ -526,6 +653,11 @@ export interface components {
             preferences: {
                 [key: string]: number;
             };
+            /**
+             * Waypoints
+             * @default []
+             */
+            waypoints: components["schemas"]["WaypointIn"][];
             /** Edges */
             edges: components["schemas"]["EdgeStepIn"][];
         };
@@ -538,11 +670,13 @@ export interface components {
             activity: components["schemas"]["Activity"];
             shape: components["schemas"]["Shape"];
             /** Target Distance M */
-            target_distance_m: number;
+            target_distance_m: number | null;
             /** Preferences */
             preferences: {
                 [key: string]: number;
             };
+            /** Waypoints */
+            waypoints: components["schemas"]["WaypointIn"][];
             /** Distance M */
             distance_m: number;
             /** Scores */
@@ -564,6 +698,23 @@ export interface components {
              */
             updated_at: string;
         };
+        /** RoutePropertiesOut */
+        RoutePropertiesOut: {
+            /** Length M */
+            length_m: number;
+            /** Scores */
+            scores: {
+                [key: string]: components["schemas"]["AttributeScoreOut"];
+            };
+            /** Reused M */
+            reused_m: number;
+            /** Warnings */
+            warnings: components["schemas"]["RouteWarning"][];
+            /** Edges */
+            edges: components["schemas"]["EdgeStepOut"][];
+            /** Waypoint Order */
+            waypoint_order: number[];
+        };
         /** RouteRequestIn */
         RouteRequestIn: {
             /**
@@ -579,7 +730,7 @@ export interface components {
             start: components["schemas"]["PointIn"];
             finish?: components["schemas"]["PointIn"] | null;
             /** Target Distance M */
-            target_distance_m: number;
+            target_distance_m?: number | null;
             /**
              * Preferences
              * @default {}
@@ -587,6 +738,11 @@ export interface components {
             preferences: {
                 [key: string]: number;
             };
+            /**
+             * Waypoints
+             * @default []
+             */
+            waypoints: components["schemas"]["WaypointIn"][];
         };
         /** RouteReviewIn */
         RouteReviewIn: {
@@ -633,6 +789,8 @@ export interface components {
             created_at: string;
             geometry: components["schemas"]["LineString"];
         };
+        /** @enum {string} */
+        RouteWarning: "too_short" | "target_missed";
         /** SavedRouteReviewOut */
         SavedRouteReviewOut: {
             review: components["schemas"]["RouteReviewOut"];
@@ -708,6 +866,21 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WaypointIn */
+        WaypointIn: {
+            /** Lon */
+            lon: number;
+            /** Lat */
+            lat: number;
+            /**
+             * At
+             * @default any
+             * @enum {string}
+             */
+            at: "any" | "asap" | "after";
+            /** After M */
+            after_m?: number | null;
         };
     };
     responses: never;
@@ -1436,20 +1609,69 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PlannedRoutesOut"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreparingOut"];
+                };
+            };
+            /** @description No route between the points, or the request is invalid */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["NoRouteOut"];
                 };
             };
-            /** @description Not available yet */
-            501: {
+            /** @description Planning took too long */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reroute_routing_routes_reroute_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RerouteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RerouteOut"];
+                };
+            };
+            /** @description No way for the edit, or the edges are not a route */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoRerouteOut"];
+                };
+            };
+            /** @description Editing took too long */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

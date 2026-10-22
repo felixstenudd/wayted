@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/features/auth'
-import { storedPreferencesKey } from '@/features/route-planner'
+import { storedPreferencesKey } from '@/features/route'
 
 import type { ReviewReason } from './reasons'
 import type {
+	NewRoute,
 	NewStretchReview,
 	RouteReviewInput,
 	RouteSummary,
@@ -27,11 +28,29 @@ export function useSavedRoutes() {
 	})
 }
 
-export function useSavedRoute(id: MaybeRefOrGetter<number>) {
+/** Saves a route to the user's routes; its line, distance and scores come from its edges. */
+export function useSaveRoute() {
+	const auth = useAuthStore()
+	const queryClient = useQueryClient()
+	return useMutation({
+		mutationFn: (route: NewRoute) =>
+			auth.authedRequest<SavedRoute>('/logbook/routes', { method: 'POST', body: route }),
+		onSuccess: (saved) => {
+			queryClient.setQueryData(savedRouteKey(saved.id), saved)
+			void queryClient.invalidateQueries({ queryKey: savedRoutesKey, exact: true })
+		},
+	})
+}
+
+export function useSavedRoute(
+	id: MaybeRefOrGetter<number>,
+	isEnabled: MaybeRefOrGetter<boolean> = true,
+) {
 	const auth = useAuthStore()
 	return useQuery({
 		queryKey: computed(() => savedRouteKey(toValue(id))),
 		queryFn: () => auth.authedRequest<SavedRoute>(`/logbook/routes/${toValue(id)}`),
+		enabled: computed(() => toValue(isEnabled)),
 	})
 }
 

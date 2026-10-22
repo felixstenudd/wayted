@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 from uuid import uuid4
 
@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth.dependencies import current_user
+from app.dependencies import api_conn
 from app.enrichment.definitions import ATTRIBUTES
 from app.routing.router import router
 
@@ -26,9 +27,15 @@ def app() -> FastAPI:
     return app
 
 
+async def no_database() -> AsyncIterator[None]:
+    """FastAPI opens dependencies before it rejects the body; a rejected request runs no query."""
+    yield None
+
+
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
     app.dependency_overrides[current_user] = uuid4
+    app.dependency_overrides[api_conn] = no_database
     with TestClient(app) as client:
         yield client
 
@@ -65,19 +72,6 @@ def test_attributes_are_scored_when_the_enricher_scores_them(client: TestClient)
     assert scored == {a.key for a in ATTRIBUTES}
 
 
-def test_a_valid_request_is_not_implemented_yet(client: TestClient) -> None:
-    res = client.post("/routing/routes", json=LOOP)
-
-    assert res.status_code == 501
-    assert res.json() == {"detail": "Route generation is not available yet."}
-
-
-def test_point_to_point_with_a_finish_is_valid(client: TestClient) -> None:
-    body = {**LOOP, "shape": "point_to_point", "finish": {"lon": 20.3, "lat": 63.83}}
-
-    assert client.post("/routing/routes", json=body).status_code == 501
-
-
 @pytest.mark.parametrize(
     "change",
     [
@@ -86,6 +80,7 @@ def test_point_to_point_with_a_finish_is_valid(client: TestClient) -> None:
         {"activity": "walking"},
         {"start": {"lon": 181, "lat": 63.82}},
         {"start": {"lon": 20.26, "lat": -91}},
+        {"target_distance_m": None},
         {"target_distance_m": 999},
         {"target_distance_m": 200_001},
         {"preferences": {"nature": 1.01}},
@@ -98,6 +93,7 @@ def test_point_to_point_with_a_finish_is_valid(client: TestClient) -> None:
         "unknown activity",
         "longitude out of range",
         "latitude out of range",
+        "no distance on a loop",
         "distance too short",
         "distance too long",
         "weight above 1",

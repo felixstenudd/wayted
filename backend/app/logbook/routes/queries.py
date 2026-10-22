@@ -26,7 +26,7 @@ STEPS = f"""
 CREATE_ROUTE = f"""
     WITH steps AS ({_STEPS}),
     legs AS (
-        SELECT st.seq, st.edge_id, st.forward, e.length_m, e.scores,
+        SELECT st.seq, st.edge_id, st.forward, e.length_m,
                CASE WHEN st.forward THEN e.geom ELSE ST_Reverse(e.geom) END AS geom
         FROM steps st
         JOIN graph.edges e ON e.id = st.edge_id
@@ -40,29 +40,16 @@ CREATE_ROUTE = f"""
     total AS (
         SELECT sum(length_m) AS length_m FROM legs
     ),
-    scored AS (
-        SELECT kv.key, sum(l.length_m * kv.value::float8) AS weighted, sum(l.length_m) AS length_m
-        FROM legs l
-        CROSS JOIN LATERAL jsonb_each(l.scores) kv
-        GROUP BY kv.key
-    ),
     route AS (
         INSERT INTO app.routes (
-            user_id, name, activity, shape, target_distance_m, preferences,
+            user_id, name, activity, shape, target_distance_m, preferences, waypoints,
             geom, distance_m, scores
         )
         SELECT %(user_id)s, %(name)s, %(activity)s, %(shape)s, %(target_distance_m)s,
-               %(preferences)s,
+               %(preferences)s, %(waypoints)s,
                (SELECT ST_MakeLine(array_agg(geom ORDER BY seq, n)) FROM points),
                total.length_m,
-               coalesce(
-                   (SELECT jsonb_object_agg(s.key, jsonb_build_object(
-                        'mean', round((s.weighted / s.length_m)::numeric, 4),
-                        'coverage', round((s.length_m / total.length_m)::numeric, 4)))
-                    FROM scored s
-                    WHERE s.length_m > 0),
-                   '{{}}'
-               )
+               routing.route_scores(%(edge_ids)s::bigint[])
         FROM total
         RETURNING id
     ),
@@ -76,8 +63,8 @@ CREATE_ROUTE = f"""
 """
 
 GET_ROUTE = f"""
-    SELECT r.id, r.name, r.activity, r.shape, r.target_distance_m, r.preferences, r.distance_m,
-           r.scores, ST_AsGeoJSON(r.geom, 6)::jsonb AS geometry,
+    SELECT r.id, r.name, r.activity, r.shape, r.target_distance_m, r.preferences, r.waypoints,
+           r.distance_m, r.scores, ST_AsGeoJSON(r.geom, 6)::jsonb AS geometry,
            (SELECT coalesce(jsonb_agg(jsonb_build_object(
                         'seq', e.seq, 'length_m', e.length_m, 'last_point', e.last_point)
                     ORDER BY e.seq), '[]')

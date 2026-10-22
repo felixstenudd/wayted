@@ -567,3 +567,26 @@ async def test_queued_tiles_carry_their_state(admin_conn: Conn, api_pool: Pool) 
 async def test_queued_tiles_of_an_empty_queue(admin_conn: Conn, api_pool: Pool) -> None:
     async with api_pool.connection() as conn:
         assert await queue.queued_tiles(conn) == []
+
+
+@pytest.mark.parametrize(
+    ("status", "waiting"), [("pending", True), ("running", True), ("failed", False)]
+)
+async def test_tiles_in_bounds_wait_while_pending_or_running(
+    admin_conn: Conn, api_pool: Pool, status: str, waiting: bool
+) -> None:
+    await request(api_pool)
+    await admin_conn.execute("UPDATE raw.pending_tiles SET status = %s", (status,))
+
+    async with api_pool.connection() as conn:
+        assert await queue.waiting_in_bounds(conn, BOUNDS, LAYERS) is waiting
+
+
+async def test_tiles_outside_bounds_or_layers_do_not_wait(admin_conn: Conn, api_pool: Pool) -> None:
+    await request(api_pool, bounds_for_tiles({ONE}))
+    elsewhere = bounds_for_tiles({Tile(x=8900, y=4700, z=14)})
+
+    async with api_pool.connection() as conn:
+        assert await queue.waiting_in_bounds(conn, elsewhere, LAYERS) is False
+        assert await queue.waiting_in_bounds(conn, BOUNDS, ("nature",)) is False
+        assert await queue.waiting_in_bounds(conn, BOUNDS, LAYERS) is True

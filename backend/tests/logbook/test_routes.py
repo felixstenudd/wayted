@@ -118,6 +118,57 @@ async def test_edge_lists_that_cannot_be_followed_are_refused(
     assert message in response.json()["detail"]
 
 
+async def test_a_way_to_a_finish_saves_without_a_target(
+    client: httpx.AsyncClient, app_conn: Conn
+) -> None:
+    a, b, _ = await add_network(app_conn)
+    body = route([(a, True), (b, True)])
+    del body["target_distance_m"]
+
+    saved = await create(client, body)
+
+    assert saved["target_distance_m"] is None
+    read = (await client.get(f"/logbook/routes/{saved['id']}")).json()
+    assert read["target_distance_m"] is None
+
+
+async def test_a_loop_still_needs_a_target(client: httpx.AsyncClient, app_conn: Conn) -> None:
+    a, b, _ = await add_network(app_conn)
+    body = route([(a, True), (b, True)], shape="loop")
+    del body["target_distance_m"]
+
+    response = await client.post("/logbook/routes", json=body)
+
+    assert response.status_code == 422
+
+
+async def test_through_points_are_kept_as_planned(
+    client: httpx.AsyncClient, app_conn: Conn
+) -> None:
+    a, b, _ = await add_network(app_conn)
+    waypoints = [
+        {"lon": 20.0005, "lat": 63.8005, "at": "any", "after_m": None},
+        {"lon": 20.002, "lat": 63.8, "at": "after", "after_m": 2_000},
+    ]
+
+    saved = await create(client, route([(a, True), (b, True)], waypoints=waypoints))
+
+    assert saved["waypoints"] == waypoints
+    plain = await create(client, route([(a, True), (b, True)]))
+    assert plain["waypoints"] == []
+
+
+async def test_a_through_point_after_needs_its_length(
+    client: httpx.AsyncClient, app_conn: Conn
+) -> None:
+    a, b, _ = await add_network(app_conn)
+    body = route([(a, True), (b, True)], waypoints=[{"lon": 20, "lat": 63.8, "at": "after"}])
+
+    response = await client.post("/logbook/routes", json=body)
+
+    assert response.status_code == 422
+
+
 async def test_running_may_use_a_one_way_street_backwards(
     client: httpx.AsyncClient, app_conn: Conn
 ) -> None:

@@ -1,5 +1,6 @@
 from uuid import UUID
 
+import psycopg
 import pytest
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
@@ -53,6 +54,18 @@ async def test_attribute_reasons_have_a_good_and_a_bad_side(app_conn: Conn) -> N
     )
 
     assert all(sentiments == [-1, 1] for _, sentiments in await cur.fetchall())
+
+
+async def test_only_a_way_to_a_finish_may_have_no_target(app_conn: Conn) -> None:
+    user_id = await add_user(app_conn, "planner@example.com")
+    insert = """
+        INSERT INTO app.routes (user_id, name, activity, shape, geom, distance_m)
+        VALUES (%s, 'No target', 'running', %s, %s, 100)
+    """
+
+    await app_conn.execute(insert, (user_id, "point_to_point", LINE))
+    with pytest.raises(psycopg.errors.CheckViolation):
+        await app_conn.execute(insert, (user_id, "loop", LINE))
 
 
 async def test_a_new_segment_review_queues_its_edges_still_in_the_graph(

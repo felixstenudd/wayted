@@ -3,8 +3,10 @@
 -- graph: the routable network built from raw by the mapper.
 -- enrich: feature geometry built from raw by the enricher, to score graph edges.
 -- app:   user-owned data written through the API (users, routes, feedback).
+-- routing: route planning over graph with pgRouting; reads only, never stores anything.
 CREATE SCHEMA ref;
 CREATE SCHEMA raw;
 CREATE SCHEMA graph;
 CREATE SCHEMA enrich;
 CREATE SCHEMA app;
+CREATE SCHEMA routing;

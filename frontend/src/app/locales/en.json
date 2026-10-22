@@ -106,6 +106,10 @@
 		},
 		"distance": {
 			"label": "Target distance",
+			"kind": "Length",
+			"any": "Any length",
+			"target": "Set distance",
+			"anyHint": "The most pleasant way to the finish, however long it is.",
 			"unit": "km",
 			"hint": {
 				"running": "Between {min} and {max} km for a run.",
@@ -121,7 +125,6 @@
 			"loading": "Loading what you can weigh…",
 			"loadFailed": "What you can weigh could not be loaded. Check your connection, then try again.",
 			"tryAgain": "Try again",
-			"comingLater": "Coming later: {attributes}.",
 			"weights": {
 				"avoid": "Avoid",
 				"ratherNot": "Rather not",
@@ -151,8 +154,8 @@
 				"prepared": {
 					"avoid": "Rough where possible",
 					"ratherNot": "Rather rough",
-					"niceToHave": "Rather prepared",
-					"prefer": "Prepared where possible"
+					"niceToHave": "Rather smooth",
+					"prefer": "Smooth where possible"
 				}
 			},
 			"groups": {
@@ -168,7 +171,7 @@
 				"quiet_streets": "Quiet streets",
 				"sights": "Places to see",
 				"bridges": "Bridges",
-				"prepared": "Prepared"
+				"prepared": "Smooth"
 			}
 		},
 		"findRoutes": {
@@ -179,14 +182,108 @@
 				"finish": "Place the finish on the map first."
 			},
 			"errors": {
-				"notAvailable": "Finding routes isn't available yet. Your settings are kept for when it is.",
+				"startOffRoad": "There is no road or path near the start. Move it closer to one.",
+				"waypointOffRoad": "There is no road or path near one of the through points. Move it closer to one, or remove it.",
+				"finishOffRoad": "There is no road or path near the finish. Move it closer to one.",
+				"unreachable": "The finish cannot be reached from the start. Try moving one of them.",
+				"noLoop": "No loop could be found from this start. Try another start or distance.",
 				"notAccepted": "These settings were not accepted. Check the start, finish and distance, then try again.",
+				"tooSlow": "Finding this route took too long. Try a shorter distance.",
+				"stillPreparing": "The map data for this area is taking longer than usual. Try again in a few minutes.",
 				"signedOut": "You have been signed out. Sign in again to find routes.",
 				"unexpected": "Routes could not be found right now. Check your connection, then try again."
+			},
+			"preparing": "Getting map data…",
+			"preparingHint": "The map data for this area is being downloaded. The first route in a new area can take a minute or two.",
+			"again": "Find routes again",
+			"staleHint": "You changed the settings. Find routes again to plan with them."
+		},
+		"route": {
+			"length": "{km} km",
+			"warnings": {
+				"too_short": "The direct way is longer than {km} km, so this route takes it.",
+				"target_missed": "No route close to {km} km was found here, so this is the nearest one."
 			}
 		},
+		"options": {
+			"label": "{letter} {km} km",
+			"name": "Route {letter}",
+			"close": "Close to {km} km",
+			"long": "{km} km long",
+			"short": "{km} km short",
+			"spoken": "Route {letter}, {km}. {fit}",
+			"group": "Route options",
+			"show": "Show {name}",
+			"edited": "Edited"
+		},
+		"edit": {
+			"title": "Edited route",
+			"changes": "1 change | {n} changes",
+			"undo": "Undo",
+			"discard": "Discard changes",
+			"updating": "Updating…",
+			"lose": "Your changes to route {from} will be lost.",
+			"show": "Show route {to}",
+			"keep": "Keep editing",
+			"errors": {
+				"dropOffRoad": {
+					"running": "There is no road for a run there. Drop it on a road or path.",
+					"cycling": "There is no road for a ride there. Drop it on a road or path."
+				},
+				"unreachable": "That spot cannot be reached from the rest of the route. Try a road nearby.",
+				"routeChanged": "The map here was updated after these routes were found. Choose Change, then Find routes, to get routes on the new map.",
+				"signedOut": "You have been signed out. Sign in again to change the route.",
+				"tooSlow": "Changing the route took too long. Try a smaller change.",
+				"unexpected": "The route could not be changed right now. Check your connection, then try again."
+			},
+			"handle": "Change {n}: drag to move it, or open for more",
+			"removeChange": "Remove this change",
+			"tapped": "Drag this onto another road, or drop it back where it was to cancel",
+			"dragging": "Let go to keep this change. Press Esc to cancel.",
+			"longer": "{km} km longer than your {target} km.",
+			"shorter": "{km} km shorter than your {target} km.",
+			"hint": "Drag the yellow line to move part of the route onto another road.",
+			"hintTouch": "Tap the yellow line, then drag the dot onto another road.",
+			"skips": "{name} is no longer on the route. Undo the change, or drag the line back to it."
+		},
+		"save": {
+			"submit": "Save route",
+			"saving": "Saving route…",
+			"name": "Name",
+			"cancel": "Cancel",
+			"saved": "Route saved.",
+			"view": "View in your routes",
+			"nameMissing": "Give the route a name.",
+			"failed": "The route could not be saved. Check your connection, then try again.",
+			"asItIs": "Save the route as it is",
+			"routeChanged": "The map here was updated after this route was found, so it can no longer be saved. Choose Change, then Find routes, to get routes on the new map."
+		},
+		"planAgain": {
+			"loading": "Loading your route…",
+			"title": "Replace the route in the planner?",
+			"body": "The route in the planner is not saved. Planning “{name}” again will replace it.",
+			"confirm": "Plan again",
+			"keep": "Keep my route",
+			"missing": "This route is no longer in your routes. Plan a new one here.",
+			"failed": "Your route could not be loaded. Check your connection, then try again.",
+			"dismiss": "OK"
+		},
+		"settingsLine": {
+			"summary": "{activity}, {shape}, {distance}",
+			"shapes": {
+				"loop": "loop",
+				"point_to_point": "A to B"
+			},
+			"anyLength": "any length",
+			"preferred": "{names} preferred",
+			"avoided": "{names} avoided",
+			"noPreferences": "No preferences set",
+			"change": "Change",
+			"done": "Done",
+			"foundFor": "Routes found for"
+		},
 		"points": {
-			"label": "Start and finish",
+			"label": "Points on the route",
 			"start": "Start",
 			"finish": "Finish",
 			"clickHint": "Click the map to place it.",
@@ -202,15 +299,53 @@
 				"start": "Remove the start",
 				"finish": "Remove the finish"
 			},
+			"through": {
+				"label": "Through points",
+				"afterStartHint": "Add them once the start is placed.",
+				"afterFinishHint": "Add them once the start and finish are placed.",
+				"clickHint": "Click the map to add one.",
+				"routeShownHint": "Add one at the centre of the map.",
+				"addedHint": "1 added. Drag it to move it, or click it for more. | {n} added. Drag them to move them, or click one for more.",
+				"addAtCenter": "Add a through point at the centre of the map",
+				"removeAll": "Remove all through points",
+				"marker": "Through point",
+				"numberedMarker": "Through point {n}",
+				"change": "{name}: change where it goes",
+				"remove": "Remove through point",
+				"afterLabel": "Distance into the route",
+				"afterTag": "{km} km",
+				"soonTag": {
+					"one": "{n}st",
+					"two": "{n}nd",
+					"few": "{n}rd",
+					"other": "{n}th"
+				},
+				"placement": {
+					"any": "Wherever it fits",
+					"anyHint": "The planner picks the order.",
+					"asap": "As soon as possible",
+					"asapHint": "Straight there, before the rest.",
+					"after": "After a distance",
+					"afterHint": "About this far into the route."
+				},
+				"done": "Done",
+				"tapHint": "Tap the map to add one.",
+				"addedTapHint": "1 added. Drag it to move it, or tap it for more. | {n} added. Drag them to move them, or tap one for more."
+			},
 			"locationErrors": {
 				"denied": "Location access is off for this site. Allow it in your browser settings, or click the map to place the start.",
 				"unavailable": "Your location could not be found. Try again, or click the map to place the start.",
 				"unsupported": "This browser cannot share your location. Click the map to place the start."
-			}
+			},
+			"tapHint": "Tap the map to place it."
 		},
 		"sheet": {
 			"expand": "Show more of the planner",
-			"collapse": "Show less of the planner"
+			"collapse": "Show less of the planner",
+			"missing": {
+				"start": "Tap the map to place the start.",
+				"finish": "Tap the map to place the finish."
+			}
 		},
 		"defaults": {
 			"save": "Save as my defaults",
@@ -254,21 +389,8 @@
 			"loading": "Loading the route…",
 			"missingTitle": "Route not found",
 			"missing": "This route doesn't exist or was deleted.",
-			"loadFailed": "The route could not be loaded. Check your connection, then try again."
-		},
-		"profile": {
-			"title": "Route profile",
-			"empty": "This area hasn't been scored yet, so there is nothing to show.",
-			"wanted": "You wanted: {weight}",
-			"known": "Scored for {percent}% of the route",
-			"spoken": ", {percent} percent where scored, which is {known} percent of the route",
-			"words": {
-				"none": "None",
-				"aLittle": "A little",
-				"some": "Some",
-				"aLot": "A lot",
-				"mostly": "Mostly"
-			}
+			"loadFailed": "The route could not be loaded. Check your connection, then try again.",
+			"planAgain": "Plan again"
 		},
 		"rename": {
 			"start": "Rename",
@@ -393,6 +515,59 @@
 			"safety_bad": "Feels unsafe",
 			"crowding_bad": "Crowded",
 			"access_bad": "Blocked or closed"
+		}
+	},
+	"route": {
+		"profile": {
+			"title": "How it fits",
+			"empty": "This area hasn't been scored yet, so there is nothing to show.",
+			"wanted": "You wanted: {weight}",
+			"known": "Scored for {percent}% of the route",
+			"spoken": ", {percent} percent where scored, which is {known} percent of the route",
+			"words": {
+				"none": "None",
+				"aLittle": "A little",
+				"some": "Some",
+				"aLot": "A lot",
+				"mostly": "Mostly"
+			},
+			"attributeWords": {
+				"green": {
+					"none": "Not in parks",
+					"aLittle": "A little in parks",
+					"some": "Partly in parks",
+					"aLot": "Much in parks",
+					"mostly": "Mostly in parks"
+				},
+				"nature": {
+					"none": "No nature",
+					"aLittle": "A little nature",
+					"some": "Some nature",
+					"aLot": "Lots of nature",
+					"mostly": "Mostly nature"
+				},
+				"water": {
+					"none": "Away from water",
+					"aLittle": "A little by water",
+					"some": "Partly by water",
+					"aLot": "Much by water",
+					"mostly": "Mostly by water"
+				},
+				"prepared": {
+					"none": "Rough",
+					"aLittle": "Mostly rough",
+					"some": "Mixed",
+					"aLot": "Mostly smooth",
+					"mostly": "Smooth"
+				}
+			},
+			"rowNames": {
+				"prepared": "Surface"
+			}
+		},
+		"name": {
+			"loop": "{km} km loop",
+			"route": "{km} km route"
 		}
 	}
 }

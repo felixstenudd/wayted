@@ -5,7 +5,12 @@ import { useRoute } from 'vue-router'
 
 import { AccountMenu } from '@/features/auth'
 import { MapView, provideMap } from '@/features/map'
-import { PlannerEssentials, PlannerPanel, PointMarkers } from '@/features/route-planner'
+import {
+	PlannerEssentials,
+	PlannerMap,
+	PlannerPanel,
+	usePlannerStore,
+} from '@/features/route-planner'
 import {
 	RouteCourse,
 	RouteDetailPanel,
@@ -25,7 +30,7 @@ interface SectionParts {
 	nav: 'plan' | 'routes'
 	/** Takes layout: 'panel' beside the map, 'sheet' in the bottom sheet. */
 	panel: Component
-	/** What a phone shows at the sheet's lowest stop, under the navigation. */
+	/** What a phone always shows, at the sheet's lowest stop and above the rest. */
 	peek?: Component
 	/** Drawn on the map. */
 	map: Component
@@ -38,7 +43,7 @@ const SECTIONS: Record<Section, SectionParts> = {
 		nav: 'plan',
 		panel: PlannerPanel,
 		peek: PlannerEssentials,
-		map: PointMarkers,
+		map: PlannerMap,
 	},
 	routes: { titleKey: 'savedRoutes.title', nav: 'routes', panel: RoutesPanel, map: RouteLines },
 	route: {
@@ -85,13 +90,27 @@ const savedRoutes = useSavedRoutesStore()
 const isPickingStretch = computed(
 	() => savedRoutes.isPickingStretch && savedRoutes.stretchStage === 'pick',
 )
-// The lowest stop holds the picker's instruction and its way on while the map is tapped.
+// The lowest stop holds the picker's instruction and its way on while the map is tapped. A section
+// with a peek fits the stop to it instead.
 const peekRem = computed(() => (isPickingStretch.value ? 18 : 13))
 watch(
 	() => (savedRoutes.isPickingStretch ? savedRoutes.stretchStage : null),
 	(stage) => {
 		if (stage === 'pick') sheetStop.value = 0
 		else if (stage === 'reasons') sheetStop.value = 1
+	},
+)
+
+// A through point's settings open in the sheet, which rises far enough to show them.
+const planner = usePlannerStore()
+// Those settings head the sheet with their own way back, so the switch steps aside for them.
+const isNavShown = computed(
+	() => section.value !== 'plan' || planner.editingThroughPointId === null,
+)
+watch(
+	() => planner.editingThroughPointId,
+	(id) => {
+		if (id !== null && !hasRoomForPanel.value) sheetStop.value = 1
 	},
 )
 
@@ -125,15 +144,22 @@ provideMap()
 			:expand-label="t('planner.sheet.expand')"
 			:collapse-label="t('planner.sheet.collapse')"
 			:peek-rem="peekRem"
+			:fit-header="parts.peek !== undefined"
 			@height="sheetHeightPx = $event"
 		>
-			<template #header>
-				<div class="flex flex-col gap-4">
-					<SegmentedNav :label="t('nav.label')" :items="navItems" :current="parts.nav" />
-					<component :is="parts.peek" v-if="parts.peek" v-bind="sectionProps" />
-				</div>
+			<template v-if="parts.peek" #header>
+				<component :is="parts.peek" v-bind="sectionProps" />
 			</template>
-			<component :is="parts.panel" layout="sheet" v-bind="sectionProps" />
+			<!-- Out of the peek, so the lowest stop is the section's own; a step up reaches it. -->
+			<div class="flex flex-col gap-4">
+				<SegmentedNav
+					v-if="isNavShown"
+					:label="t('nav.label')"
+					:items="navItems"
+					:current="parts.nav"
+				/>
+				<component :is="parts.panel" layout="sheet" v-bind="sectionProps" />
+			</div>
 		</BottomSheet>
 		<MapView
 			:center="START.center"

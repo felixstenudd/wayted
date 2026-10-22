@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ChevronLeft, CircleAlert, Ellipsis, PenLine, Trash2 } from '@lucide/vue'
+import { ChevronLeft, CircleAlert, Ellipsis, PenLine, Repeat, Trash2 } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
+
+import { ScoreProfile } from '@/features/route'
 
 import { ApiError } from '@/shared/api'
 import { Button } from '@/shared/ui/button'
@@ -22,7 +24,6 @@ import ReviewSavedNotice from './ReviewSavedNotice.vue'
 import RouteName from './RouteName.vue'
 import RouteReviewForm from './RouteReviewForm.vue'
 import RouteReviewSummary from './RouteReviewSummary.vue'
-import ScoreProfile from './ScoreProfile.vue'
 import StretchPicker from './StretchPicker.vue'
 import StretchReasons from './StretchReasons.vue'
 import StretchReviewList from './StretchReviewList.vue'
@@ -197,7 +198,7 @@ const details = computed(() => {
 				<p class="text-small text-graphite">{{ details }}</p>
 			</div>
 			<ReviewSavedNotice v-if="savedChanges" :changes="savedChanges" />
-			<ScoreProfile :route="route" />
+			<ScoreProfile :scores="route.scores" :preferences="route.preferences" />
 			<RouteReviewSummary v-if="route.review" :route="route" @edit="startReview" />
 			<p v-else-if="!canReview" class="text-small text-graphite">
 				{{ t('savedRoutes.review.nothingToReview') }}
@@ -210,6 +211,12 @@ const details = computed(() => {
 					{{ t('savedRoutes.stretch.start') }}
 				</Button>
 			</div>
+			<Button variant="secondary" as-child>
+				<RouterLink :to="{ name: 'planner', query: { from: route.id } }">
+					<Repeat />
+					{{ t('savedRoutes.detail.planAgain') }}
+				</RouterLink>
+			</Button>
 			<StretchReviewList :route="route" :just-saved="isStretchJustSaved" />
 			<DeleteRoute v-if="isDeleting" :route="route" @keep="isDeleting = false" />
 		</template>

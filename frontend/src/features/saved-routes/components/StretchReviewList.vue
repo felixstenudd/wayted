@@ -3,7 +3,7 @@ import { CircleAlert } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { humanizeKey } from '@/features/route-planner'
+import { humanizeKey } from '@/features/route'
 import { Button } from '@/shared/ui/button'
 
 import { useReviewReasons, useSegmentReviews } from '../api'
