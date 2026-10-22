@@ -151,7 +151,11 @@ CREATE TYPE routing.profile AS (
     -- attribute key -> weight, scaled so the absolute weights sum to 1 (or '{}')
     weights  jsonb,
     -- routing.defaults() with the request's overrides
-    settings jsonb
+    settings jsonb,
+    -- the planning user's own votes, as routing.own_votes gives them, which outweigh everyone's
+    own_votes jsonb,
+    -- whether other users' votes count too
+    others_votes boolean
 );
 
 -- A number from p_profile's settings: p_name in p_group.
@@ -179,9 +183,11 @@ $$;
 -- here.
 -- Raises invalid_parameter_value for an unknown activity, setting or a value out of range.
 CREATE FUNCTION routing.make_profile(
-    p_activity text,
-    p_weights  jsonb DEFAULT '{}',
-    p_settings jsonb DEFAULT '{}'
+    p_activity     text,
+    p_weights      jsonb DEFAULT '{}',
+    p_settings     jsonb DEFAULT '{}',
+    p_own_votes    jsonb DEFAULT '{}',
+    p_others_votes boolean DEFAULT true
 ) RETURNS routing.profile
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
@@ -216,7 +222,9 @@ BEGIN
                 routing.defaults(), coalesce(routing.activity_defaults() -> p_activity, '{}')
             ),
             p_settings
-        )
+        ),
+        coalesce(p_own_votes, '{}'),
+        p_others_votes
     )::routing.profile;
 
     IF jsonb_path_exists(v_profile.settings, 'strict $.**? (@.type() == "number" && @ < 0)') THEN
@@ -266,13 +274,37 @@ BEGIN
 END
 $$;
 
+-- The votes p_user gave in stretch reviews that count for p_activity's routes, as
+-- {edge id: {topic: 1 or -1}}: the latest per edge and topic, as the enricher counts them, from
+-- reviews for p_activity and, for safety, which is about the place, from reviews for any activity.
+-- '{}' for a NULL p_user.
+CREATE FUNCTION routing.own_votes(p_user uuid, p_activity text) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT coalesce(jsonb_object_agg(edge_id::text, topics), '{}')
+    FROM (
+        SELECT edge_id, jsonb_object_agg(topic, sentiment) AS topics
+        FROM (
+            SELECT DISTINCT ON (re.edge_id, r.topic) re.edge_id, r.topic, r.sentiment
+            FROM app.segment_reviews s
+            JOIN app.segment_review_edges re ON re.review_id = s.id
+            JOIN app.segment_review_reasons sr ON sr.review_id = s.id
+            JOIN ref.review_reasons r ON r.code = sr.reason
+            WHERE s.user_id = p_user AND (s.activity = p_activity OR r.topic = 'safety')
+            ORDER BY re.edge_id, r.topic, s.updated_at DESC, s.id DESC
+        ) latest
+        GROUP BY edge_id
+    ) per_edge
+$$;
+
 -- The edges SQL every pgRouting function takes, for p_activity inside p_area (NULL: everywhere).
 -- p_cost is an expression over routing.activity_edges plus "used" (the edge is in p_used); it is
--- -1, pgRouting's "not traversable", where the activity may not go. Edges are read through the
--- GIST index on graph.edges, which is what keeps a call fast on a large graph. p_used is joined,
--- not tested with = ANY, so it is hashed once instead of scanned for every edge.
+-- -1, pgRouting's "not traversable", where the activity may not go, and may also read "own", the
+-- edge's votes in p_own (as routing.own_votes gives them; NULL where it has none). Edges are read
+-- through the GIST index on graph.edges, which is what keeps a call fast on a large graph. p_used
+-- and p_own are joined, not looked up per edge, so each is hashed once instead of scanned for
+-- every edge.
 CREATE FUNCTION routing.edges_sql(
-    p_activity text, p_cost text, p_area geometry, p_used bigint[]
+    p_activity text, p_cost text, p_area geometry, p_used bigint[], p_own jsonb DEFAULT '{}'
 ) RETURNS text
 LANGUAGE sql STABLE AS $$
     SELECT format(
@@ -281,9 +313,11 @@ LANGUAGE sql STABLE AS $$
                CASE WHEN forward THEN %1$s ELSE -1 END AS cost,
                CASE WHEN backward THEN %1$s ELSE -1 END AS reverse_cost
         FROM (
-            SELECT e.*, u.id IS NOT NULL AS used
+            SELECT e.*, u.id IS NOT NULL AS used, o.own
             FROM routing.activity_edges e
             LEFT JOIN (SELECT DISTINCT unnest(%2$L::bigint[]) AS id) u ON u.id = e.id
+            LEFT JOIN (SELECT key::bigint AS id, value AS own FROM jsonb_each(%5$L::jsonb)) o
+                ON o.id = e.id
             WHERE e.activity = %3$L %4$s
         ) e
         $sql$,
@@ -293,7 +327,8 @@ LANGUAGE sql STABLE AS $$
         CASE WHEN p_area IS NOT NULL
             THEN format('AND ST_Intersects(e.geom, %L::geometry)', p_area)
             ELSE ''
-        END
+        END,
+        coalesce(p_own, '{}')
     )
 $$;
 
@@ -313,13 +348,17 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT (p_up - p_down) / (p_up + p_down + p_damping)
 $$;
 
--- SQL for routing.vote_balance over the feedback column of edges, for p_topic with the votes of
--- p_activities added up.
+-- SQL for an edge's balance on p_topic, as routing.cost_sql reads it: the planning user's own
+-- vote where they gave one (the edges SQL's own column), else routing.vote_balance over the
+-- feedback column with the votes of p_activities added up, or 0 when others' votes do not count.
 CREATE FUNCTION routing.vote_balance_sql(
     p_profile routing.profile, p_topic text, p_activities text[]
 ) RETURNS text
 LANGUAGE sql STABLE AS $$
     SELECT format(
+        'coalesce((own ->> %L)::double precision, %s)',
+        p_topic,
+        CASE WHEN NOT p_profile.others_votes THEN '0' ELSE format(
         'routing.vote_balance(%s, %s, %s)',
         (SELECT string_agg(format(
              'coalesce((feedback #>> %L)::double precision, 0)', ARRAY[a, p_topic, 'up']), ' + ')
@@ -328,6 +367,7 @@ LANGUAGE sql STABLE AS $$
              'coalesce((feedback #>> %L)::double precision, 0)', ARRAY[a, p_topic, 'down']), ' + ')
          FROM unnest(p_activities) a),
         routing.setting(p_profile, 'feedback', 'damping')
+        ) END
     )
 $$;
 
@@ -339,7 +379,8 @@ $$;
 -- avoided. Votes on access (by the activity's users) and safety (by everyone's: feeling unsafe is
 -- about the place) apply whatever the weights: a negative balance multiplies the cost by up to
 -- feedback.access and feedback.safety; a positive one only cancels votes against. Votes on
--- lighting and crowding are counted, but nothing here knows when the route is taken.
+-- lighting and crowding are counted, but nothing here knows when the route is taken. The planning
+-- user's own votes (p_profile.own_votes) stand in for everyone's on the edges they gave them.
 CREATE FUNCTION routing.cost_sql(
     p_profile routing.profile, p_area geometry, p_used bigint[] DEFAULT '{}'
 ) RETURNS text
@@ -373,7 +414,8 @@ LANGUAGE sql STABLE AS $$
             routing.setting(p_profile, 'legs', 'reuse_penalty')
         ),
         p_area,
-        p_used
+        p_used,
+        p_profile.own_votes
     )
 $$;
 
@@ -599,20 +641,24 @@ $$;
 -- votes on it (from p_feedback, as graph.edges.feedback holds them) times feedback.strength.
 -- Votes say how good a stretch is at what the topic promises ("Nice hills" and "Too steep" both
 -- mean hilly), so they matter only to someone who wants the topic, and count less than its score.
--- Without p_feedback, the scores alone, as routes are measured. routing.cost_sql writes the same
--- sum out inline.
+-- p_own, the planning user's own votes on the edge (as routing.own_votes gives them per edge),
+-- stand in for everyone's; others' count only if p_profile.others_votes. Without p_feedback, the
+-- scores alone, as routes are measured. routing.cost_sql writes the same sum out inline.
 CREATE FUNCTION routing.preference(
-    p_profile routing.profile, p_scores jsonb, p_feedback jsonb DEFAULT NULL
+    p_profile routing.profile, p_scores jsonb, p_feedback jsonb DEFAULT NULL, p_own jsonb DEFAULT NULL
 ) RETURNS double precision
 LANGUAGE sql STABLE PARALLEL SAFE AS $$
     SELECT greatest(-1, least(1, coalesce(sum(
         w.value::double precision * coalesce((p_scores ->> w.key)::double precision, 0)
         + CASE WHEN w.value::double precision > 0 AND p_feedback IS NOT NULL
             THEN routing.setting(p_profile, 'feedback', 'strength') * w.value::double precision
-                * routing.vote_balance(
-                    coalesce((p_feedback #>> ARRAY[p_profile.activity, w.key, 'up'])::double precision, 0),
-                    coalesce((p_feedback #>> ARRAY[p_profile.activity, w.key, 'down'])::double precision, 0),
-                    routing.setting(p_profile, 'feedback', 'damping')
+                * coalesce(
+                    (p_own ->> w.key)::double precision,
+                    CASE WHEN p_profile.others_votes THEN routing.vote_balance(
+                        coalesce((p_feedback #>> ARRAY[p_profile.activity, w.key, 'up'])::double precision, 0),
+                        coalesce((p_feedback #>> ARRAY[p_profile.activity, w.key, 'down'])::double precision, 0),
+                        routing.setting(p_profile, 'feedback', 'damping')
+                    ) ELSE 0 END
                 )
             ELSE 0 END
     ), 0)))
@@ -628,13 +674,15 @@ $$;
 CREATE FUNCTION routing.vertex_stats(p_profile routing.profile, p_vertices bigint[])
 RETURNS TABLE (vertex bigint, degree bigint, appeal double precision)
 LANGUAGE sql STABLE AS $$
-    SELECT u.vertex, count(*), avg(routing.preference(p_profile, u.scores, u.feedback))
+    SELECT u.vertex, count(*), avg(routing.preference(
+        p_profile, u.scores, u.feedback, p_profile.own_votes -> u.id::text
+    ))
     FROM (
-        SELECT e.source AS vertex, e.scores, e.feedback FROM graph.edges e
+        SELECT e.source AS vertex, e.id, e.scores, e.feedback FROM graph.edges e
         WHERE e.source = ANY (p_vertices)
           AND p_profile.activity = ANY (e.forward || e.backward)
         UNION ALL
-        SELECT e.target, e.scores, e.feedback FROM graph.edges e
+        SELECT e.target, e.id, e.scores, e.feedback FROM graph.edges e
         WHERE e.target = ANY (p_vertices)
           AND p_profile.activity = ANY (e.forward || e.backward)
     ) u
@@ -2177,7 +2225,8 @@ $$;
 
 -- Plans a route for p_activity from p_start to p_finish, or back to p_start when p_finish is
 -- NULL, weighting edge scores by p_weights; p_settings overrides routing.defaults() (see
--- routing.make_profile). With p_target_m, the route is about that long; without it, which only a
+-- routing.make_profile). Users' stretch review votes bend the cost (see routing.cost_sql): p_user's
+-- own (NULL: nobody's) over everyone's, and everyone's only if p_others_votes. With p_target_m, the route is about that long; without it, which only a
 -- route to a finish may leave out, it is the cheapest way there by the cost every route is found
 -- by (see routing.cost_sql): the most pleasant one, without a length to keep to.
 -- p_waypoints (see routing.read_waypoints) are passed on the way: those at asap first, in the
@@ -2214,7 +2263,9 @@ CREATE FUNCTION routing.plan_route(
     p_target_m  double precision,
     p_weights   jsonb DEFAULT '{}',
     p_settings  jsonb DEFAULT '{}',
-    p_waypoints jsonb DEFAULT '[]'
+    p_waypoints jsonb DEFAULT '[]',
+    p_user      uuid DEFAULT NULL,
+    p_others_votes boolean DEFAULT true
 ) RETURNS jsonb
 LANGUAGE plpgsql
 SET jit = off
@@ -2248,7 +2299,9 @@ BEGIN
         RAISE EXCEPTION 'need a start, and a positive target or a finish'
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
-    v_profile := routing.make_profile(p_activity, p_weights, p_settings);
+    v_profile := routing.make_profile(
+        p_activity, p_weights, p_settings, routing.own_votes(p_user, p_activity), p_others_votes
+    );
     v_tolerance := routing.setting(v_profile, 'plan', 'tolerance');
     v_count := routing.setting(v_profile, 'options', 'count')::integer;
     v_until := clock_timestamp()
@@ -2410,7 +2463,7 @@ $$;
 -- one as far after it is routed again through the edge p_activity may use nearest p_drop (within
 -- plan.snap_m), in whichever direction is shorter. Everything outside the stretch stays as it
 -- was. The new way is the cheapest by the activity's own cost, highway class and turns, without
--- preferences, so an edit goes the way it was dragged; edges outside the stretch pay the reuse
+-- preferences or users' votes, so an edit goes the way it was dragged; edges outside the stretch pay the reuse
 -- penalty. Without p_drop, the stretch is routed again with nothing to pass, which takes an edit
 -- back out; p_before_m and p_after_m, what an earlier edit returned, make the stretch reach at
 -- least that far before and after the grab, so it covers all that edit moved. p_settings
@@ -2437,7 +2490,8 @@ LANGUAGE plpgsql
 SET jit = off
 AS $$
 DECLARE
-    v_profile  routing.profile := routing.make_profile(p_activity, '{}', p_settings);
+    -- No votes: a review may be stale, or not matter to the one editing.
+    v_profile  routing.profile := routing.make_profile(p_activity, '{}', p_settings, '{}', false);
     v_n        integer := cardinality(p_edge_ids);
     -- Per edge in travel order: the vertex it is entered from and left at, and where it ends
     -- along the route.

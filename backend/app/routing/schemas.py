@@ -52,6 +52,8 @@ class RouteRequestIn(BaseModel):
     preferences: Annotated[dict[str, Weight], AfterValidator(_known_keys)] = {}
     # passed in the order the planner finds best, unless their at says otherwise
     waypoints: list[WaypointIn] = []
+    # For tuning: False counts only the user's own stretch reviews, not everyone's.
+    use_others_reviews: bool = True
 
     @model_validator(mode="after")
     def _finish_matches_shape(self) -> Self:
