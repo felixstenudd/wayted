@@ -5,7 +5,7 @@ from typing import Literal
 
 from app.enrichment.definitions import ATTRIBUTES as SCORED
 
-type Group = Literal["surroundings", "streets", "sights", "surface"]
+type Group = Literal["surroundings", "streets", "sights", "surface", "terrain"]
 
 _SCORED_KEYS = frozenset(a.key for a in SCORED)
 
@@ -29,6 +29,7 @@ ROUTE_ATTRIBUTES: tuple[RouteAttribute, ...] = (
     RouteAttribute("sights", "sights"),
     RouteAttribute("bridges", "sights"),
     RouteAttribute("prepared", "surface"),
+    RouteAttribute("hills", "terrain"),
 )
 
 KEYS = frozenset(a.key for a in ROUTE_ATTRIBUTES)

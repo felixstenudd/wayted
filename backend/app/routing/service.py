@@ -172,6 +172,9 @@ class PlannedRoute:
     scores: dict[str, AttributeScore]
     # length travelled more than once
     reused_m: float
+    # metres climbed and dropped in all; None when heights are known for under 90 % of the length
+    ascent_m: float | None
+    descent_m: float | None
     warnings: list[RouteWarning]
     # in travel order
     edges: list[EdgeStep]
@@ -257,6 +260,8 @@ def _planned(route: dict[str, Any]) -> PlannedRoute:
         length_m=route["length_m"],
         scores={key: AttributeScore(**score) for key, score in route["scores"].items()},
         reused_m=route["reused_m"],
+        ascent_m=route["ascent_m"],
+        descent_m=route["descent_m"],
         warnings=route["warnings"],
         edges=[EdgeStep(**step) for step in route["edges"]],
         waypoint_order=route["waypoint_order"],

@@ -62,6 +62,7 @@ def test_attributes_are_listed_in_display_order_with_groups(client: TestClient) 
         ("sights", "sights"),
         ("bridges", "sights"),
         ("prepared", "surface"),
+        ("hills", "terrain"),
     ]
 
 
@@ -69,8 +70,7 @@ def test_attributes_are_scored_when_the_enricher_scores_them(client: TestClient)
     res = client.get("/routing/attributes")
 
     scored = {a["key"] for a in res.json() if a["scored"]}
-    # Hills are scored, but not offered for routes yet.
-    assert scored == {a.key for a in ATTRIBUTES} - {"hills"}
+    assert scored == {a.key for a in ATTRIBUTES}
 
 
 @pytest.mark.parametrize(

@@ -106,8 +106,9 @@ async def test_area_in_the_graph_gets_a_route(
     assert properties["length_m"] == pytest.approx(2_000, rel=0.07)
     assert properties["warnings"] == []
     assert properties["reused_m"] >= 0
-    # The grid has nothing to score, so there is nothing known about any attribute.
+    # The grid has nothing to score, so there is nothing known about any attribute or height.
     assert properties["scores"] == {}
+    assert (properties["ascent_m"], properties["descent_m"]) == (None, None)
     steps = properties["edges"]
     assert steps and all(set(step) == {"edge_id", "forward"} for step in steps)
     cur = await admin_conn.execute("SELECT count(*) FROM raw.pending_tiles")

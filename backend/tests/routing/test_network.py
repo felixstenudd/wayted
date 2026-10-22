@@ -1,6 +1,7 @@
 import dataclasses
 import math
 from collections.abc import Mapping
+from typing import Any
 
 import psycopg
 import pytest
@@ -353,7 +354,7 @@ async def test_planned_route_takes_the_hills_only_when_they_are_preferred(
     )
     await two_paths(admin_conn, mapper_pool, enricher_pool)
 
-    async def planned(weights: dict[str, float]) -> tuple[list[int], float]:
+    async def planned(weights: dict[str, float]) -> tuple[list[int], dict[str, Any]]:
         async with api_pool.connection() as conn:
             cur = await conn.execute(
                 "SELECT routing.plan_route('running', %s, %s, NULL, %s)",
@@ -363,9 +364,10 @@ async def test_planned_route_takes_the_hills_only_when_they_are_preferred(
             assert row is not None
             route = row[0]
             cur = await conn.execute(
-                "SELECT DISTINCT way_id FROM graph.edges WHERE id = ANY(%s)", (route["edges"],)
+                "SELECT DISTINCT way_id FROM graph.edges WHERE id = ANY(%s)",
+                ([step["edge_id"] for step in route["edges"]],),
             )
-            return [way_id for (way_id,) in await cur.fetchall()], route["scores"]["hills"]
+            return [way_id for (way_id,) in await cur.fetchall()], route
 
     indifferent, flat = await planned({})
     avoided, _ = await planned({"hills": -1})
@@ -373,8 +375,36 @@ async def test_planned_route_takes_the_hills_only_when_they_are_preferred(
 
     assert indifferent == avoided == [STRAIGHT]
     assert preferred == [DETOUR]
-    assert flat == pytest.approx(0, abs=0.05)
-    assert hilly > 0.5
+    assert flat["scores"]["hills"]["mean"] == pytest.approx(0, abs=0.05)
+    assert hilly["scores"]["hills"]["mean"] > 0.5
+    assert (flat["ascent_m"], flat["descent_m"]) == (0, 0)
+    # Up the ridge and down again: 25 columns rising 15 % each way, less what smoothing rounds off.
+    assert hilly["ascent_m"] == pytest.approx(25 * 0.15 * column_m, rel=0.15)
+    assert hilly["descent_m"] == pytest.approx(hilly["ascent_m"], rel=0.05)
+
+
+async def test_route_climb_follows_the_direction_of_travel_and_needs_heights(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, api_pool: Pool
+) -> None:
+    await two_paths(admin_conn, mapper_pool, enricher_pool)
+    edges = await edge_ids(admin_conn)
+    straight = edges[(STRAIGHT, 1, 2, 1)]
+    detour = [edges[key] for key in sorted(edges) if key[0] == DETOUR]
+    await admin_conn.execute(
+        "UPDATE graph.edges SET ascent_m = 12, descent_m = 3 WHERE id = %s", (straight,)
+    )
+
+    async def climb(edge_ids: list[int], forward: list[bool]) -> tuple[Any, Any]:
+        async with api_pool.connection() as conn:
+            cur = await conn.execute("SELECT routing.route_climb(%s, %s)", (edge_ids, forward))
+            row = await cur.fetchone()
+            assert row is not None
+            return row[0]["ascent_m"], row[0]["descent_m"]
+
+    assert await climb([straight], [True]) == (12, 3)
+    assert await climb([straight, straight], [True, False]) == (15, 15)
+    # The detour, with no heights, is most of the length.
+    assert await climb([straight, *detour], [True] * (1 + len(detour))) == (None, None)
 
 
 async def test_route_avoids_edges_it_already_used(

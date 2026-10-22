@@ -1455,6 +1455,32 @@ LANGUAGE sql STABLE AS $$
     FROM scored s, total
 $$;
 
+-- The metres a route along p_edge_ids climbs and drops in all, each edge travelled forward
+-- (from its source to its target) as p_forward says, as {ascent_m, descent_m}. Both are NULL
+-- when the edges with known heights cover less than 90 % of the length, so a route half at sea
+-- does not read as flat.
+CREATE FUNCTION routing.route_climb(p_edge_ids bigint[], p_forward boolean[]) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    WITH legs AS (
+        SELECT e.length_m,
+               CASE WHEN s.forward THEN e.ascent_m ELSE e.descent_m END AS ascent_m,
+               CASE WHEN s.forward THEN e.descent_m ELSE e.ascent_m END AS descent_m
+        FROM unnest(p_edge_ids, p_forward) AS s (id, forward)
+        JOIN graph.edges e ON e.id = s.id
+    ),
+    total AS (
+        SELECT sum(ascent_m) AS ascent_m,
+               sum(descent_m) AS descent_m,
+               coalesce(sum(length_m) FILTER (WHERE ascent_m IS NOT NULL)
+                        / nullif(sum(length_m), 0), 0) AS coverage
+        FROM legs
+    )
+    SELECT CASE WHEN coverage >= 0.9
+                THEN jsonb_build_object('ascent_m', ascent_m, 'descent_m', descent_m)
+                ELSE jsonb_build_object('ascent_m', NULL, 'descent_m', NULL) END
+    FROM total
+$$;
+
 -- The route through p_vias as the planner works with it: the line in travel order, its length,
 -- the length-weighted share of every edge score along it, the length travelled more than once,
 -- the edge ids in order, whether each is travelled from its source to its target (forward), and
@@ -1933,8 +1959,8 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
 $$;
 
 -- A route from routing.route_json as the API returns it: the line, length, reused length and
--- warnings, the edges in travel order as {edge_id, forward}, and the scores as
--- routing.route_scores gives them.
+-- warnings, the edges in travel order as {edge_id, forward}, the scores as routing.route_scores
+-- gives them, and the metres climbed and dropped as routing.route_climb does.
 CREATE FUNCTION routing.route_out(p_route jsonb) RETURNS jsonb
 LANGUAGE sql STABLE AS $$
     WITH steps AS (
@@ -1953,6 +1979,9 @@ LANGUAGE sql STABLE AS $$
             FROM steps
         ),
         'scores', routing.route_scores(ARRAY(SELECT edge_id FROM steps ORDER BY n))
+    ) || routing.route_climb(
+        ARRAY(SELECT edge_id FROM steps ORDER BY n),
+        ARRAY(SELECT forward FROM steps ORDER BY n)
     )
 $$;
 

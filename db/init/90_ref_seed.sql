@@ -69,7 +69,8 @@ INSERT INTO ref.activity_highway_factors (activity, highway, factor) VALUES
     ('cycling', 'ferry', 5.0);
 
 INSERT INTO ref.attributes (key) VALUES
-    ('green'), ('nature'), ('water'), ('quiet_streets'), ('sights'), ('bridges'), ('prepared');
+    ('green'), ('nature'), ('water'), ('quiet_streets'), ('sights'), ('bridges'), ('prepared'),
+    ('hills');
 
 INSERT INTO ref.review_reasons (code, topic, sentiment, attribute) VALUES
     ('green_bad', 'green', -1, 'green'),
@@ -84,8 +85,8 @@ INSERT INTO ref.review_reasons (code, topic, sentiment, attribute) VALUES
     ('sights_good', 'sights', 1, 'sights'),
     ('prepared_bad', 'prepared', -1, 'prepared'),
     ('prepared_good', 'prepared', 1, 'prepared'),
-    ('elevation_bad', 'elevation', -1, NULL),
-    ('elevation_good', 'elevation', 1, NULL),
+    ('hills_bad', 'hills', -1, 'hills'),
+    ('hills_good', 'hills', 1, 'hills'),
     ('lighting_bad', 'lighting', -1, NULL),
     ('lighting_good', 'lighting', 1, NULL),
     ('safety_bad', 'safety', -1, NULL),
