@@ -69,7 +69,7 @@ onBeforeUnmount(() => {
 
 <template>
 	<section :aria-labelledby="HEADING_ID" class="flex flex-col gap-2">
-		<div class="flex items-baseline justify-between gap-3">
+		<div class="flex flex-col gap-1">
 			<h2 :id="HEADING_ID" ref="heading" tabindex="-1" class="text-title outline-none">
 				{{ t('savedRoutes.stretch.yours') }}
 			</h2>

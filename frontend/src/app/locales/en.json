@@ -485,7 +485,7 @@
 			"failed": "Your review was not saved. Check your connection, then save again.",
 			"reasonsFailed": "The reasons could not be loaded. Check your connection, then try again.",
 			"yours": "Your stretch reviews",
-			"saved": "Stretch review saved",
+			"saved": "Stretch review saved. Your next routes take it into account.",
 			"empty": "Mark a stretch you liked or didn't. Choose Review a stretch.",
 			"loadFailed": "Your stretch reviews could not be loaded. Check your connection, then try again.",
 			"range": "{from} to {to} km",
