@@ -6,12 +6,13 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.auth.dependencies import UserId
 from app.dependencies import Conn
 
 from . import service
+from .export import FIT_MEDIA_TYPE, GPX_MEDIA_TYPE, ExportFile
 from .schemas import RenameIn, RouteIn, RouteOut, RouteSummaryOut
 
 router = APIRouter(prefix="/routes")
@@ -23,6 +24,22 @@ _STATUS_CODES: dict[type[service.RouteError], int] = {
 
 _NOT_FOUND: dict[int | str, dict[str, Any]] = {
     status.HTTP_404_NOT_FOUND: {"description": "No such route among the user's"}
+}
+
+
+# A file to save rather than JSON; the response_class keeps FastAPI from also listing JSON.
+_GPX_FILE: dict[int | str, dict[str, Any]] = {
+    status.HTTP_200_OK: {
+        "description": "The route as a GPX 1.1 track",
+        "content": {GPX_MEDIA_TYPE: {"schema": {"type": "string"}}},
+    }
+}
+
+_FIT_FILE: dict[int | str, dict[str, Any]] = {
+    status.HTTP_200_OK: {
+        "description": "The route as a FIT course",
+        "content": {FIT_MEDIA_TYPE: {"schema": {"type": "string", "format": "binary"}}},
+    }
 }
 
 
@@ -66,3 +83,27 @@ async def rename_route(
 async def delete_route(user_id: UserId, route_id: int, db_conn: Conn) -> None:
     with _http_errors():
         await service.delete_route(user_id, route_id, db_conn)
+
+
+@router.get("/{route_id}/gpx", response_class=Response, responses=_GPX_FILE | _NOT_FOUND)
+async def export_gpx(user_id: UserId, route_id: int, db_conn: Conn) -> Response:
+    """The route as a GPX file to download, for apps and watches that follow a track."""
+    with _http_errors():
+        return _attachment(await service.export_gpx(user_id, route_id, db_conn))
+
+
+@router.get("/{route_id}/fit", response_class=Response, responses=_FIT_FILE | _NOT_FOUND)
+async def export_fit(user_id: UserId, route_id: int, db_conn: Conn) -> Response:
+    """The route as a FIT course to download, for Garmin watches and bike computers to follow
+    with turn prompts."""
+    with _http_errors():
+        return _attachment(await service.export_fit(user_id, route_id, db_conn))
+
+
+def _attachment(file: ExportFile) -> Response:
+    # The file name is a slug, so it needs no quoting beyond the quotes.
+    return Response(
+        file.content,
+        media_type=file.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{file.filename}"'},
+    )

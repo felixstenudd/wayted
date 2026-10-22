@@ -144,6 +144,18 @@ describe('authedRequest', () => {
 		await expect(auth.authedRequest('/logbook/routes')).rejects.toMatchObject({ status: 500 })
 		expect(auth.isSignedIn).toBe(true)
 	})
+
+	it('gets files the same way', async () => {
+		const { auth, calls } = await signedIn({
+			'GET /api/logbook/routes/7/gpx': [json(401), new Response('<gpx/>')],
+			'POST /api/auth/refresh': [json(200, { access_token: 'a2' })],
+		})
+
+		const file = await auth.authedFile('/logbook/routes/7/gpx')
+
+		expect(await file.blob.text()).toBe('<gpx/>')
+		expect(calls.at(-1)?.authorization).toBe('Bearer a2')
+	})
 })
 
 describe('signOut', () => {

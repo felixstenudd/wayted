@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import { ApiError, isUnauthorized, request, type RequestOptions } from '@/shared/api'
+import {
+	ApiError,
+	isUnauthorized,
+	request,
+	requestFile,
+	type DownloadedFile,
+	type RequestOptions,
+} from '@/shared/api'
 
 import * as api from './api'
 import type { CreateAccountValues, SignInValues, User } from './types'
@@ -37,23 +44,33 @@ export const useAuthStore = defineStore('auth', () => {
 	}
 
 	/**
-	 * Like `request`, for endpoints that need a signed-in user. Access tokens
-	 * are short-lived, so on a 401 it gets a new one and tries once more.
+	 * Makes a call that needs a signed-in user. Access tokens are short-lived,
+	 * so on a 401 it gets a new one and tries once more.
 	 */
-	async function authedRequest<T>(
-		path: string,
-		options: Omit<RequestOptions, 'token'> = {},
-	): Promise<T> {
+	async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
 		if (accessToken !== null) {
 			try {
-				return await request<T>(path, { ...options, token: accessToken })
+				return await call(accessToken)
 			} catch (error) {
 				if (!isUnauthorized(error)) throw error
 			}
 		}
 		const token = await refresh()
 		if (token === null) throw new ApiError(401, 'Not signed in')
-		return request<T>(path, { ...options, token })
+		return call(token)
+	}
+
+	/** Like `request`, for endpoints that need a signed-in user. */
+	function authedRequest<T>(
+		path: string,
+		options: Omit<RequestOptions, 'token'> = {},
+	): Promise<T> {
+		return withToken((token) => request<T>(path, { ...options, token }))
+	}
+
+	/** Like `requestFile`, for endpoints that need a signed-in user. */
+	function authedFile(path: string): Promise<DownloadedFile> {
+		return withToken((token) => requestFile(path, { token }))
 	}
 
 	/** Picks up an existing session on page load. Runs once; later calls wait for the first. */
@@ -86,7 +103,16 @@ export const useAuthStore = defineStore('auth', () => {
 		await api.logout()
 	}
 
-	return { user, isSignedIn, restore, signIn, createAccount, signOut, authedRequest }
+	return {
+		user,
+		isSignedIn,
+		restore,
+		signIn,
+		createAccount,
+		signOut,
+		authedRequest,
+		authedFile,
+	}
 })
 
 /**

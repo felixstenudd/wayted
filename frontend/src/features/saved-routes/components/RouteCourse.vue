@@ -3,7 +3,6 @@ import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import {
-	distanceM,
 	EMPTY,
 	MapMarker,
 	ringBounds,
@@ -18,6 +17,7 @@ import { CourseSymbol } from '@/shared/ui/course-symbol'
 
 import { useSavedRoute } from '../api'
 import { chevronsAlong } from '../chevrons'
+import { endsAtStart } from '../course'
 import { useSavedRoutesStore } from '../store'
 import ReviewedStretches from './ReviewedStretches.vue'
 import StretchLayers from './StretchLayers.vue'
@@ -27,8 +27,6 @@ const props = defineProps<{ routeId: number }>()
 // About a dozen direction marks, but never closer than this.
 const MIN_CHEVRON_SPACING_M = 250
 const CHEVRON_COUNT = 12
-// A finish this close to the start is the same place: one symbol is enough there.
-const SAME_PLACE_M = 30
 
 const { t } = useI18n()
 const saved = useSavedRoute(() => props.routeId)
@@ -47,11 +45,10 @@ const toLonLat = (point: readonly number[] | undefined): LonLat | null => {
 	return lon === undefined || lat === undefined ? null : { lon, lat }
 }
 const start = computed(() => toLonLat(coordinates.value[0]))
-const finish = computed(() => {
-	const end = toLonLat(coordinates.value.at(-1))
-	if (!end || !start.value) return end
-	return distanceM(start.value, end) < SAME_PLACE_M ? null : end
-})
+// A loop's finish is its start, which already has a symbol.
+const finish = computed(() =>
+	endsAtStart(coordinates.value) ? null : toLonLat(coordinates.value.at(-1)),
+)
 const chevrons = computed(() => {
 	const distance = saved.data.value?.distance_m ?? 0
 	const spacing = Math.max(MIN_CHEVRON_SPACING_M, distance / CHEVRON_COUNT)

@@ -7,7 +7,7 @@ from psycopg.rows import TupleRow
 
 from app.main import app
 
-from .app_data import add_edge, add_user
+from .app_data import add_edge, add_other_users_route
 
 pytestmark = pytest.mark.db
 
@@ -26,23 +26,6 @@ async def add_network(conn: Conn) -> tuple[int, int, int]:
     b = await add_edge(conn, 1, 2, [V1, V2], length_m=40, scores={"green": 0.5, "water": 0.2})
     c = await add_edge(conn, 2, 3, [V2, V3], length_m=100, backward=("running",))
     return a, b, c
-
-
-async def add_other_users_route(conn: Conn) -> int:
-    other = await add_user(conn, "other@example.com")
-    cur = await conn.execute(
-        """
-        INSERT INTO app.routes
-            (user_id, name, activity, shape, target_distance_m, geom, distance_m)
-        VALUES (%s, 'Not yours', 'running', 'loop', 5000, %s, 60)
-        RETURNING id
-        """,
-        (other, "SRID=4326;LINESTRING(20 63.8, 20.001 63.8)"),
-    )
-    row = await cur.fetchone()
-    assert row is not None
-    route_id: int = row[0]
-    return route_id
 
 
 def route(edges: list[tuple[int, bool]], **overrides: Any) -> dict[str, Any]:

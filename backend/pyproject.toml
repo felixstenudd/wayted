@@ -9,10 +9,12 @@ dependencies = [
   "httpx",
   "pyjwt",
   "pwdlib[argon2]",
+  # Garmin's FIT SDK, for course files. Its licence allows using it, not shipping its source.
+  "garmin-fit-sdk",
 ]
 
 [project.optional-dependencies]
-dev = ["ruff", "mypy", "pytest", "pytest-asyncio"]
+dev = ["ruff", "mypy", "pytest", "pytest-asyncio", "xmlschema"]
 
 [tool.ruff]
 line-length = 100
