@@ -47,18 +47,20 @@ const anyClimbKnown = computed(() =>
 
 function climbOf(ascentM: number | null, descentM: number | null) {
 	if (ascentM === null || descentM === null) {
-		const unknown = t('route.climb.unknown')
-		return anyClimbKnown.value ? { text: unknown, spoken: unknown, isMetres: false } : null
+		const spoken = t('route.climb.unknown')
+		return anyClimbKnown.value
+			? { text: t('route.climb.unknownShort'), spoken, withIcon: true }
+			: null
 	}
 	if (isFlat(ascentM, descentM)) {
 		const flat = t('route.climb.flat')
-		return { text: flat, spoken: flat, isMetres: false }
+		return { text: flat, spoken: flat, withIcon: false }
 	}
 	const m = formatClimbM(ascentM, locale.value)
 	return {
 		text: t('route.climb.metres', { m }),
 		spoken: t('route.climb.climbs', { m }),
-		isMetres: true,
+		withIcon: true,
 	}
 }
 
@@ -129,7 +131,7 @@ const options = computed(() =>
 			<span class="text-body font-semibold text-ink">{{ option.km }}</span>
 			<span v-if="option.climb" class="flex items-center gap-1 text-caption text-graphite">
 				<ArrowUpRight
-					v-if="option.climb.isMetres"
+					v-if="option.climb.withIcon"
 					class="size-3.5 shrink-0"
 					aria-hidden="true"
 				/>

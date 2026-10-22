@@ -393,6 +393,8 @@
 		"detail": {
 			"title": "Route",
 			"details": "{activity}, {shape}, {km} km, saved {date}",
+			"detailsWithClimb": "{activity}, {shape}, {km} km, {climb}, saved {date}",
+			"flat": "flat",
 			"more": "More for this route",
 			"loading": "Loading the route…",
 			"missingTitle": "Route not found",
@@ -585,7 +587,8 @@
 			"upDown": "{up} m up, {down} m down",
 			"metres": "{m} m",
 			"climbs": "Climbs {m} m",
-			"unknown": "Climb not known"
+			"unknown": "Climb not known",
+			"unknownShort": "–"
 		},
 		"name": {
 			"loop": "{km} km loop",
