@@ -302,7 +302,7 @@ $$;
 -- edge's votes in p_own (as routing.own_votes gives them; NULL where it has none). Edges are read
 -- through the GIST index on graph.edges, which is what keeps a call fast on a large graph. p_used
 -- and p_own are joined, not looked up per edge, so each is hashed once instead of scanned for
--- every edge.
+-- every edge; an empty p_own is not joined at all.
 CREATE FUNCTION routing.edges_sql(
     p_activity text, p_cost text, p_area geometry, p_used bigint[], p_own jsonb DEFAULT '{}'
 ) RETURNS text
@@ -313,11 +313,10 @@ LANGUAGE sql STABLE AS $$
                CASE WHEN forward THEN %1$s ELSE -1 END AS cost,
                CASE WHEN backward THEN %1$s ELSE -1 END AS reverse_cost
         FROM (
-            SELECT e.*, u.id IS NOT NULL AS used, o.own
+            SELECT e.*, u.id IS NOT NULL AS used, %5$s AS own
             FROM routing.activity_edges e
             LEFT JOIN (SELECT DISTINCT unnest(%2$L::bigint[]) AS id) u ON u.id = e.id
-            LEFT JOIN (SELECT key::bigint AS id, value AS own FROM jsonb_each(%5$L::jsonb)) o
-                ON o.id = e.id
+            %6$s
             WHERE e.activity = %3$L %4$s
         ) e
         $sql$,
@@ -328,7 +327,12 @@ LANGUAGE sql STABLE AS $$
             THEN format('AND ST_Intersects(e.geom, %L::geometry)', p_area)
             ELSE ''
         END,
-        coalesce(p_own, '{}')
+        CASE WHEN coalesce(p_own, '{}') = '{}' THEN 'NULL::jsonb' ELSE 'o.own' END,
+        CASE WHEN coalesce(p_own, '{}') = '{}' THEN '' ELSE format(
+            'LEFT JOIN (SELECT key::bigint AS id, value AS own FROM jsonb_each(%L::jsonb)) o'
+            ' ON o.id = e.id',
+            p_own
+        ) END
     )
 $$;
 
@@ -381,42 +385,57 @@ $$;
 -- feedback.access and feedback.safety; a positive one only cancels votes against. Votes on
 -- lighting and crowding are counted, but nothing here knows when the route is taken. The planning
 -- user's own votes (p_profile.own_votes) stand in for everyone's on the edges they gave them.
+-- Most edges have no votes, and they skip the vote terms, which pgRouting would otherwise work
+-- out for every edge of every search.
 CREATE FUNCTION routing.cost_sql(
     p_profile routing.profile, p_area geometry, p_used bigint[] DEFAULT '{}'
 ) RETURNS text
 LANGUAGE sql STABLE AS $$
+    WITH terms AS (
+        SELECT
+            coalesce(string_agg(
+                format('%s * coalesce((scores ->> %L)::double precision, 0)', w.value, w.key),
+                ' + ' ORDER BY w.key
+            ), '0') AS scores,
+            coalesce(string_agg(
+                format(
+                    '%s * %s',
+                    routing.setting(p_profile, 'feedback', 'strength') * w.value::double precision,
+                    routing.vote_balance_sql(p_profile, w.key, ARRAY[p_profile.activity])
+                ),
+                ' + ' ORDER BY w.key
+            ) FILTER (WHERE w.value::double precision > 0), '0') AS votes
+        FROM jsonb_each(p_profile.weights) w
+    )
     SELECT routing.edges_sql(
         p_profile.activity,
         format(
-            'length_m * factor * (1 - %s * greatest(-1, least(1, %s)))'
+            'length_m * factor * CASE WHEN used THEN %s ELSE 1 END * CASE WHEN %s'
+            ' THEN (1 - %s * greatest(-1, least(1, %s + %s)))'
             ' * (1 + %s * greatest(0, -%s)) * (1 + %s * greatest(0, -%s))'
-            ' * CASE WHEN used THEN %s ELSE 1 END',
+            ' ELSE 1 - %s * (%s) END',
+            routing.setting(p_profile, 'legs', 'reuse_penalty'),
+            CASE WHEN p_profile.others_votes
+                THEN '(own IS NOT NULL OR feedback <> ''{}''::jsonb)'
+                ELSE 'own IS NOT NULL'
+            END,
             routing.setting(p_profile, 'cost', 'alpha'),
-            coalesce(
-                (SELECT string_agg(
-                     format('%s * coalesce((scores ->> %L)::double precision, 0)', w.value, w.key)
-                     || CASE WHEN w.value::double precision > 0 THEN format(
-                            ' + %s * %s',
-                            routing.setting(p_profile, 'feedback', 'strength')
-                                * w.value::double precision,
-                            routing.vote_balance_sql(p_profile, w.key, ARRAY[p_profile.activity])
-                        ) ELSE '' END,
-                     ' + ' ORDER BY w.key)
-                 FROM jsonb_each(p_profile.weights) w),
-                '0'
-            ),
+            t.scores,
+            t.votes,
             routing.setting(p_profile, 'feedback', 'access') - 1,
             routing.vote_balance_sql(p_profile, 'access', ARRAY[p_profile.activity]),
             routing.setting(p_profile, 'feedback', 'safety') - 1,
             routing.vote_balance_sql(
                 p_profile, 'safety', ARRAY(SELECT code FROM ref.activities ORDER BY code)
             ),
-            routing.setting(p_profile, 'legs', 'reuse_penalty')
+            routing.setting(p_profile, 'cost', 'alpha'),
+            t.scores
         ),
         p_area,
         p_used,
         p_profile.own_votes
     )
+    FROM terms t
 $$;
 
 -- The vertices p_activity can use at most p_max_m metres from p_point, and how far they are. The
