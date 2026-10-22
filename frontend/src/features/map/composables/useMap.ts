@@ -2,18 +2,14 @@ import {
 	Map as MapLibreMap,
 	NavigationControl,
 	ScaleControl,
-	setWorkerUrl,
 	type ControlPosition,
 	type StyleSpecification,
 } from 'maplibre-gl'
-// Bundled by Vite: MapLibre cannot find its own worker file once it is in a bundle.
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { onBeforeUnmount, onMounted, type Ref } from 'vue'
 
 import { useMapContext } from '../context'
 import type { LonLat } from '../geometry'
-
-setWorkerUrl(workerUrl)
+import '../maplibre'
 
 // OpenStreetMap's attribution guidelines let shown credits collapse after five seconds.
 const CREDITS_SHOWN_MS = 5000

@@ -25,6 +25,24 @@ async def add_user(conn: Conn, email: str = "runner@example.com") -> UUID:
     return user_id
 
 
+async def add_other_users_route(conn: Conn) -> int:
+    """A route saved by someone else, for checking that nobody else's routes can be reached."""
+    other = await add_user(conn, "other@example.com")
+    cur = await conn.execute(
+        """
+        INSERT INTO app.routes
+            (user_id, name, activity, shape, target_distance_m, geom, distance_m)
+        VALUES (%s, 'Not yours', 'running', 'loop', 5000, %s, 60)
+        RETURNING id
+        """,
+        (other, "SRID=4326;LINESTRING(20 63.8, 20.001 63.8)"),
+    )
+    row = await cur.fetchone()
+    assert row is not None
+    route_id: int = row[0]
+    return route_id
+
+
 async def add_edge(
     conn: Conn,
     source: int,

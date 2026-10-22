@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronLeft, CircleAlert, Ellipsis, PenLine, Repeat, Trash2 } from '@lucide/vue'
+import { ChevronLeft, CircleAlert, Download, Ellipsis, PenLine, Repeat, Trash2 } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
@@ -12,10 +12,13 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSub,
+	DropdownMenuSubContent,
+	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from '@/shared/ui/dropdown-menu'
 
-import { useSavedRoute } from '../api'
+import { useDownloadRoute, useSavedRoute, type RouteFileFormat } from '../api'
 import { formatDistanceKm, formatSavedOn } from '../format'
 import type { PreferenceChange } from '../review'
 import { useSavedRoutesStore } from '../store'
@@ -24,6 +27,7 @@ import ReviewSavedNotice from './ReviewSavedNotice.vue'
 import RouteName from './RouteName.vue'
 import RouteReviewForm from './RouteReviewForm.vue'
 import RouteReviewSummary from './RouteReviewSummary.vue'
+import RouteTurns from './RouteTurns.vue'
 import StretchPicker from './StretchPicker.vue'
 import StretchReasons from './StretchReasons.vue'
 import StretchReviewList from './StretchReviewList.vue'
@@ -35,6 +39,8 @@ const props = defineProps<{
 }>()
 
 const HEADING_ID = 'route-heading'
+// In the order the Download submenu lists them.
+const DOWNLOADS: RouteFileFormat[] = ['gpx', 'fit', 'png']
 
 const { t, locale } = useI18n()
 const saved = useSavedRoute(() => props.routeId)
@@ -49,6 +55,9 @@ const store = useSavedRoutesStore()
 // What the last saved review did to the user's weights, until they move on.
 const savedChanges = ref<PreferenceChange[] | null>(null)
 const isStretchJustSaved = ref(false)
+const download = useDownloadRoute(() => ({ id: props.routeId, name: route.value?.name ?? '' }))
+// The format being fetched, or the one that last failed.
+const downloadFormat = computed(() => download.variables.value)
 watch(
 	() => props.routeId,
 	() => {
@@ -57,6 +66,7 @@ watch(
 		isReviewing.value = false
 		savedChanges.value = null
 		isStretchJustSaved.value = false
+		download.reset()
 		store.stopPickingStretch()
 	},
 )
@@ -86,6 +96,12 @@ function startStretch(): void {
 	isStretchJustSaved.value = false
 	isDeleting.value = false
 	store.startPickingStretch()
+}
+
+function startDownload(format: RouteFileFormat): void {
+	if (download.isPending.value) return
+	// The menu closes and the panel says how it went; a failure is shown, not thrown.
+	download.mutate(format)
 }
 
 function reviewSaved(changes: PreferenceChange[]): void {
@@ -150,6 +166,21 @@ const details = computed(() => {
 						<PenLine />
 						{{ t('savedRoutes.rename.start') }}
 					</DropdownMenuItem>
+					<DropdownMenuSub>
+						<DropdownMenuSubTrigger :disabled="download.isPending.value">
+							<Download />
+							{{ t('savedRoutes.download.menu') }}
+						</DropdownMenuSubTrigger>
+						<DropdownMenuSubContent>
+							<DropdownMenuItem
+								v-for="format in DOWNLOADS"
+								:key="format"
+								@select="startDownload(format)"
+							>
+								{{ t(`savedRoutes.download.formats.${format}`) }}
+							</DropdownMenuItem>
+						</DropdownMenuSubContent>
+					</DropdownMenuSub>
 					<DropdownMenuItem @select="isDeleting = true">
 						<Trash2 />
 						{{ t('savedRoutes.delete.confirm') }}
@@ -212,8 +243,24 @@ const details = computed(() => {
 				</p>
 				<p class="text-small text-graphite">{{ details }}</p>
 			</div>
+			<p
+				v-if="download.isPending.value && downloadFormat"
+				role="status"
+				class="text-small text-graphite"
+			>
+				{{ t(`savedRoutes.download.downloading.${downloadFormat}`) }}
+			</p>
+			<p
+				v-else-if="download.isError.value && downloadFormat"
+				role="alert"
+				class="flex gap-1.5 text-small text-contour"
+			>
+				<CircleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+				{{ t(`savedRoutes.download.failed.${downloadFormat}`) }}
+			</p>
 			<ReviewSavedNotice v-if="savedChanges" :changes="savedChanges" />
 			<ScoreProfile :scores="route.scores" :preferences="route.preferences" />
+			<RouteTurns v-if="route.instructions.length > 0" :instructions="route.instructions" />
 			<RouteReviewSummary v-if="route.review" :route="route" @edit="startReview" />
 			<p v-else-if="!canReview" class="text-small text-graphite">
 				{{ t('savedRoutes.review.nothingToReview') }}

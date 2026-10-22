@@ -41,6 +41,8 @@ CREATE TABLE app.routes (
     -- derived from the edges when saved, then frozen
     geom              geometry(LineString, 4326) NOT NULL,
     distance_m        double precision NOT NULL CHECK (distance_m >= 0),
+    -- metres above sea level, one per point of geom in its order; NULL when any point has none
+    elevations        real[]  CHECK (cardinality(elevations) = ST_NPoints(geom)),
     -- {attribute: {"mean": 0..1, "coverage": share of the length that was scored}}
     scores            jsonb   NOT NULL DEFAULT '{}',
     -- metres climbed and dropped in all; NULL when heights were known for under 90 % of it
@@ -65,6 +67,32 @@ CREATE TABLE app.route_edges (
     -- index in routes.geom of the point the edge ends at; it starts where the edge before ends
     last_point integer NOT NULL CHECK (last_point >= 1),
     PRIMARY KEY (route_id, seq)
+);
+
+-- Turn by turn directions, worked out when the route is saved. No rows for the start and the
+-- finish: those are where the line begins and ends.
+CREATE TABLE app.route_instructions (
+    route_id   bigint   NOT NULL REFERENCES app.routes (id) ON DELETE CASCADE,
+    seq        smallint NOT NULL CHECK (seq >= 0),
+    -- 0-based index in routes.geom of the point the turn is at, like route_edges.last_point
+    point      integer  NOT NULL CHECK (point >= 0),
+    -- along the route from its start
+    distance_m double precision NOT NULL CHECK (distance_m >= 0),
+    maneuver   text     NOT NULL CHECK (maneuver IN (
+        'slight_left', 'left', 'sharp_left', 'slight_right', 'right', 'sharp_right', 'u_turn',
+        'roundabout'
+    )),
+    -- which exit to take, counting the one taken
+    exit       smallint CHECK (exit >= 1),
+    -- the overall turn in degrees; negative is to the left
+    angle      smallint NOT NULL CHECK (angle BETWEEN -180 AND 180),
+    -- the road turned onto, as its name or ref tag
+    name       text,
+    -- its highway tag, for a label when it has no name
+    way_class  text,
+    PRIMARY KEY (route_id, seq),
+    CONSTRAINT route_instructions_exit_only_at_roundabouts_check
+        CHECK (maneuver = 'roundabout' OR exit IS NULL)
 );
 
 CREATE TABLE app.route_reviews (

@@ -59,6 +59,31 @@ class RouteEdgeOut(BaseModel):
     last_point: int
 
 
+type Maneuver = Literal[
+    "slight_left",
+    "left",
+    "sharp_left",
+    "slight_right",
+    "right",
+    "sharp_right",
+    "u_turn",
+    "roundabout",
+]
+
+
+class RouteInstructionOut(BaseModel):
+    seq: int
+    # along the route from its start
+    distance_m: float
+    maneuver: Maneuver
+    # roundabouts only: which exit to take, counting the one taken
+    exit: int | None
+    # the road turned onto, as its name or ref tag
+    name: str | None
+    # its highway tag, for a label when it has no name
+    way_class: str | None
+
+
 class RouteSummaryOut(BaseModel):
     id: int
     name: str
@@ -85,6 +110,8 @@ class RouteOut(BaseModel):
     descent_m: float | None
     geometry: LineString
     edges: list[RouteEdgeOut]
+    # turn by turn, in route order; none at the start and the finish
+    instructions: list[RouteInstructionOut]
     review: RouteReviewOut | None
     created_at: datetime
     updated_at: datetime

@@ -2,9 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/features/auth'
+import { renderCourseImage } from '@/features/map'
 import { storedPreferencesKey } from '@/features/route'
 
+import { saveFile } from '@/shared/utils/saveFile'
+
+import { endsAtStart } from './course'
 import type { ReviewReason } from './reasons'
+import { slug } from './slug'
 import type {
 	NewRoute,
 	NewStretchReview,
@@ -81,6 +86,34 @@ export function useDeleteRoute(id: MaybeRefOrGetter<number>) {
 		onSuccess: () => {
 			queryClient.removeQueries({ queryKey: savedRouteKey(toValue(id)) })
 			void queryClient.invalidateQueries({ queryKey: savedRoutesKey, exact: true })
+		},
+	})
+}
+
+/**
+ * The files a saved route downloads as. Each comes from its own endpoint under the route,
+ * except the image, which is drawn here from the route's loaded line.
+ */
+export type RouteFileFormat = 'gpx' | 'fit' | 'png'
+
+/** Fetches or draws the route as a file and hands it to the browser to save. */
+export function useDownloadRoute(route: MaybeRefOrGetter<Pick<SavedRoute, 'id' | 'name'>>) {
+	const auth = useAuthStore()
+	const queryClient = useQueryClient()
+	return useMutation({
+		mutationFn: async (format: RouteFileFormat) => {
+			const { id, name } = toValue(route)
+			if (format === 'png') {
+				// The menu is only there once useSavedRoute has the route.
+				const saved = queryClient.getQueryData<SavedRoute>(savedRouteKey(id))
+				if (!saved) throw new Error('The route is not loaded.')
+				const line = saved.geometry.coordinates
+				const image = await renderCourseImage(line, { isLoop: endsAtStart(line) })
+				saveFile(image, `${slug(name, id)}.png`)
+				return
+			}
+			const file = await auth.authedFile(`/logbook/routes/${id}/${format}`)
+			saveFile(file.blob, file.filename ?? `${slug(name, id)}.${format}`)
 		},
 	})
 }

@@ -167,6 +167,47 @@ export interface paths {
         patch: operations["rename_route_logbook_routes__route_id__patch"];
         trace?: never;
     };
+    "/logbook/routes/{route_id}/gpx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Gpx
+         * @description The route as a GPX file to download, for apps and watches that follow a track.
+         */
+        get: operations["export_gpx_logbook_routes__route_id__gpx_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/logbook/routes/{route_id}/fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Fit
+         * @description The route as a FIT course to download, for Garmin watches and bike computers to follow
+         *     with turn prompts.
+         */
+        get: operations["export_fit_logbook_routes__route_id__fit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/logbook/routes/{route_id}/review": {
         parameters: {
             query?: never;
@@ -472,6 +513,8 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** @enum {string} */
+        Maneuver: "slight_left" | "left" | "sharp_left" | "slight_right" | "right" | "sharp_right" | "u_turn" | "roundabout";
         /**
          * NoRerouteOut
          * @description Why the edit found no way.
@@ -661,6 +704,20 @@ export interface components {
             /** Edges */
             edges: components["schemas"]["EdgeStepIn"][];
         };
+        /** RouteInstructionOut */
+        RouteInstructionOut: {
+            /** Seq */
+            seq: number;
+            /** Distance M */
+            distance_m: number;
+            maneuver: components["schemas"]["Maneuver"];
+            /** Exit */
+            exit: number | null;
+            /** Name */
+            name: string | null;
+            /** Way Class */
+            way_class: string | null;
+        };
         /** RouteOut */
         RouteOut: {
             /** Id */
@@ -690,6 +747,8 @@ export interface components {
             geometry: components["schemas"]["LineString"];
             /** Edges */
             edges: components["schemas"]["RouteEdgeOut"][];
+            /** Instructions */
+            instructions: components["schemas"]["RouteInstructionOut"][];
             review: components["schemas"]["RouteReviewOut"] | null;
             /**
              * Created At
@@ -1232,6 +1291,82 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RouteSummaryOut"];
+                };
+            };
+            /** @description No such route among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_gpx_logbook_routes__route_id__gpx_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The route as a GPX 1.1 track */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/gpx+xml": string;
+                };
+            };
+            /** @description No such route among the user's */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_fit_logbook_routes__route_id__fit_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                route_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The route as a FIT course */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.ant.fit": string;
                 };
             };
             /** @description No such route among the user's */

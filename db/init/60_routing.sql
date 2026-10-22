@@ -55,6 +55,9 @@ WHERE a.code = ANY (e.forward) OR a.code = ANY (e.backward);
 -- - edit: how far either side of where a route is grabbed an edit may change it, at least
 --   window_min_m and window_share times the drag; and how far around that stretch its new way
 --   is looked for (area_m). See routing.reroute.
+-- - instructions: how far before and after a vertex the way the route heads is measured
+--   (bearing_m), and the turns, in degrees, from which a turn is slight, a turn, sharp and a
+--   u_turn. See routing.instructions.
 CREATE FUNCTION routing.defaults() RETURNS jsonb
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT '{
@@ -90,7 +93,8 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
             "count": 3, "routed": 8, "overlap": 0.5, "margin": 0.15, "longer": 0.25,
             "budget_ms": 10000
         },
-        "edit":     {"window_min_m": 300, "window_share": 1.5, "area_m": 1000}
+        "edit":     {"window_min_m": 300, "window_share": 1.5, "area_m": 1000},
+        "instructions": {"bearing_m": 15, "slight": 25, "turn": 60, "sharp": 120, "u_turn": 165}
     }'::jsonb
 $$;
 
@@ -2674,4 +2678,213 @@ BEGIN
         'after_m', greatest(v_from_m + v_best_m - v_handle_m, 0)
     );
 END
+$$;
+
+-- How far azimuth p_to turns from azimuth p_from, in radians from -pi to pi: positive to the right
+-- (clockwise, as azimuths count), negative to the left. routing.angle_between is its size.
+CREATE FUNCTION routing.signed_turn(p_from double precision, p_to double precision)
+RETURNS double precision
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+    SELECT atan2(sin(p_to - p_from), cos(p_to - p_from))
+$$;
+
+-- Turn by turn directions for p_activity's route along p_edge_ids (in travel order, from source to
+-- target where p_forward says so), as app.route_instructions keeps them: seq from 0 in route
+-- order; point, the 0-based index in the route's line of the vertex turned at, as
+-- app.route_edges.last_point counts it; distance_m to it along the route, by the edges' length_m
+-- as the route's length is summed; maneuver, exit, angle (degrees, negative to the left), and the
+-- road turned onto: name (its name tag, else its ref) and way_class (its highway tag).
+-- The turn at a vertex is between the way the route heads bearing_m (15 m) before it and
+-- bearing_m after it along the line, so a kink in the last metres of an edge does not count, and
+-- turning back onto the edge just travelled is 180 degrees, as in routing.turns_sql. Azimuths are
+-- taken on the ellipsoid, since degrees of longitude are shorter than those of latitude.
+-- - At a junction, a vertex where three or more edge ends meet (whoever may use them), a turn of
+--   slight (25) degrees or more is an instruction, unless the route stays on the same road and no
+--   other edge there leaves closer to straight: a road bending through a junction needs none. The
+--   same road has the same name; two unnamed ones the same ref; with neither, it is the same way.
+-- - Anywhere, a turn of u_turn (165) degrees or more is a u_turn: a dead end, or out and back.
+-- - A turn is slight from slight, a turn from turn (60), and sharp from sharp (120).
+-- - The edges of a roundabout (junction=roundabout or circular) travelled one after another are
+--   one roundabout instruction at the vertex the route enters it by. Its exit counts the vertices
+--   passed on the roundabout, the one it is left by included, where an edge off it leaves that
+--   p_activity may use that way; its angle is the turn from the way in to the way out. A route that
+--   starts or ends on a roundabout gets no instruction for it.
+-- p_settings overrides routing.defaults() as in routing.make_profile; this reads its instructions
+-- group. Reads graph only, as the caller.
+CREATE FUNCTION routing.instructions(
+    p_edge_ids bigint[], p_forward boolean[], p_activity text, p_settings jsonb DEFAULT '{}'
+) RETURNS TABLE (
+    seq integer, point integer, distance_m double precision, maneuver text, exit integer,
+    angle integer, name text, way_class text
+)
+LANGUAGE sql STABLE AS $$
+    WITH settings AS MATERIALIZED (
+        SELECT routing.setting(m.p, 'instructions', 'bearing_m') AS bearing_m,
+               radians(routing.setting(m.p, 'instructions', 'slight')) AS slight,
+               radians(routing.setting(m.p, 'instructions', 'turn')) AS turn,
+               radians(routing.setting(m.p, 'instructions', 'sharp')) AS sharp,
+               radians(routing.setting(m.p, 'instructions', 'u_turn')) AS u_turn
+        FROM (SELECT routing.make_profile(p_activity, '{}', p_settings) AS p) m
+    ),
+    steps AS MATERIALIZED (
+        SELECT s.n, e.id AS edge_id, s.forward, e.way_id, e.length_m,
+               CASE WHEN s.forward THEN e.target ELSE e.source END AS vertex,
+               CASE WHEN s.forward THEN e.geom ELSE ST_Reverse(e.geom) END AS geom,
+               w.tags ->> 'name' AS road_name,
+               w.tags ->> 'ref' AS road_ref,
+               w.tags ->> 'highway' AS road_class,
+               coalesce(w.tags ->> 'junction' IN ('roundabout', 'circular'), false) AS roundabout
+        FROM unnest(p_edge_ids, p_forward) WITH ORDINALITY AS s (id, forward, n)
+        JOIN graph.edges e ON e.id = s.id
+        JOIN graph.ways w ON w.id = e.way_id
+    ),
+    -- Where each step starts and ends: as a point index, by length_m, and by the line's own
+    -- length, which the line is cut at. The point bearing_m before the vertex a step ends at lies
+    -- in back_step, the first step that ends at most bearing_m before it; the point bearing_m
+    -- after the vertex a step starts at lies in ahead_step, the last step that starts at most
+    -- bearing_m after it. Each is cut from that step alone: cutting the whole line at every vertex
+    -- would take as long as the line has points, at each. A frame offset cannot read the settings
+    -- CTE, so it reads the profile itself.
+    placed AS MATERIALIZED (
+        SELECT c.*,
+               first_value(c.n) OVER (
+                   ORDER BY c.end_line_m
+                   RANGE BETWEEN routing.setting(
+                       routing.make_profile(p_activity, '{}', p_settings),
+                       'instructions', 'bearing_m'
+                   ) PRECEDING AND CURRENT ROW
+               ) AS back_step,
+               last_value(c.n) OVER (
+                   ORDER BY c.start_line_m
+                   RANGE BETWEEN CURRENT ROW AND routing.setting(
+                       routing.make_profile(p_activity, '{}', p_settings),
+                       'instructions', 'bearing_m'
+                   ) FOLLOWING
+               ) AS ahead_step
+        FROM (
+            SELECT st.*,
+                   sum(ST_NPoints(st.geom) - 1) OVER w AS last_point,
+                   sum(st.length_m) OVER w AS end_m,
+                   ST_Length(st.geom::geography) AS line_m,
+                   sum(ST_Length(st.geom::geography)) OVER w AS end_line_m,
+                   coalesce(sum(ST_Length(st.geom::geography)) OVER (
+                       w ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                   ), 0) AS start_line_m
+            FROM steps st
+            WINDOW w AS (ORDER BY st.n)
+        ) c
+    ),
+    -- Every vertex where a step meets the next, with the way the route heads before and after it.
+    joins AS MATERIALIZED (
+        SELECT a.n, a.vertex, a.last_point, a.end_m,
+               a.edge_id AS in_edge, a.forward AS in_forward, a.roundabout AS in_roundabout,
+               a.road_name AS in_name, a.road_ref AS in_ref, a.way_id AS in_way,
+               b.edge_id AS out_edge, b.forward AS out_forward, b.roundabout AS out_roundabout,
+               b.road_name AS out_name, b.road_ref AS out_ref, b.way_id AS out_way,
+               b.road_class AS out_class,
+               h.heading_in, h.heading_out,
+               CASE WHEN a.edge_id = b.edge_id THEN pi()
+                    ELSE coalesce(routing.signed_turn(h.heading_in, h.heading_out), 0)
+               END AS turn
+        FROM placed a
+        JOIN placed b ON b.n = a.n + 1
+        JOIN placed bk ON bk.n = a.back_step
+        JOIN placed ah ON ah.n = b.ahead_step
+        CROSS JOIN settings s
+        CROSS JOIN LATERAL (
+            SELECT ST_Azimuth(
+                       ST_LineInterpolatePoint(bk.geom::geography, coalesce(least(greatest(
+                           (a.end_line_m - s.bearing_m - bk.start_line_m) / nullif(bk.line_m, 0),
+                       0), 1), 0)),
+                       ST_EndPoint(a.geom)::geography
+                   ) AS heading_in,
+                   ST_Azimuth(
+                       ST_EndPoint(a.geom)::geography,
+                       ST_LineInterpolatePoint(ah.geom::geography, coalesce(least(greatest(
+                           (a.end_line_m + s.bearing_m - ah.start_line_m) / nullif(ah.line_m, 0),
+                       0), 1), 1))
+                   ) AS heading_out
+        ) h
+    ),
+    judged AS (
+        SELECT j.*,
+               (SELECT count(*) FROM graph.edges e WHERE e.source = j.vertex)
+                   + (SELECT count(*) FROM graph.edges e WHERE e.target = j.vertex) >= 3
+                   AS junction,
+               CASE WHEN j.in_name IS NOT NULL OR j.out_name IS NOT NULL
+                        THEN j.in_name IS NOT DISTINCT FROM j.out_name
+                    WHEN j.in_ref IS NOT NULL OR j.out_ref IS NOT NULL
+                        THEN j.in_ref IS NOT DISTINCT FROM j.out_ref
+                    ELSE j.in_way = j.out_way
+               END AS same_road
+        FROM joins j
+    ),
+    turns AS (
+        SELECT j.n, j.last_point, j.end_m, j.turn, NULL::bigint AS exit_no,
+               j.out_name, j.out_ref, j.out_class
+        FROM judged j, settings s
+        WHERE NOT j.in_roundabout AND NOT j.out_roundabout
+          AND (abs(j.turn) >= s.u_turn OR j.junction AND abs(j.turn) >= s.slight AND NOT (
+              j.same_road AND NOT EXISTS (
+                  -- The other ways out: each edge end here but the ones the route uses.
+                  SELECT 1
+                  FROM (
+                      SELECT e.id, true AS outward, e.geom
+                      FROM graph.edges e WHERE e.source = j.vertex
+                      UNION ALL
+                      SELECT e.id, false, ST_Reverse(e.geom)
+                      FROM graph.edges e WHERE e.target = j.vertex
+                  ) b
+                  WHERE (b.id, b.outward) NOT IN (
+                            (j.out_edge, j.out_forward), (j.in_edge, NOT j.in_forward)
+                        )
+                    AND routing.angle_between(j.heading_in, ST_Azimuth(
+                            ST_StartPoint(b.geom)::geography,
+                            ST_LineInterpolatePoint(
+                                b.geom::geography,
+                                least(s.bearing_m / nullif(ST_Length(b.geom::geography), 0), 1)
+                            )
+                        )) < abs(j.turn)
+              )
+          ))
+        UNION ALL
+        -- A roundabout, from the vertex the route enters it by to the one it leaves it by.
+        SELECT en.n, en.last_point, en.end_m,
+               coalesce(routing.signed_turn(en.heading_in, ex.heading_out), 0),
+               (SELECT count(*) FROM placed r
+                WHERE r.n > en.n AND r.n <= ex.n
+                  AND EXISTS (
+                      SELECT 1
+                      FROM graph.edges e JOIN graph.ways w ON w.id = e.way_id
+                      WHERE w.tags ->> 'junction' IS DISTINCT FROM 'roundabout'
+                        AND w.tags ->> 'junction' IS DISTINCT FROM 'circular'
+                        AND (e.source = r.vertex AND p_activity = ANY (e.forward)
+                             OR e.target = r.vertex AND p_activity = ANY (e.backward))
+                  )),
+               ex.out_name, ex.out_ref, ex.out_class
+        FROM judged en
+        CROSS JOIN LATERAL (
+            SELECT x.* FROM judged x
+            WHERE x.n > en.n AND x.in_roundabout AND NOT x.out_roundabout
+            ORDER BY x.n
+            LIMIT 1
+        ) ex
+        WHERE NOT en.in_roundabout AND en.out_roundabout
+    )
+    SELECT (row_number() OVER (ORDER BY t.n) - 1)::integer,
+           t.last_point::integer,
+           t.end_m,
+           CASE WHEN t.exit_no IS NOT NULL THEN 'roundabout'
+                WHEN abs(t.turn) >= s.u_turn THEN 'u_turn'
+                ELSE CASE WHEN abs(t.turn) >= s.sharp THEN 'sharp_'
+                          WHEN abs(t.turn) >= s.turn THEN ''
+                          ELSE 'slight_'
+                     END || CASE WHEN t.turn < 0 THEN 'left' ELSE 'right' END
+           END,
+           t.exit_no::integer,
+           round(degrees(t.turn))::integer,
+           coalesce(t.out_name, t.out_ref),
+           t.out_class
+    FROM turns t, settings s
+    ORDER BY t.n
 $$;

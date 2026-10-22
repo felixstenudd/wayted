@@ -30,7 +30,29 @@ export interface RequestOptions {
  * origin, so the browser attaches its cookies without being asked.
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-	const headers: Record<string, string> = { Accept: 'application/json' }
+	const response = await send(path, options, 'application/json')
+	if (response.status === 204) return undefined as T
+	return (await response.json()) as T
+}
+
+/** A file the API sent to be saved. */
+export interface DownloadedFile {
+	blob: Blob
+	/** From the Content-Disposition header, when it names one. */
+	filename: string | null
+}
+
+/** Like `request`, for endpoints that answer with a file rather than JSON. */
+export async function requestFile(
+	path: string,
+	options: RequestOptions = {},
+): Promise<DownloadedFile> {
+	const response = await send(path, options, '*/*')
+	return { blob: await response.blob(), filename: attachmentName(response) }
+}
+
+async function send(path: string, options: RequestOptions, accept: string): Promise<Response> {
+	const headers: Record<string, string> = { Accept: accept }
 	if (options.body !== undefined) headers['Content-Type'] = 'application/json'
 	if (options.token) headers.Authorization = `Bearer ${options.token}`
 
@@ -40,8 +62,13 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 		body: options.body === undefined ? null : JSON.stringify(options.body),
 	})
 	if (!response.ok) throw new ApiError(response.status, await readDetail(response))
-	if (response.status === 204) return undefined as T
-	return (await response.json()) as T
+	return response
+}
+
+// The API names files with plain slugs, so the quoted form is all there is to read.
+function attachmentName(response: Response): string | null {
+	const header = response.headers.get('Content-Disposition') ?? ''
+	return /filename="([^"]+)"/.exec(header)?.[1] ?? null
 }
 
 async function readDetail(response: Response): Promise<string | undefined> {

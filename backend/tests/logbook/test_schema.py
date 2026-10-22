@@ -165,3 +165,56 @@ async def test_route_reviews_go_with_their_route(app_conn: Conn, api_pool: Pool)
         """
     )
     assert await cur.fetchone() == (0, 0)
+
+
+async def test_route_instructions_go_with_their_route(app_conn: Conn, api_pool: Pool) -> None:
+    user_id = await add_user(app_conn)
+    route_id = await add_route(app_conn, user_id)
+
+    async with api_pool.connection() as conn:
+        await conn.execute(
+            """
+            INSERT INTO app.route_instructions
+                (route_id, seq, point, distance_m, maneuver, exit, angle, name, way_class)
+            VALUES (%s, 0, 1, 50, 'roundabout', 2, 90, 'Storgatan', 'residential')
+            """,
+            (route_id,),
+        )
+        await conn.execute("DELETE FROM app.routes WHERE id = %s", (route_id,))
+
+    cur = await app_conn.execute("SELECT count(*) FROM app.route_instructions")
+    assert await cur.fetchone() == (0,)
+
+
+@pytest.mark.parametrize(
+    ("maneuver", "exit"),
+    [("left", 2), ("straight", None)],
+    ids=["exit off a roundabout", "unknown maneuver"],
+)
+async def test_route_instructions_hold_only_known_maneuvers(
+    app_conn: Conn, maneuver: str, exit: int | None
+) -> None:
+    route_id = await add_route(app_conn, await add_user(app_conn))
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        await app_conn.execute(
+            """
+            INSERT INTO app.route_instructions
+                (route_id, seq, point, distance_m, maneuver, exit, angle)
+            VALUES (%s, 0, 1, 50, %s, %s, 0)
+            """,
+            (route_id, maneuver, exit),
+        )
+
+
+async def test_a_route_has_a_height_for_every_point_or_none(app_conn: Conn) -> None:
+    user_id = await add_user(app_conn)
+    insert = """
+        INSERT INTO app.routes (user_id, name, activity, shape, geom, distance_m, elevations)
+        VALUES (%s, 'Heights', 'running', 'point_to_point', %s, 100, %s)
+    """
+
+    await app_conn.execute(insert, (user_id, LINE, [12.5, 13.0]))
+    await app_conn.execute(insert, (user_id, LINE, None))
+    with pytest.raises(psycopg.errors.CheckViolation):
+        await app_conn.execute(insert, (user_id, LINE, [12.5]))

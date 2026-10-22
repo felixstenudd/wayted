@@ -410,6 +410,67 @@
 			"empty": "Give the route a name.",
 			"failed": "The route was not renamed. Check your connection, then try again."
 		},
+		"download": {
+			"menu": "Download",
+			"formats": {
+				"gpx": "GPX",
+				"fit": "FIT (Garmin)",
+				"png": "Image (PNG)"
+			},
+			"downloading": {
+				"gpx": "Downloading the GPX file…",
+				"fit": "Downloading the FIT file…",
+				"png": "Making the image…"
+			},
+			"failed": {
+				"gpx": "The GPX file was not downloaded. Check your connection, then try again.",
+				"fit": "The FIT file was not downloaded. Check your connection, then try again.",
+				"png": "The image was not made. Check your connection, then try again."
+			}
+		},
+		"turns": {
+			"title": "Turns ({count})",
+			"row": "{km} km · {instruction}",
+			"maneuvers": {
+				"slight_left": "Slight left",
+				"left": "Left",
+				"sharp_left": "Sharp left",
+				"slight_right": "Slight right",
+				"right": "Right",
+				"sharp_right": "Sharp right",
+				"u_turn": "Turn around",
+				"roundabout": "Roundabout, exit {exit}"
+			},
+			"onto": {
+				"slight_left": "Slight left onto {road}",
+				"left": "Left onto {road}",
+				"sharp_left": "Sharp left onto {road}",
+				"slight_right": "Slight right onto {road}",
+				"right": "Right onto {road}",
+				"sharp_right": "Sharp right onto {road}",
+				"roundabout": "Roundabout, exit {exit} onto {road}"
+			},
+			"ways": {
+				"footway": "footway",
+				"path": "path",
+				"pedestrian": "pedestrian street",
+				"steps": "steps",
+				"track": "track",
+				"bridleway": "bridleway",
+				"cycleway": "cycleway",
+				"living_street": "living street",
+				"residential": "residential street",
+				"service": "service road",
+				"unclassified": "minor road",
+				"tertiary": "road",
+				"tertiary_link": "slip road",
+				"secondary": "road",
+				"secondary_link": "slip road",
+				"primary": "main road",
+				"primary_link": "slip road",
+				"other": "path"
+			}
+		},
 		"delete": {
 			"question": "Delete {name}? Your stretch reviews are kept and still count.",
 			"confirm": "Delete route",

@@ -1,4 +1,5 @@
 export { tokenColor } from './colors'
+export { renderCourseImage, type CourseImageOptions } from './courseImage'
 export { default as MapMarker } from './components/MapMarker.vue'
 export { default as MapView } from './components/MapView.vue'
 export { useCircleDraw } from './composables/useCircleDraw'

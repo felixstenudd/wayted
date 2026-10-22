@@ -50,6 +50,8 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA routing TO wayted_api;
 
 GRANT USAGE ON SCHEMA raw TO wayted_api;
 GRANT SELECT ON raw.fetched_tiles TO wayted_api;
+-- A saved route takes its heights from the terrain model.
+GRANT SELECT ON raw.elevation_tiles TO wayted_api;
 GRANT SELECT, INSERT, UPDATE ON raw.pending_tiles TO wayted_api;
 
 -- For the dev API: the built features and what the enricher has left to do.
