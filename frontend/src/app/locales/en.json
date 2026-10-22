@@ -156,13 +156,20 @@
 					"ratherNot": "Rather rough",
 					"niceToHave": "Rather smooth",
 					"prefer": "Smooth where possible"
+				},
+				"hills": {
+					"avoid": "Flat where possible",
+					"ratherNot": "Rather flat",
+					"niceToHave": "Some hills",
+					"prefer": "Hilly where possible"
 				}
 			},
 			"groups": {
 				"surroundings": "Surroundings",
 				"streets": "Streets",
 				"sights": "Sights",
-				"surface": "Surface"
+				"surface": "Surface",
+				"terrain": "Terrain"
 			},
 			"attributes": {
 				"green": "Parks",
@@ -171,7 +178,8 @@
 				"quiet_streets": "Quiet streets",
 				"sights": "Places to see",
 				"bridges": "Bridges",
-				"prepared": "Smooth"
+				"prepared": "Smooth",
+				"hills": "Hills"
 			}
 		},
 		"findRoutes": {
@@ -559,6 +567,13 @@
 					"some": "Mixed",
 					"aLot": "Mostly smooth",
 					"mostly": "Smooth"
+				},
+				"hills": {
+					"none": "Flat",
+					"aLittle": "Mostly flat",
+					"some": "Some hills",
+					"aLot": "Hilly",
+					"mostly": "Very hilly"
 				}
 			},
 			"rowNames": {

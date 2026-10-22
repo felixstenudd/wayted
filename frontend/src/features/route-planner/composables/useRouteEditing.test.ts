@@ -53,6 +53,8 @@ const route = (coordinates: [number, number][]): Route => ({
 		length_m: 1_000,
 		scores: {},
 		reused_m: 0,
+		ascent_m: null,
+		descent_m: null,
 		warnings: [],
 		edges: [],
 		waypoint_order: [],
