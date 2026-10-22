@@ -15,6 +15,7 @@ SELECT
     a.code = ANY (e.forward)  AS forward,
     a.code = ANY (e.backward) AS backward,
     e.scores,
+    e.feedback,
     coalesce(f.factor, 1)     AS factor
 FROM graph.edges e
 JOIN graph.ways w ON w.id = e.way_id
@@ -30,6 +31,9 @@ WHERE a.code = ANY (e.forward) OR a.code = ANY (e.backward);
 -- start from other values for an activity (see routing.activity_defaults).
 -- Fractions of a goal or target are shares of its length; lists are the sizes a stage tries.
 -- - cost: alpha, how far preferences bend an edge's cost (see routing.cost_sql).
+-- - feedback: how users' stretch reviews bend it (see routing.vote_balance, routing.cost_sql):
+--   damping, the votes a balance is damped by; strength, how much a balance on a wanted topic
+--   counts against its score; access and safety, the cost multiplier at a fully negative balance.
 -- - turns: the cost of a turn (see routing.turns_sql): turn_m at a right angle, nothing up to
 --   free_deg off straight, and from hairpin_deg on up to hairpin_m more at 180 degrees.
 -- - legs: reuse_penalty, the cost multiplier on edges the route already uses, and the corridor a
@@ -55,6 +59,7 @@ CREATE FUNCTION routing.defaults() RETURNS jsonb
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT '{
         "cost":     {"alpha": 0.7},
+        "feedback": {"damping": 3, "strength": 0.5, "access": 4, "safety": 1.5},
         "turns":    {"turn_m": 60, "free_deg": 30, "hairpin_deg": 120, "hairpin_m": 1000},
         "legs":     {"reuse_penalty": 4, "corridor_share": 0.5, "corridor_min_m": 300},
         "area":     {"loop_share": 0.45, "direct_share": 0.5, "min_m": 500},
@@ -220,6 +225,16 @@ BEGIN
     IF routing.setting(v_profile, 'cost', 'alpha') >= 1 THEN
         RAISE EXCEPTION 'cost.alpha must be in [0, 1)' USING ERRCODE = 'invalid_parameter_value';
     END IF;
+    IF routing.setting(v_profile, 'feedback', 'damping') = 0 THEN
+        RAISE EXCEPTION 'feedback.damping must be positive' USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF least(
+        routing.setting(v_profile, 'feedback', 'access'),
+        routing.setting(v_profile, 'feedback', 'safety')
+    ) < 1 THEN
+        RAISE EXCEPTION 'feedback.access and safety must be at least 1'
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
     IF routing.setting(v_profile, 'legs', 'reuse_penalty') < 1 THEN
         RAISE EXCEPTION 'legs.reuse_penalty must be at least 1'
             USING ERRCODE = 'invalid_parameter_value';
@@ -288,10 +303,43 @@ LANGUAGE sql STABLE AS $$
     SELECT routing.edges_sql(p_activity, 'length_m', p_area, '{}')
 $$;
 
+-- How users' votes on a topic lean, from -1 (all down) to 1 (all up): (up - down) / (up + down +
+-- p_damping), so a few votes nudge and many count. A plain expression, so the planner inlines it
+-- into the cost pgRouting reads.
+CREATE FUNCTION routing.vote_balance(
+    p_up double precision, p_down double precision, p_damping double precision
+) RETURNS double precision
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT (p_up - p_down) / (p_up + p_down + p_damping)
+$$;
+
+-- SQL for routing.vote_balance over the feedback column of edges, for p_topic with the votes of
+-- p_activities added up.
+CREATE FUNCTION routing.vote_balance_sql(
+    p_profile routing.profile, p_topic text, p_activities text[]
+) RETURNS text
+LANGUAGE sql STABLE AS $$
+    SELECT format(
+        'routing.vote_balance(%s, %s, %s)',
+        (SELECT string_agg(format(
+             'coalesce((feedback #>> %L)::double precision, 0)', ARRAY[a, p_topic, 'up']), ' + ')
+         FROM unnest(p_activities) a),
+        (SELECT string_agg(format(
+             'coalesce((feedback #>> %L)::double precision, 0)', ARRAY[a, p_topic, 'down']), ' + ')
+         FROM unnest(p_activities) a),
+        routing.setting(p_profile, 'feedback', 'damping')
+    )
+$$;
+
 -- Edges SQL whose cost is what a route optimises: length weighted by highway class and the
 -- profile's preferences, and multiplied by the reuse penalty (legs.reuse_penalty) on edges in
--- p_used; an edge costs length * factor * (1 - cost.alpha * preference). A missing score counts
--- as 0, so edges that are not scored yet are neither preferred nor avoided.
+-- p_used; an edge costs length * factor * (1 - cost.alpha * preference), the preference as
+-- routing.preference gives it, written out inline, which pgRouting reads faster than a call per
+-- edge. A missing score counts as 0, so edges that are not scored yet are neither preferred nor
+-- avoided. Votes on access (by the activity's users) and safety (by everyone's: feeling unsafe is
+-- about the place) apply whatever the weights: a negative balance multiplies the cost by up to
+-- feedback.access and feedback.safety; a positive one only cancels votes against. Votes on
+-- lighting and crowding are counted, but nothing here knows when the route is taken.
 CREATE FUNCTION routing.cost_sql(
     p_profile routing.profile, p_area geometry, p_used bigint[] DEFAULT '{}'
 ) RETURNS text
@@ -299,14 +347,28 @@ LANGUAGE sql STABLE AS $$
     SELECT routing.edges_sql(
         p_profile.activity,
         format(
-            'length_m * factor * (1 - %s * (%s)) * CASE WHEN used THEN %s ELSE 1 END',
+            'length_m * factor * (1 - %s * greatest(-1, least(1, %s)))'
+            ' * (1 + %s * greatest(0, -%s)) * (1 + %s * greatest(0, -%s))'
+            ' * CASE WHEN used THEN %s ELSE 1 END',
             routing.setting(p_profile, 'cost', 'alpha'),
             coalesce(
                 (SELECT string_agg(
-                     format('%s * coalesce((scores ->> %L)::double precision, 0)', w.value, w.key),
+                     format('%s * coalesce((scores ->> %L)::double precision, 0)', w.value, w.key)
+                     || CASE WHEN w.value::double precision > 0 THEN format(
+                            ' + %s * %s',
+                            routing.setting(p_profile, 'feedback', 'strength')
+                                * w.value::double precision,
+                            routing.vote_balance_sql(p_profile, w.key, ARRAY[p_profile.activity])
+                        ) ELSE '' END,
                      ' + ' ORDER BY w.key)
                  FROM jsonb_each(p_profile.weights) w),
                 '0'
+            ),
+            routing.setting(p_profile, 'feedback', 'access') - 1,
+            routing.vote_balance_sql(p_profile, 'access', ARRAY[p_profile.activity]),
+            routing.setting(p_profile, 'feedback', 'safety') - 1,
+            routing.vote_balance_sql(
+                p_profile, 'safety', ARRAY(SELECT code FROM ref.activities ORDER BY code)
             ),
             routing.setting(p_profile, 'legs', 'reuse_penalty')
         ),
@@ -532,31 +594,47 @@ LANGUAGE sql STABLE AS $$
     ), 0) END
 $$;
 
--- An edge's preference under weights scaled by routing.make_profile, in [-1, 1]. routing.cost_sql
--- writes the same sum out inline, which pgRouting reads faster than a call per edge.
-CREATE FUNCTION routing.preference(p_weights jsonb, p_scores jsonb) RETURNS double precision
-LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
-    SELECT coalesce(
-        sum(w.value::double precision * coalesce((p_scores ->> w.key)::double precision, 0)), 0
-    )
-    FROM jsonb_each(p_weights) w
+-- An edge's preference under p_profile, in [-1, 1]: its scores under the weights scaled by
+-- routing.make_profile, and for each wanted topic (weight above 0) the balance of the activity's
+-- votes on it (from p_feedback, as graph.edges.feedback holds them) times feedback.strength.
+-- Votes say how good a stretch is at what the topic promises ("Nice hills" and "Too steep" both
+-- mean hilly), so they matter only to someone who wants the topic, and count less than its score.
+-- Without p_feedback, the scores alone, as routes are measured. routing.cost_sql writes the same
+-- sum out inline.
+CREATE FUNCTION routing.preference(
+    p_profile routing.profile, p_scores jsonb, p_feedback jsonb DEFAULT NULL
+) RETURNS double precision
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT greatest(-1, least(1, coalesce(sum(
+        w.value::double precision * coalesce((p_scores ->> w.key)::double precision, 0)
+        + CASE WHEN w.value::double precision > 0 AND p_feedback IS NOT NULL
+            THEN routing.setting(p_profile, 'feedback', 'strength') * w.value::double precision
+                * routing.vote_balance(
+                    coalesce((p_feedback #>> ARRAY[p_profile.activity, w.key, 'up'])::double precision, 0),
+                    coalesce((p_feedback #>> ARRAY[p_profile.activity, w.key, 'down'])::double precision, 0),
+                    routing.setting(p_profile, 'feedback', 'damping')
+                )
+            ELSE 0 END
+    ), 0)))
+    FROM jsonb_each(p_profile.weights) w
 $$;
 
 -- For each of p_vertices: how many edges p_profile's activity can use there, and how much it
 -- likes them (their mean preference). A vertex with one edge is a dead end, which a detour
 -- should not aim for: the route would have to come back the way it went. Detours aim for
--- appealing vertices, so the route reaches parks the cost alone would only skirt. Reads
--- graph.edges by its source and target indexes, once for all vertices.
+-- appealing vertices, so the route reaches parks the cost alone would only skirt; votes count as
+-- in the cost, so a well-reviewed path is aimed for as well as cheap. Reads graph.edges by its
+-- source and target indexes, once for all vertices.
 CREATE FUNCTION routing.vertex_stats(p_profile routing.profile, p_vertices bigint[])
 RETURNS TABLE (vertex bigint, degree bigint, appeal double precision)
 LANGUAGE sql STABLE AS $$
-    SELECT u.vertex, count(*), avg(routing.preference(p_profile.weights, u.scores))
+    SELECT u.vertex, count(*), avg(routing.preference(p_profile, u.scores, u.feedback))
     FROM (
-        SELECT e.source AS vertex, e.scores FROM graph.edges e
+        SELECT e.source AS vertex, e.scores, e.feedback FROM graph.edges e
         WHERE e.source = ANY (p_vertices)
           AND p_profile.activity = ANY (e.forward || e.backward)
         UNION ALL
-        SELECT e.target, e.scores FROM graph.edges e
+        SELECT e.target, e.scores, e.feedback FROM graph.edges e
         WHERE e.target = ANY (p_vertices)
           AND p_profile.activity = ANY (e.forward || e.backward)
     ) u
@@ -1325,7 +1403,7 @@ LANGUAGE sql AS $$
         SELECT
             u.n,
             sum(e.length_m * u.times) AS length_m,
-            sum(e.length_m * u.times * routing.preference(p_profile.weights, e.scores))
+            sum(e.length_m * u.times * routing.preference(p_profile, e.scores))
                 AS preferred_m,
             sum(e.length_m * (u.times - 1 + CASE WHEN b.id IS NULL THEN 0 ELSE 1 END))
                 AS reused_m
@@ -1707,7 +1785,7 @@ LANGUAGE sql STABLE AS $$
     SELECT routing.score(
         p_target_m,
         (p_route ->> 'length_m')::double precision,
-        routing.preference(p_profile.weights, p_route -> 'scores'),
+        routing.preference(p_profile, p_route -> 'scores'),
         CASE WHEN lines.before IS NULL
             THEN routing.doubled_m(lines.route, p_profile.settings -> 'doubling')
             ELSE greatest(

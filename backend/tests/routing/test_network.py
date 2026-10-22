@@ -17,6 +17,8 @@ from ..graph.raw_data import ORIGIN_LAT, ORIGIN_LON, STEP, Conn, add_line, edge_
 pytestmark = pytest.mark.db
 
 type Pool = AsyncConnectionPool[Conn]
+# graph.edges.feedback: {activity: {topic: {"up": n, "down": n}}}
+type Votes = dict[str, dict[str, dict[str, int]]]
 
 # Grid steps are about 57 m east-west and 111 m north-south.
 A = (1, 0, 0)
@@ -200,6 +202,8 @@ async def test_profile_lays_settings_over_the_defaults(api_pool: Pool) -> None:
         ("running", {}, {"plan": {"tolerance": 1}}, "plan.tolerance"),
         ("running", {}, {"plan": {"snap_m": 0}}, "plan.snap_m"),
         ("running", {}, {"plan": {"attempts": 0}}, "plan.attempts"),
+        ("running", {}, {"feedback": {"damping": 0}}, "feedback.damping"),
+        ("running", {}, {"feedback": {"access": 0.5}}, "feedback.access"),
     ],
 )
 async def test_profile_rejects_bad_input(
@@ -236,6 +240,115 @@ async def test_cost_weighs_length_by_class_preference_and_reuse(
     expected = row[0] * 1.1 * (1 + 0.7 * 0.25)
     assert fresh[edge] == pytest.approx((expected, -1))
     assert reused[edge] == pytest.approx((4 * expected, -1))
+
+
+async def voted_edge(conn: Conn, mapper_pool: Pool, feedback: Votes) -> int:
+    """The straight path, half green, with users' votes on it as the enricher counts them."""
+    await add_line(conn, STRAIGHT, [A, B], {"highway": "path"})
+    await map_pending(mapper_pool.connection)
+    await conn.execute(
+        "UPDATE graph.edges SET scores = %s, feedback = %s",
+        (Jsonb({"green": 0.5}), Jsonb(feedback)),
+    )
+    return (await edge_ids(conn))[(STRAIGHT, 1, 2, 1)]
+
+
+async def cost_ratio(
+    conn: Conn,
+    edge: int,
+    activity: str,
+    weights: Mapping[str, float],
+    feedback: Votes | None = None,
+) -> float:
+    """The edge's cost under weights, over its cost without weights or votes."""
+    if feedback is not None:
+        await conn.execute("UPDATE graph.edges SET feedback = %s", (Jsonb(feedback),))
+    cost = (await edge_costs(conn, await cost_sql(conn, activity, weights)))[edge][0]
+    await conn.execute("UPDATE graph.edges SET scores = '{}', feedback = '{}'")
+    plain = (await edge_costs(conn, await cost_sql(conn, activity, {})))[edge][0]
+    await conn.execute("UPDATE graph.edges SET scores = %s", (Jsonb({"green": 0.5}),))
+    return cost / plain
+
+
+async def test_votes_count_only_for_a_wanted_topic_and_the_same_activity(
+    admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    feedback = {
+        "running": {"green": {"up": 3, "down": 0}},
+        "cycling": {"green": {"up": 0, "down": 9}},
+    }
+    edge = await voted_edge(admin_conn, mapper_pool, feedback)
+
+    wanted = await cost_ratio(admin_conn, edge, "running", {"green": 1}, feedback)
+    avoided = await cost_ratio(admin_conn, edge, "running", {"green": -1}, feedback)
+
+    # 3 up, damped by 3, balance 0.5: green 0.5 plus half of that.
+    assert wanted == pytest.approx(1 - 0.7 * (0.5 + 0.5 * 0.5))
+    # Avoiding green, the score alone counts; the cyclists' votes never count for a run.
+    assert avoided == pytest.approx(1 + 0.7 * 0.5)
+
+
+async def test_access_and_safety_votes_cost_more_whatever_the_weights(
+    admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    feedback = {
+        "running": {"access": {"up": 0, "down": 3}},
+        "cycling": {"safety": {"up": 0, "down": 3}},
+    }
+    edge = await voted_edge(admin_conn, mapper_pool, feedback)
+
+    run = await cost_ratio(admin_conn, edge, "running", {}, feedback)
+    ride = await cost_ratio(admin_conn, edge, "cycling", {}, feedback)
+
+    # Balances of -0.5: access 1 + 3 * 0.5 for runners only; safety 1 + 0.5 * 0.5 for both.
+    assert run == pytest.approx(2.5 * 1.25)
+    assert ride == pytest.approx(1.25)
+
+
+async def test_good_votes_on_safety_only_cancel_and_lighting_and_crowding_count_nothing(
+    admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    feedback = {
+        "running": {
+            "safety": {"up": 6, "down": 0},
+            "lighting": {"up": 0, "down": 6},
+            "crowding": {"up": 0, "down": 6},
+        }
+    }
+    edge = await voted_edge(admin_conn, mapper_pool, feedback)
+
+    assert await cost_ratio(admin_conn, edge, "running", {}, feedback) == pytest.approx(1)
+
+
+async def test_appeal_and_cost_lean_on_votes_alike(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    # Scores and votes high enough that the preference is held at 1.
+    feedback = {"running": {"green": {"up": 10, "down": 0}, "water": {"up": 0, "down": 2}}}
+    edge = await voted_edge(admin_conn, mapper_pool, feedback)
+    await admin_conn.execute("UPDATE graph.edges SET scores = %s", (Jsonb({"green": 1}),))
+    weights = {"green": 1, "water": 0.25}
+
+    async with api_pool.connection() as conn:
+        cost = (await edge_costs(conn, await cost_sql(conn, "running", weights)))[edge][0]
+        plain = (await edge_costs(conn, await cost_sql(conn, "running", {})))[edge][0]
+        cur = await conn.execute(
+            """
+            SELECT routing.preference(p, e.scores, e.feedback), routing.preference(p, e.scores),
+                   (SELECT appeal FROM routing.vertex_stats(p, ARRAY[e.source]))
+            FROM routing.make_profile('running', %s) p, graph.edges e
+            WHERE e.id = %s
+            """,
+            (Jsonb(weights), edge),
+        )
+        row = await cur.fetchone()
+
+    assert row is not None
+    voted, measured, appeal = row
+    assert voted == pytest.approx((1 - cost / plain) / 0.7)
+    assert voted == pytest.approx(min(1, 0.8 + 0.5 * 0.8 * 10 / 13 - 0.5 * 0.2 * 2 / 5))
+    assert measured == pytest.approx(0.8)
+    assert appeal == pytest.approx(voted)
 
 
 async def test_length_is_plain_metres(admin_conn: Conn, mapper_pool: Pool, api_pool: Pool) -> None:
