@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
-import { ScoreProfile } from '@/features/route'
+import { climbText, ScoreProfile } from '@/features/route'
 
 import { ApiError } from '@/shared/api'
 import { Button } from '@/shared/ui/button'
@@ -93,12 +93,23 @@ function reviewSaved(changes: PreferenceChange[]): void {
 	savedChanges.value = changes
 }
 
+// As it was when saved, beside the length as the planner shows it.
+const distance = computed(() =>
+	route.value
+		? t('savedRoutes.detail.distanceKm', {
+				km: formatDistanceKm(route.value.distance_m, locale.value),
+			})
+		: '',
+)
+const climb = computed(() =>
+	climbText(route.value?.ascent_m, route.value?.descent_m, t, locale.value),
+)
+
 const details = computed(() => {
 	if (!route.value) return ''
 	return t('savedRoutes.detail.details', {
 		activity: t(`savedRoutes.activity.${route.value.activity}`),
 		shape: t(`savedRoutes.shape.${route.value.shape}`),
-		km: formatDistanceKm(route.value.distance_m, locale.value),
 		date: formatSavedOn(route.value.created_at, new Date(), locale.value),
 	})
 })
@@ -195,6 +206,10 @@ const details = computed(() => {
 		<template v-else-if="route">
 			<div class="flex flex-col gap-1">
 				<RouteName v-model:editing="isRenaming" :route="route" :heading-id="HEADING_ID" />
+				<p class="flex flex-wrap items-baseline gap-x-3">
+					<span class="text-body font-semibold">{{ distance }}</span>
+					<span v-if="climb" class="text-small text-graphite">{{ climb }}</span>
+				</p>
 				<p class="text-small text-graphite">{{ details }}</p>
 			</div>
 			<ReviewSavedNotice v-if="savedChanges" :changes="savedChanges" />

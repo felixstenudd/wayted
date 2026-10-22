@@ -9,6 +9,9 @@ CREATE_WORK_TABLES = """
     ) ON COMMIT DROP;
     CREATE TEMP TABLE changed_features (layer text NOT NULL, geom geometry NOT NULL) ON COMMIT DROP;
     CREATE TEMP TABLE claimed_edges (id bigint PRIMARY KEY) ON COMMIT DROP;
+    CREATE TEMP TABLE changed_elevation (
+        z smallint, x int, y int, PRIMARY KEY (z, x, y)
+    ) ON COMMIT DROP;
 """
 
 # Claims queue rows, not ids: an element queued again by a download that is still open keeps its
@@ -38,6 +41,15 @@ CLAIM_NODES = """
         RETURNING node_id
     )
     INSERT INTO moved_nodes SELECT DISTINCT node_id FROM claimed
+"""
+
+CLAIM_ELEVATION = """
+    WITH claimed AS (
+        DELETE FROM enrich.pending_elevation
+        WHERE id IN (SELECT id FROM enrich.pending_elevation ORDER BY id LIMIT %(batch_size)s)
+        RETURNING z, x, y
+    )
+    INSERT INTO changed_elevation SELECT DISTINCT z, x, y FROM claimed
 """
 
 # Each claimed element itself, and the features built from a claimed way or a way through a
@@ -72,6 +84,16 @@ QUEUE_NEAR_CHANGED = """
     WHERE c.layer = %(layer)s AND ST_Intersects(c.geom, enrich.expand_m(e.geom, %(reach_m)s))
 """
 
+# Edges whose heights a changed elevation tile may have changed: those whose box comes within
+# reach_m of it, as a height that far from an edge is in the mean of one of its samples.
+QUEUE_ON_CHANGED_ELEVATION = """
+    INSERT INTO graph.pending_edges (edge_id)
+    SELECT DISTINCT e.id
+    FROM changed_elevation t
+    JOIN graph.edges e
+      ON e.geom && enrich.expand_m(ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326), %(reach_m)s)
+"""
+
 CLAIM_EDGES = """
     WITH claimed AS (
         DELETE FROM graph.pending_edges
@@ -83,13 +105,20 @@ CLAIM_EDGES = """
 
 HAS_PENDING_EDGES = "SELECT EXISTS (SELECT 1 FROM graph.pending_edges)"
 
-# An attribute's query goes between the two, as the subquery s. A NULL value leaves the key out.
-MERGE_SCORES_HEAD = """
+
+def merge_scores_head(columns: tuple[str, ...] = ()) -> str:
+    """
+    An attribute's query goes between this and MERGE_SCORES_TAIL, as the subquery s. A NULL
+    value leaves the key out. Each of columns is copied from the subquery's column of that name.
+    """
+    copied = "".join(f",\n        {column} = s.{column}" for column in columns)
+    return f"""
     UPDATE graph.edges e
     SET scores = CASE WHEN s.value IS NULL THEN e.scores - %(key)s::text
-                      ELSE e.scores || jsonb_build_object(%(key)s::text, s.value) END
+                      ELSE e.scores || jsonb_build_object(%(key)s::text, s.value) END{copied}
     FROM (
 """
+
 
 MERGE_SCORES_TAIL = """
     ) s

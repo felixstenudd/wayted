@@ -18,8 +18,16 @@ from psycopg.rows import TupleRow
 from app import db
 from app.db import Connect
 from app.graph import MapResult, map_pending
-from app.sources import Downloader, DownloadStatus, RectangleResult, Tile, download_tiles, queue
-from app.sources.osm import LAYERS, OsmDownloader, new_client
+from app.sources import (
+    Downloader,
+    DownloadStatus,
+    RectangleResult,
+    Tile,
+    download_tiles,
+    elevation,
+    osm,
+    queue,
+)
 
 log = logging.getLogger("wayted.worker")
 
@@ -149,10 +157,14 @@ async def main() -> None:
     conninfo = make_conninfo(user=DOWNLOADER_ROLE, password=DOWNLOADER_ROLE_PASSWORD)
     try:
         async with (
-            new_client() as client,
+            osm.new_client() as osm_client,
+            elevation.new_client() as elevation_client,
             await AsyncConnection.connect(conninfo, autocommit=True) as listener,
         ):
-            downloaders = [OsmDownloader(client, LAYERS)]
+            downloaders: list[Downloader[Any]] = [
+                osm.OsmDownloader(osm_client, osm.LAYERS),
+                elevation.ElevationDownloader(elevation_client),
+            ]
             await serve(downloaders, connect_downloader, connect_mapper, listener)
     finally:
         await db.close_pools()

@@ -141,6 +141,8 @@ def _feature(route: service.PlannedRoute) -> PlannedRouteOut:
                 for k, v in route.scores.items()
             },
             reused_m=route.reused_m,
+            ascent_m=route.ascent_m,
+            descent_m=route.descent_m,
             warnings=route.warnings,
             edges=[EdgeStepOut(edge_id=e.edge_id, forward=e.forward) for e in route.edges],
             waypoint_order=route.waypoint_order,

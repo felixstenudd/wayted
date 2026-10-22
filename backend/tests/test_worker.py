@@ -3,6 +3,7 @@ import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 
+import httpx
 import pytest
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
@@ -10,7 +11,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from app import worker
 from app.graph import queries
-from app.sources import queue
+from app.sources import elevation, queue
 from app.sources.downloader import DownloadError, DownloadStatus
 from app.sources.tiles import Bounds, Tile, TileRect, bounds_for_tiles
 
@@ -117,6 +118,47 @@ async def test_cycle_fetches_and_maps_the_requested_tiles(
     assert await fetched(admin_conn, "roads") == WEST
     assert await fetched(admin_conn, "parks") == WEST
     assert await edge_count(admin_conn) == 1
+    assert await queued(admin_conn) == {}
+
+
+async def test_cycle_fetches_heights_with_the_roads(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool, mapper_pool: Pool
+) -> None:
+    bounds = bounds_for_tiles(WEST)
+    cur = await admin_conn.execute(
+        """
+        SELECT ST_AsGDALRaster(
+            ST_AddBand(
+                ST_MakeEmptyRaster(100, 100, %s - 0.01, %s + 0.01, 0.001, -0.001, 0, 0, 4326),
+                '32BF'::text, 12, -32767
+            ),
+            'GTiff'
+        )
+        """,
+        (bounds.west, bounds.north),
+    )
+    row = await cur.fetchone()
+    assert row is not None
+    geotiff = row[0]
+    async with api_pool.connection() as conn:
+        await queue.request_area(conn, bounds, layers=(*RoadDownloader.layers, elevation.LAYER))
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, content=geotiff))
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await worker.run_once(
+            [RoadDownloader(), elevation.ElevationDownloader(client)],
+            downloader_pool.connection,
+            mapper_pool.connection,
+        )
+
+    cur = await admin_conn.execute("SELECT x, y, z FROM raw.elevation_tiles")
+    stored = {Tile(x=x, y=y, z=z) for x, y, z in await cur.fetchall()}
+    assert result is not None
+    # The layers of a tile are claimed together, whichever downloader serves them.
+    assert result.tiles_claimed == 4
+    assert stored == WEST
+    assert await fetched(admin_conn, elevation.LAYER) == WEST
+    assert await fetched(admin_conn, "roads") == WEST
     assert await queued(admin_conn) == {}
 
 

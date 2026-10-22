@@ -2,7 +2,7 @@
 
 from app.sources import osm
 
-from .attributes import AreaShare, Attribute, Proximity, SurfaceScore
+from .attributes import AreaShare, Attribute, HeightChange, Proximity, SurfaceScore
 from .layers import AreaLayer, FeatureLayer, LineLayer
 
 # Built from the tags they are downloaded by, so the two lists cannot drift apart.
@@ -15,6 +15,21 @@ WATER_LINES = LineLayer(code=osm.WATER_LINES.code, match=osm.WATER_LINES.tags)
 GREEN = AreaShare(key="green", layers=(PARKS,), radius_m=25)
 NATURE = AreaShare(key="nature", layers=(NATURAL_LAND,), radius_m=25)
 WATER = Proximity(key="water", layers=(WATER_AREAS, WATER_LINES), radius_m=50, sample_m=10)
+
+# Half a cell of the height model apart, each height the mean over a cross 120 m wide. The
+# model sees roofs and treetops, and a narrower cross left Umeå's flat city centre full of steep
+# edges; this one keeps it calm and still shows the streets down the river terrace. Without the
+# smoothing, short edges scored nearly twice as hilly as long ones. A run or ride that climbs and
+# drops 6 % of its length on average is as hilly as it gets. Starting values, to tune.
+HILLS = HeightChange(
+    key="hills",
+    layers=(),
+    sample_m=15,
+    smooth_m=60,
+    threshold_m=1.0,
+    ends_m=0.5,
+    full_grade=0.06,
+)
 
 # From engineered for wheels (1) to natural ground.
 PREPARED = SurfaceScore(
@@ -63,4 +78,4 @@ PREPARED = SurfaceScore(
 )
 
 LAYERS: tuple[FeatureLayer, ...] = (PARKS, NATURAL_LAND, WATER_AREAS, WATER_LINES)
-ATTRIBUTES: tuple[Attribute, ...] = (GREEN, NATURE, WATER, PREPARED)
+ATTRIBUTES: tuple[Attribute, ...] = (GREEN, NATURE, WATER, PREPARED, HILLS)

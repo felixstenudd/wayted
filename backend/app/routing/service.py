@@ -63,11 +63,19 @@ SEARCH_BOUNDS = f"""
 """
 
 # The enricher scores new and moved edges after the mapper builds them; until then they count as
-# neither preferred nor avoided.
+# neither preferred nor avoided. Heights stored for edges it already scored are queued for it
+# as tiles, and their edges only once it takes them up.
 UNSCORED_IN_BOUNDS = """
+    WITH area AS (
+        SELECT ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326) AS envelope
+    )
     SELECT EXISTS (
-        SELECT FROM graph.pending_edges queued JOIN graph.edges edge ON edge.id = queued.edge_id
-        WHERE edge.geom && ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326)
+        SELECT FROM area, graph.pending_edges queued
+        JOIN graph.edges edge ON edge.id = queued.edge_id
+        WHERE edge.geom && area.envelope
+    ) OR EXISTS (
+        SELECT FROM area, enrich.pending_elevation tile
+        WHERE ST_Transform(ST_TileEnvelope(tile.z, tile.x, tile.y), 4326) && area.envelope
     )
 """
 
@@ -164,6 +172,9 @@ class PlannedRoute:
     scores: dict[str, AttributeScore]
     # length travelled more than once
     reused_m: float
+    # metres climbed and dropped in all; None when heights are known for under 90 % of the length
+    ascent_m: float | None
+    descent_m: float | None
     warnings: list[RouteWarning]
     # in travel order
     edges: list[EdgeStep]
@@ -249,6 +260,8 @@ def _planned(route: dict[str, Any]) -> PlannedRoute:
         length_m=route["length_m"],
         scores={key: AttributeScore(**score) for key, score in route["scores"].items()},
         reused_m=route["reused_m"],
+        ascent_m=route["ascent_m"],
+        descent_m=route["descent_m"],
         warnings=route["warnings"],
         edges=[EdgeStep(**step) for step in route["edges"]],
         waypoint_order=route["waypoint_order"],

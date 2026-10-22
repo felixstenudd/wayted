@@ -89,6 +89,9 @@ class RoutePropertiesOut(BaseModel):
     scores: dict[str, AttributeScoreOut]
     # length travelled more than once
     reused_m: float
+    # metres climbed and dropped in all; None when heights are known for under 90 % of the length
+    ascent_m: float | None
+    descent_m: float | None
     # too_short: the finish is farther than the target; target_missed: no route came close.
     # Always empty without a target.
     warnings: list[RouteWarning]

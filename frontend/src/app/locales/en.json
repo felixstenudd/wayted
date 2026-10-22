@@ -156,13 +156,20 @@
 					"ratherNot": "Rather rough",
 					"niceToHave": "Rather smooth",
 					"prefer": "Smooth where possible"
+				},
+				"hills": {
+					"avoid": "Flat where possible",
+					"ratherNot": "Rather flat",
+					"niceToHave": "Some hills",
+					"prefer": "Hilly where possible"
 				}
 			},
 			"groups": {
 				"surroundings": "Surroundings",
 				"streets": "Streets",
 				"sights": "Sights",
-				"surface": "Surface"
+				"surface": "Surface",
+				"terrain": "Terrain"
 			},
 			"attributes": {
 				"green": "Parks",
@@ -171,7 +178,8 @@
 				"quiet_streets": "Quiet streets",
 				"sights": "Places to see",
 				"bridges": "Bridges",
-				"prepared": "Smooth"
+				"prepared": "Smooth",
+				"hills": "Hills"
 			}
 		},
 		"findRoutes": {
@@ -384,7 +392,8 @@
 		},
 		"detail": {
 			"title": "Route",
-			"details": "{activity}, {shape}, {km} km, saved {date}",
+			"details": "{activity}, {shape}, saved {date}",
+			"distanceKm": "{km} km",
 			"more": "More for this route",
 			"loading": "Loading the route…",
 			"missingTitle": "Route not found",
@@ -507,8 +516,8 @@
 			"sights_bad": "Nothing to see",
 			"prepared_good": "Good surface",
 			"prepared_bad": "Rough surface",
-			"elevation_good": "Nice hills",
-			"elevation_bad": "Too steep",
+			"hills_good": "Nice hills",
+			"hills_bad": "Too steep",
 			"lighting_good": "Well lit",
 			"lighting_bad": "Poorly lit",
 			"safety_good": "Feels safe",
@@ -559,11 +568,26 @@
 					"some": "Mixed",
 					"aLot": "Mostly smooth",
 					"mostly": "Smooth"
+				},
+				"hills": {
+					"none": "Flat",
+					"aLittle": "Mostly flat",
+					"some": "Some hills",
+					"aLot": "Hilly",
+					"mostly": "Very hilly"
 				}
 			},
 			"rowNames": {
 				"prepared": "Surface"
 			}
+		},
+		"climb": {
+			"flat": "Flat",
+			"upDown": "{up} m up, {down} m down",
+			"metres": "{m} m",
+			"climbs": "Climbs {m} m",
+			"unknown": "Climb not known",
+			"unknownShort": "–"
 		},
 		"name": {
 			"loop": "{km} km loop",

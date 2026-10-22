@@ -54,6 +54,14 @@ CREATE TABLE enrich.pending_nodes (
     node_id bigint NOT NULL
 );
 
+-- Elevation tiles whose heights changed, for rescoring the edges that cross them.
+CREATE TABLE enrich.pending_elevation (
+    id bigint   GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    z  smallint NOT NULL,
+    x  int      NOT NULL,
+    y  int      NOT NULL
+);
+
 -- The WGS 84 UTM zone of a geometry's centre, for measuring in metres anywhere.
 CREATE FUNCTION enrich.utm_srid(geom geometry) RETURNS integer
 LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
@@ -70,6 +78,38 @@ LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
         m / (111319 * cos(radians(least(greatest(abs(ST_YMin(geom)), abs(ST_YMax(geom))), 89)))),
         m / 110574
     )
+$$;
+
+-- How far heights along a line rise and how far they fall, in metres. A change counts only once
+-- it is threshold_m or more from the last height counted, so wobbles smaller than that, the
+-- height model's noise, add nothing; what a steady slope gains below it at the end is lost.
+-- Heights that are NULL (no height known there) are skipped.
+CREATE FUNCTION enrich.climb(
+    heights double precision[],
+    threshold_m double precision,
+    OUT ascent_m double precision,
+    OUT descent_m double precision
+)
+LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE AS $$
+DECLARE
+    v_counted double precision;
+    v_height  double precision;
+BEGIN
+    ascent_m := 0;
+    descent_m := 0;
+    FOREACH v_height IN ARRAY heights LOOP
+        CONTINUE WHEN v_height IS NULL;
+        IF v_counted IS NULL THEN
+            v_counted := v_height;
+        ELSIF v_height - v_counted >= threshold_m THEN
+            ascent_m := ascent_m + v_height - v_counted;
+            v_counted := v_height;
+        ELSIF v_counted - v_height >= threshold_m THEN
+            descent_m := descent_m + v_counted - v_height;
+            v_counted := v_height;
+        END IF;
+    END LOOP;
+END
 $$;
 
 CREATE FUNCTION enrich.queue_way() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -109,6 +149,18 @@ CREATE TRIGGER osm_nodes_enrich_queue
     FOR EACH ROW WHEN (OLD.geom IS DISTINCT FROM NEW.geom)
     EXECUTE FUNCTION enrich.queue_node();
 
+CREATE FUNCTION enrich.queue_elevation_tile() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO enrich.pending_elevation (z, x, y) VALUES (NEW.z, NEW.x, NEW.y);
+    RETURN NULL;
+END
+$$;
+
+-- The downloader writes a tile only when its heights changed, so this fires only then.
+CREATE TRIGGER elevation_tiles_enrich_queue
+    AFTER INSERT OR UPDATE ON raw.elevation_tiles
+    FOR EACH ROW EXECUTE FUNCTION enrich.queue_elevation_tile();
+
 -- Wakes the enricher. Sent at commit, and once per transaction however many rows it queued.
 CREATE FUNCTION enrich.notify_pending() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -131,4 +183,8 @@ CREATE TRIGGER pending_relations_notify
 
 CREATE TRIGGER pending_nodes_notify
     AFTER INSERT ON enrich.pending_nodes
+    FOR EACH STATEMENT EXECUTE FUNCTION enrich.notify_pending();
+
+CREATE TRIGGER pending_elevation_notify
+    AFTER INSERT ON enrich.pending_elevation
     FOR EACH STATEMENT EXECUTE FUNCTION enrich.notify_pending();

@@ -46,6 +46,10 @@ defineProps<{ attributeKey: string }>()
 			<path class="prepared-solid" d="M1.5 8h6" />
 			<path class="prepared-loose" d="M11 8h3.6" />
 		</template>
+		<template v-else-if="attributeKey === 'hills'">
+			<path class="contour" d="M1.5 11.5q6.5-14 13 0" />
+			<path class="contour" d="M5 11.5q3-7 6 0" />
+		</template>
 		<circle v-else-if="attributeKey === 'sights'" class="sight" cx="8" cy="8" r="4" />
 		<circle v-else class="unknown" cx="8" cy="8" r="2.5" />
 	</svg>
@@ -72,13 +76,15 @@ defineProps<{ attributeKey: string }>()
 	stroke-width: 4;
 }
 .bridge,
+.contour,
 .prepared-solid,
 .prepared-loose {
 	fill: none;
 	stroke: var(--graphite);
 	stroke-linecap: round;
 }
-.bridge {
+.bridge,
+.contour {
 	stroke-width: 1.25;
 }
 /* From paved to loose: the scale the slider moves along. */

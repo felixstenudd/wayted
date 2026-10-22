@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
@@ -92,10 +92,89 @@ SURFACE = """
 """
 
 
+# How much the edge climbs and drops for its length, from heights sampled every sample_m along
+# it. A height is the mean of the point and four points smooth_m north, east, south and west of
+# it, each blended between the cells of the elevation tile it lies in (any of the tiles a point
+# is in: their margins hold the same cells), which evens out trees and roofs. Rises and drops
+# are counted through enrich.climb with threshold_m, and each is at least the difference
+# between the ends once that is ends_m or more, so a long even hill split into short edges that
+# each rise less than threshold_m still counts. Without the smoothing and ends_m, noise on a
+# short edge would read as a steep one. The height model sees the deck of a bridge as the valley
+# below it, so bridges and tunnels count only their ends; ferries count nothing. Besides the
+# score, returns the metres climbed and dropped from source to target. Ups and downs score alike:
+# an average change of full_grade (the share of the length) or more scores 1. An edge without
+# heights, such as before its tile is downloaded, has neither score nor metres, so it counts as
+# unknown rather than flat.
+HEIGHT_CHANGE = """
+    WITH edges AS (
+        SELECT e.id, e.geom, e.length_m,
+               coalesce(w.tags ->> 'bridge', 'no') <> 'no'
+                   OR coalesce(w.tags ->> 'tunnel', 'no') <> 'no' AS level,
+               w.tags ->> 'route' = 'ferry' AND NOT w.tags ? 'highway' AS ferry
+        FROM claimed_edges c
+        JOIN graph.edges e USING (id)
+        JOIN graph.ways w ON w.id = e.way_id
+    ),
+    samples AS (
+        SELECT e.id, (d).path[1] AS n, h.height
+        FROM edges e
+        CROSS JOIN LATERAL ST_DumpPoints(
+            ST_Segmentize(e.geom::geography, %(sample_m)s)::geometry
+        ) d
+        CROSS JOIN LATERAL (
+            SELECT avg((
+                SELECT ST_Value(t.rast, 1, o.point, true, 'bilinear')
+                FROM raw.elevation_tiles t
+                WHERE ST_Intersects(ST_ConvexHull(t.rast), o.point)
+                LIMIT 1
+            )) AS height
+            FROM (
+                SELECT (d).geom AS point
+                UNION ALL
+                SELECT ST_Project((d).geom::geography, %(smooth_m)s, radians(a))::geometry
+                FROM unnest(ARRAY[0, 90, 180, 270]) a
+            ) o
+        ) h
+        WHERE NOT e.ferry
+    ),
+    profiles AS (
+        SELECT id, array_agg(height ORDER BY n) AS heights
+        FROM samples
+        WHERE height IS NOT NULL
+        GROUP BY id
+    ),
+    climbs AS (
+        SELECT e.id, e.length_m,
+               CASE WHEN e.ferry THEN 0
+                    WHEN p.heights IS NULL THEN NULL
+                    WHEN e.level THEN greatest(ends.rise_m, 0)
+                    ELSE greatest(c.ascent_m, ends.rise_m) END AS ascent_m,
+               CASE WHEN e.ferry THEN 0
+                    WHEN p.heights IS NULL THEN NULL
+                    WHEN e.level THEN greatest(-ends.rise_m, 0)
+                    ELSE greatest(c.descent_m, -ends.rise_m) END AS descent_m
+        FROM edges e
+        LEFT JOIN profiles p USING (id)
+        CROSS JOIN LATERAL enrich.climb(p.heights, %(threshold_m)s) c
+        CROSS JOIN LATERAL (
+            SELECT CASE WHEN abs(r.m) < %(ends_m)s THEN 0 ELSE r.m END AS rise_m
+            FROM (SELECT p.heights[cardinality(p.heights)] - p.heights[1] AS m) r
+        ) ends
+    )
+    SELECT id AS edge_id, ascent_m, descent_m,
+           CASE WHEN ascent_m IS NULL THEN NULL WHEN length_m = 0 THEN 0 ELSE least(
+               (ascent_m + descent_m) / length_m / %(full_grade)s, 1
+           ) END AS value
+    FROM climbs
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class Attribute(ABC):
     key: str  # the key in graph.edges.scores
     layers: tuple[FeatureLayer, ...]
+    # graph.edges columns the score query also returns, written along with the score
+    columns: ClassVar[tuple[str, ...]] = ()
 
     @abstractmethod
     def score_query(self) -> tuple[str, dict[str, Any]]:
@@ -109,7 +188,7 @@ class Attribute(ABC):
     async def score(self, conn: AsyncConnection[TupleRow]) -> int:
         """Merge {key: value} into the scores of the claimed edges. Returns the edges written."""
         query, params = self.score_query()
-        sql = queries.MERGE_SCORES_HEAD + query + queries.MERGE_SCORES_TAIL
+        sql = queries.merge_scores_head(self.columns) + query + queries.MERGE_SCORES_TAIL
         return (await conn.execute(sql, {**params, "key": self.key})).rowcount
 
 
@@ -163,3 +242,29 @@ class SurfaceScore(Attribute):
     @property
     def reach_m(self) -> float:
         return 0
+
+
+@dataclass(frozen=True, slots=True)
+class HeightChange(Attribute):
+    """Edges are queued for it when their elevation tiles change, not by feature layers."""
+
+    columns = ("ascent_m", "descent_m")
+    sample_m: float
+    smooth_m: float
+    threshold_m: float
+    ends_m: float
+    full_grade: float
+
+    def score_query(self) -> tuple[str, dict[str, Any]]:
+        return HEIGHT_CHANGE, {
+            "sample_m": self.sample_m,
+            "smooth_m": self.smooth_m,
+            "threshold_m": self.threshold_m,
+            "ends_m": self.ends_m,
+            "full_grade": self.full_grade,
+        }
+
+    @property
+    def reach_m(self) -> float:
+        """A height this far from the edge is in the mean of one of its samples."""
+        return self.smooth_m
