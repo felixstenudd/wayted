@@ -40,17 +40,22 @@ CREATE_ROUTE = f"""
     total AS (
         SELECT sum(length_m) AS length_m FROM legs
     ),
+    climb AS (
+        SELECT routing.route_climb(%(edge_ids)s::bigint[], %(forward)s::boolean[]) AS metres
+    ),
     route AS (
         INSERT INTO app.routes (
             user_id, name, activity, shape, target_distance_m, preferences, waypoints,
-            geom, distance_m, scores
+            geom, distance_m, scores, ascent_m, descent_m
         )
         SELECT %(user_id)s, %(name)s, %(activity)s, %(shape)s, %(target_distance_m)s,
                %(preferences)s, %(waypoints)s,
                (SELECT ST_MakeLine(array_agg(geom ORDER BY seq, n)) FROM points),
                total.length_m,
-               routing.route_scores(%(edge_ids)s::bigint[])
-        FROM total
+               routing.route_scores(%(edge_ids)s::bigint[]),
+               (climb.metres ->> 'ascent_m')::double precision,
+               (climb.metres ->> 'descent_m')::double precision
+        FROM total, climb
         RETURNING id
     ),
     edges AS (
@@ -64,7 +69,8 @@ CREATE_ROUTE = f"""
 
 GET_ROUTE = f"""
     SELECT r.id, r.name, r.activity, r.shape, r.target_distance_m, r.preferences, r.waypoints,
-           r.distance_m, r.scores, ST_AsGeoJSON(r.geom, 6)::jsonb AS geometry,
+           r.distance_m, r.scores, r.ascent_m, r.descent_m,
+           ST_AsGeoJSON(r.geom, 6)::jsonb AS geometry,
            (SELECT coalesce(jsonb_agg(jsonb_build_object(
                         'seq', e.seq, 'length_m', e.length_m, 'last_point', e.last_point)
                     ORDER BY e.seq), '[]')

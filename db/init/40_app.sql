@@ -43,6 +43,9 @@ CREATE TABLE app.routes (
     distance_m        double precision NOT NULL CHECK (distance_m >= 0),
     -- {attribute: {"mean": 0..1, "coverage": share of the length that was scored}}
     scores            jsonb   NOT NULL DEFAULT '{}',
+    -- metres climbed and dropped in all; NULL when heights were known for under 90 % of it
+    ascent_m          double precision CHECK (ascent_m >= 0),
+    descent_m         double precision CHECK (descent_m >= 0),
     created_at        timestamptz NOT NULL DEFAULT now(),
     updated_at        timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT routes_loop_has_target_check CHECK (shape <> 'loop' OR target_distance_m IS NOT NULL)
