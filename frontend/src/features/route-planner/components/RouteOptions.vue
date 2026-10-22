@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { ArrowUpRight } from '@lucide/vue'
 import { RadioGroupItem, RadioGroupRoot } from 'reka-ui'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { scoreMessage } from '@/features/route'
+import { formatClimbM, isFlat, scoreMessage } from '@/features/route'
 
 import { useShownRoute } from '../composables/useShownRoute'
 import { formatKm } from '../distance'
@@ -11,7 +12,7 @@ import { optionLetter, routeFit, standOut } from '../options'
 import { usePlannerStore } from '../store'
 
 const i18n = useI18n()
-const { t } = i18n
+const { t, locale } = i18n
 const hasMessage = (path: string) => i18n.te(path)
 const planner = usePlannerStore()
 const { routes } = useShownRoute()
@@ -36,6 +37,31 @@ const apart = computed(() => {
 	return standOut(scores, planner.search?.request.preferences ?? {}, keys)
 })
 
+// Options are compared by how much they climb. One without known heights says so only while
+// another has them, so a missing line is not read as flat.
+const anyClimbKnown = computed(() =>
+	described.value.some(
+		({ properties }) => properties.ascent_m !== null && properties.descent_m !== null,
+	),
+)
+
+function climbOf(ascentM: number | null, descentM: number | null) {
+	if (ascentM === null || descentM === null) {
+		const unknown = t('route.climb.unknown')
+		return anyClimbKnown.value ? { text: unknown, spoken: unknown, isMetres: false } : null
+	}
+	if (isFlat(ascentM, descentM)) {
+		const flat = t('route.climb.flat')
+		return { text: flat, spoken: flat, isMetres: false }
+	}
+	const m = formatClimbM(ascentM, locale.value)
+	return {
+		text: t('route.climb.metres', { m }),
+		spoken: t('route.climb.climbs', { m }),
+		isMetres: true,
+	}
+}
+
 const options = computed(() =>
 	described.value.map((route, index) => {
 		const fit = routeFit(route.properties.length_m, planner.search?.request.target_distance_m)
@@ -45,6 +71,7 @@ const options = computed(() =>
 			letter: optionLetter(index),
 			isEdited: planner.edit?.option === index,
 			km: t('planner.route.length', { km: formatKm(route.properties.length_m / 1000) }),
+			climb: climbOf(route.properties.ascent_m, route.properties.descent_m),
 			fit:
 				fit === null
 					? null
@@ -86,7 +113,9 @@ const options = computed(() =>
 				t('planner.options.spoken', {
 					letter: option.letter,
 					km: option.km,
-					fit: [option.fit, option.apart].filter(Boolean).join('. '),
+					fit: [option.climb?.spoken, option.fit, option.apart]
+						.filter(Boolean)
+						.join('. '),
 				})
 			"
 			class="group flex min-w-0 flex-col items-start gap-0.5 rounded-md border border-line px-2.5 py-2 text-left transition-[border-color] duration-150 ease-out hover:border-line-strong data-[state=checked]:border-ink data-[state=checked]:inset-ring data-[state=checked]:inset-ring-ink"
@@ -98,6 +127,14 @@ const options = computed(() =>
 				{{ option.letter }}
 			</span>
 			<span class="text-body font-semibold text-ink">{{ option.km }}</span>
+			<span v-if="option.climb" class="flex items-center gap-1 text-caption text-graphite">
+				<ArrowUpRight
+					v-if="option.climb.isMetres"
+					class="size-3.5 shrink-0"
+					aria-hidden="true"
+				/>
+				{{ option.climb.text }}
+			</span>
 			<span v-if="option.isEdited" class="text-caption font-semibold text-ink">
 				{{ t('planner.options.edited') }}
 			</span>

@@ -4,6 +4,8 @@ import { useIsMutating } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { formatClimbM, isFlat } from '@/features/route'
+
 import { rerouteKey } from '../api'
 import { useShownRoute } from '../composables/useShownRoute'
 import { useSkippedThroughPoints } from '../composables/useSkippedThroughPoints'
@@ -12,7 +14,7 @@ import { formatKm } from '../distance'
 import { optionLetter, routeFit } from '../options'
 import { usePlannerStore } from '../store'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const planner = usePlannerStore()
 const { routes, shown } = useShownRoute()
 const skipped = useSkippedThroughPoints()
@@ -31,24 +33,37 @@ const editedFit = computed(() => {
 	const fit = routeFit(shown.value.properties.length_m, planner.search?.request.target_distance_m)
 	return fit && fit.kind !== 'close' ? fit : null
 })
+// Left out while the heights are not known: a missing climb is nothing the user can fix.
+const climb = computed(() => {
+	const { ascent_m: ascentM, descent_m: descentM } = shown.value?.properties ?? {}
+	if (ascentM == null || descentM == null) return null
+	if (isFlat(ascentM, descentM)) return t('route.climb.flat')
+	return t('route.climb.upDown', {
+		up: formatClimbM(ascentM, locale.value),
+		down: formatClimbM(descentM, locale.value),
+	})
+})
 const plannerWarnings = computed(() =>
 	isEdited.value ? [] : (shown.value?.properties.warnings ?? []),
 )
 </script>
 
 <template>
-	<!-- The shown route's length, which option it is, and why it misses the target if it does. -->
+	<!-- The shown route's length and climb, which option it is, and why it misses the target if it does. -->
 	<div v-if="shown" role="status" aria-atomic="false" class="flex flex-col gap-1 empty:hidden">
 		<div v-if="!hasCards || isRerouting" class="flex items-baseline justify-between gap-3">
-			<p class="text-heading" :class="{ 'text-graphite': isRerouting }">
-				{{
-					isRerouting
-						? t('planner.edit.updating')
-						: t('planner.route.length', {
-								km: formatKm(shown.properties.length_m / 1000),
-							})
-				}}
-			</p>
+			<div class="flex flex-wrap items-baseline gap-x-3">
+				<p class="text-heading" :class="{ 'text-graphite': isRerouting }">
+					{{
+						isRerouting
+							? t('planner.edit.updating')
+							: t('planner.route.length', {
+									km: formatKm(shown.properties.length_m / 1000),
+								})
+					}}
+				</p>
+				<p v-if="climb && !isRerouting" class="text-small text-graphite">{{ climb }}</p>
+			</div>
 			<p v-if="hasCards" class="text-small text-graphite">
 				{{ t('planner.options.name', { letter: optionLetter(planner.selectedOption) }) }}
 			</p>

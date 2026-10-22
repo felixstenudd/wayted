@@ -580,6 +580,13 @@
 				"prepared": "Surface"
 			}
 		},
+		"climb": {
+			"flat": "Flat",
+			"upDown": "{up} m up, {down} m down",
+			"metres": "{m} m",
+			"climbs": "Climbs {m} m",
+			"unknown": "Climb not known"
+		},
 		"name": {
 			"loop": "{km} km loop",
 			"route": "{km} km route"

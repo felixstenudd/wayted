@@ -7,6 +7,7 @@ export {
 	weightWord,
 	type WeightWord,
 } from './attributes'
+export { formatClimbM, isFlat } from './climb'
 export { suggestRouteName, type NamedRoute } from './naming'
 export { plannedFirst, scoreMessage, scoreWord } from './profile'
 export type { AttributeGroup, AttributeScore, RouteAttribute } from './types'
