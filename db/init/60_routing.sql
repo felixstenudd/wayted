@@ -277,8 +277,10 @@ $$;
 -- The votes p_user gave in stretch reviews that count for p_activity's routes, as
 -- {edge id: {topic: 1 or -1}}: the latest per edge and topic, as the enricher counts them, from
 -- reviews for p_activity and, for safety, which is about the place, from reviews for any activity.
--- '{}' for a NULL p_user.
-CREATE FUNCTION routing.own_votes(p_user uuid, p_activity text) RETURNS jsonb
+-- Only on edges in p_area (NULL: anywhere), so a long review history elsewhere costs a plan
+-- nothing. '{}' for a NULL p_user.
+CREATE FUNCTION routing.own_votes(p_user uuid, p_activity text, p_area geometry DEFAULT NULL)
+RETURNS jsonb
 LANGUAGE sql STABLE AS $$
     SELECT coalesce(jsonb_object_agg(edge_id::text, topics), '{}')
     FROM (
@@ -289,7 +291,9 @@ LANGUAGE sql STABLE AS $$
             JOIN app.segment_review_edges re ON re.review_id = s.id
             JOIN app.segment_review_reasons sr ON sr.review_id = s.id
             JOIN ref.review_reasons r ON r.code = sr.reason
+            JOIN graph.edges e ON e.id = re.edge_id
             WHERE s.user_id = p_user AND (s.activity = p_activity OR r.topic = 'safety')
+              AND (p_area IS NULL OR ST_Intersects(e.geom, p_area))
             ORDER BY re.edge_id, r.topic, s.updated_at DESC, s.id DESC
         ) latest
         GROUP BY edge_id
@@ -2318,9 +2322,7 @@ BEGIN
         RAISE EXCEPTION 'need a start, and a positive target or a finish'
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
-    v_profile := routing.make_profile(
-        p_activity, p_weights, p_settings, routing.own_votes(p_user, p_activity), p_others_votes
-    );
+    v_profile := routing.make_profile(p_activity, p_weights, p_settings, '{}', p_others_votes);
     v_tolerance := routing.setting(v_profile, 'plan', 'tolerance');
     v_count := routing.setting(v_profile, 'options', 'count')::integer;
     v_until := clock_timestamp()
@@ -2335,6 +2337,7 @@ BEGIN
         p_start, p_finish, p_target_m, v_profile.settings -> 'area',
         v_points[2:cardinality(v_points) - 1]
     );
+    v_profile.own_votes := routing.own_votes(p_user, p_activity, v_area);
     -- A loop's end is its start, which is snapped once.
     v_vertices := routing.snap_points(
         v_profile,

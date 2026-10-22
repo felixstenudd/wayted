@@ -366,30 +366,49 @@ async def reviewer(conn: Conn) -> UUID:
     return await add_user(conn)
 
 
-async def test_own_votes_are_the_latest_per_edge_and_topic(
-    admin_conn: Conn, api_pool: Pool
+async def test_own_votes_are_the_latest_per_edge_and_topic_in_the_area(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
 ) -> None:
+    # Four paths side by side, one edge each, 1 to 4 from the west.
+    for way in range(1, 5):
+        await add_line(
+            admin_conn,
+            way,
+            [(10 * way, way * 10, 0), (10 * way + 1, way * 10 + 5, 0)],
+            {"highway": "path"},
+        )
+    await map_pending(mapper_pool.connection)
+    edge = {way: id_ for (way, *_), id_ in (await edge_ids(admin_conn)).items()}
     user = await reviewer(admin_conn)
     other = await add_user(admin_conn, "other@example.com")
     then, later = datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC)
-    await add_segment_review(admin_conn, user, None, [1], ["green_good"], updated_at=then)
+    await add_segment_review(admin_conn, user, None, [edge[1]], ["green_good"], updated_at=then)
     await add_segment_review(
-        admin_conn, user, None, [1, 2], ["green_bad", "access_bad"], updated_at=later
+        admin_conn, user, None, [edge[1], edge[2]], ["green_bad", "access_bad"], updated_at=later
     )
     # A ride: its hills say nothing about runs, but feeling unsafe is about the place.
     await add_segment_review(
-        admin_conn, user, None, [3], ["hills_good", "safety_bad"], activity="cycling"
+        admin_conn, user, None, [edge[3]], ["hills_good", "safety_bad"], activity="cycling"
     )
-    await add_segment_review(admin_conn, other, None, [4], ["green_good"])
-
+    await add_segment_review(admin_conn, user, None, [edge[4]], ["green_good"])
+    await add_segment_review(admin_conn, other, None, [edge[2]], ["green_good"])
     async with api_pool.connection() as conn:
+        # The area takes in the first three paths only.
         cur = await conn.execute(
-            "SELECT routing.own_votes(%s, 'running'), routing.own_votes(NULL, 'running')", (user,)
+            """
+            SELECT routing.own_votes(%s, 'running', ST_MakeEnvelope(%s, %s, %s, %s, 4326)),
+                   routing.own_votes(NULL, 'running')
+            """,
+            (user, ORIGIN_LON, ORIGIN_LAT - STEP, ORIGIN_LON + 36 * STEP, ORIGIN_LAT + STEP),
         )
         row = await cur.fetchone()
 
     assert row == (
-        {"1": {"green": -1, "access": -1}, "2": {"green": -1, "access": -1}, "3": {"safety": -1}},
+        {
+            str(edge[1]): {"green": -1, "access": -1},
+            str(edge[2]): {"green": -1, "access": -1},
+            str(edge[3]): {"safety": -1},
+        },
         {},
     )
 

@@ -751,6 +751,11 @@ export interface components {
              * @default []
              */
             waypoints: components["schemas"]["WaypointIn"][];
+            /**
+             * Use Others Reviews
+             * @default true
+             */
+            use_others_reviews: boolean;
         };
         /** RouteReviewIn */
         RouteReviewIn: {
