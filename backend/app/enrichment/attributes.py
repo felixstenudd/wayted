@@ -95,14 +95,15 @@ SURFACE = """
 # How much the edge climbs and drops for its length, from heights sampled every sample_m along
 # it. A height is the mean of the point and four points smooth_m north, east, south and west of
 # it, each blended between the cells of the elevation tile it lies in (any of the tiles a point
-# is in: their margins hold the same cells), which evens out trees and roofs. Ups and downs
-# count alike, through enrich.height_change with threshold_m, and at least the difference
+# is in: their margins hold the same cells), which evens out trees and roofs. Rises and drops
+# are counted through enrich.climb with threshold_m, and each is at least the difference
 # between the ends once that is ends_m or more, so a long even hill split into short edges that
 # each rise less than threshold_m still counts. Without the smoothing and ends_m, noise on a
 # short edge would read as a steep one. The height model sees the deck of a bridge as the valley
-# below it, so bridges and tunnels count only their ends; ferries count nothing. An average
-# change of full_grade (the share of the length) or more scores 1; an edge without heights, such
-# as at sea, scores 0.
+# below it, so bridges and tunnels count only their ends; ferries count nothing. Besides the
+# score, returns the metres climbed and dropped from source to target, NULL without heights.
+# Ups and downs score alike: an average change of full_grade (the share of the length) or more
+# scores 1; an edge without heights, such as at sea, scores 0.
 HEIGHT_CHANGE = """
     WITH edges AS (
         SELECT e.id, e.geom, e.length_m,
@@ -140,19 +141,30 @@ HEIGHT_CHANGE = """
         FROM samples
         WHERE height IS NOT NULL
         GROUP BY id
+    ),
+    climbs AS (
+        SELECT e.id, e.length_m,
+               CASE WHEN e.ferry THEN 0
+                    WHEN p.heights IS NULL THEN NULL
+                    WHEN e.level THEN greatest(ends.rise_m, 0)
+                    ELSE greatest(c.ascent_m, ends.rise_m) END AS ascent_m,
+               CASE WHEN e.ferry THEN 0
+                    WHEN p.heights IS NULL THEN NULL
+                    WHEN e.level THEN greatest(-ends.rise_m, 0)
+                    ELSE greatest(c.descent_m, -ends.rise_m) END AS descent_m
+        FROM edges e
+        LEFT JOIN profiles p USING (id)
+        CROSS JOIN LATERAL enrich.climb(p.heights, %(threshold_m)s) c
+        CROSS JOIN LATERAL (
+            SELECT CASE WHEN abs(r.m) < %(ends_m)s THEN 0 ELSE r.m END AS rise_m
+            FROM (SELECT p.heights[cardinality(p.heights)] - p.heights[1] AS m) r
+        ) ends
     )
-    SELECT e.id AS edge_id,
-           CASE WHEN p.heights IS NULL OR e.length_m = 0 THEN 0 ELSE least(
-               greatest(
-                   CASE WHEN e.level THEN 0
-                        ELSE enrich.height_change(p.heights, %(threshold_m)s) END,
-                   CASE WHEN abs(p.heights[cardinality(p.heights)] - p.heights[1]) >= %(ends_m)s
-                        THEN abs(p.heights[cardinality(p.heights)] - p.heights[1])
-                        ELSE 0 END
-               ) / e.length_m / %(full_grade)s,
-               1
+    SELECT id AS edge_id, ascent_m, descent_m,
+           CASE WHEN ascent_m IS NULL OR length_m = 0 THEN 0 ELSE least(
+               (ascent_m + descent_m) / length_m / %(full_grade)s, 1
            ) END AS value
-    FROM edges e LEFT JOIN profiles p USING (id)
+    FROM climbs
 """
 
 
@@ -247,6 +259,12 @@ class HeightChange(Attribute):
             "ends_m": self.ends_m,
             "full_grade": self.full_grade,
         }
+
+    async def score(self, conn: AsyncConnection[TupleRow]) -> int:
+        """Merge the score, and store the metres the claimed edges climb and drop."""
+        query, params = self.score_query()
+        sql = queries.MERGE_HEIGHTS_HEAD + query + queries.MERGE_SCORES_TAIL
+        return (await conn.execute(sql, {**params, "key": self.key})).rowcount
 
     @property
     def reach_m(self) -> float:

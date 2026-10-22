@@ -80,28 +80,35 @@ LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
     )
 $$;
 
--- How far heights along a line rise and fall in all, in metres, up and down alike. A change
--- counts only once it is threshold_m or more from the last height counted, so wobbles smaller
--- than that, the height model's noise, add nothing; what a steady slope gains below it at the
--- end is lost. Heights that are NULL (no height known there) are skipped.
-CREATE FUNCTION enrich.height_change(heights double precision[], threshold_m double precision)
-RETURNS double precision
+-- How far heights along a line rise and how far they fall, in metres. A change counts only once
+-- it is threshold_m or more from the last height counted, so wobbles smaller than that, the
+-- height model's noise, add nothing; what a steady slope gains below it at the end is lost.
+-- Heights that are NULL (no height known there) are skipped.
+CREATE FUNCTION enrich.climb(
+    heights double precision[],
+    threshold_m double precision,
+    OUT ascent_m double precision,
+    OUT descent_m double precision
+)
 LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE AS $$
 DECLARE
     v_counted double precision;
     v_height  double precision;
-    v_change  double precision := 0;
 BEGIN
+    ascent_m := 0;
+    descent_m := 0;
     FOREACH v_height IN ARRAY heights LOOP
         CONTINUE WHEN v_height IS NULL;
         IF v_counted IS NULL THEN
             v_counted := v_height;
-        ELSIF abs(v_height - v_counted) >= threshold_m THEN
-            v_change := v_change + abs(v_height - v_counted);
+        ELSIF v_height - v_counted >= threshold_m THEN
+            ascent_m := ascent_m + v_height - v_counted;
+            v_counted := v_height;
+        ELSIF v_counted - v_height >= threshold_m THEN
+            descent_m := descent_m + v_counted - v_height;
             v_counted := v_height;
         END IF;
     END LOOP;
-    RETURN v_change;
 END
 $$;
 

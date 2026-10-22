@@ -111,6 +111,16 @@ MERGE_SCORES_HEAD = """
     FROM (
 """
 
+# As MERGE_SCORES_HEAD, and the subquery's ascent_m and descent_m into their columns.
+MERGE_HEIGHTS_HEAD = """
+    UPDATE graph.edges e
+    SET scores = CASE WHEN s.value IS NULL THEN e.scores - %(key)s::text
+                      ELSE e.scores || jsonb_build_object(%(key)s::text, s.value) END,
+        ascent_m = s.ascent_m,
+        descent_m = s.descent_m
+    FROM (
+"""
+
 MERGE_SCORES_TAIL = """
     ) s
     WHERE e.id = s.edge_id
