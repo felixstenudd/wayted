@@ -6,8 +6,8 @@ from app.enrichment import enrich_pending
 from app.enrichment.definitions import HILLS
 from app.sources.tiles import Tile
 
-from ..graph.raw_data import ORIGIN_LAT, Conn, add_line
-from .area_data import Pool, add_road, run, scores
+from ..graph.raw_data import ORIGIN_LAT, ORIGIN_LON, Conn, add_line, add_way
+from .area_data import Pool, add_node_m, add_road, run, scores
 
 pytestmark = pytest.mark.db
 
@@ -161,7 +161,8 @@ async def test_heights_arriving_after_the_edge_was_scored_rescore_it(
 ) -> None:
     await add_road(admin_conn, EAST, (101, 1, 5), (102, 49, 5))
     await run(mapper_pool, enricher_pool)
-    assert await hills(admin_conn, EAST) == 0
+    # Not known, rather than flat.
+    assert "hills" not in (await scores(admin_conn))[EAST]
     assert (await climb(admin_conn, EAST))[:2] == (None, None)
 
     await add_heights(admin_conn, grade(0.05))
@@ -171,6 +172,26 @@ async def test_heights_arriving_after_the_edge_was_scored_rescore_it(
     ascent_m, _, length_m = await climb(admin_conn, EAST)
     assert await hills(admin_conn, EAST) == pytest.approx(0.05 / HILLS.full_grade, rel=0.02)
     assert ascent_m == pytest.approx(0.05 * length_m, rel=0.02)
+
+
+async def test_heights_arriving_beside_an_edge_rescore_it(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    # A road starting 30 m east of TILE, so its box misses the tile, but the smoothing reaches
+    # into it.
+    metres_per_degree = 111_320 * math.cos(math.radians(ORIGIN_LAT))
+    start_m = (TILE.bounds.east - ORIGIN_LON) * metres_per_degree + 30
+    await add_node_m(admin_conn, 101, start_m, 0.005 * 110_574)
+    await add_node_m(admin_conn, 102, start_m + 100, 0.005 * 110_574)
+    await add_way(admin_conn, EAST, [101, 102], {"highway": "path"})
+    await run(mapper_pool, enricher_pool)
+    assert (await climb(admin_conn, EAST))[:2] == (None, None)
+
+    await add_heights(admin_conn, grade(0.05))
+    await enrich_pending(enricher_pool.connection)
+
+    ascent_m, _, length_m = await climb(admin_conn, EAST)
+    assert ascent_m == pytest.approx(0.05 * length_m, rel=0.1)
 
 
 @pytest.mark.parametrize(

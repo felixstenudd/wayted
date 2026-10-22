@@ -56,9 +56,10 @@ async def test_road_without_a_park_is_scored_zero(
 
     await run(mapper_pool, enricher_pool)
 
-    # Every score is set: 0 means nothing near. A missing key means not scored yet, or for
-    # prepared, a way whose surface is not known. The road is an untagged path, so it is a guess.
-    expected = {attribute.key: 0.0 for attribute in ATTRIBUTES} | {"prepared": 0.3}
+    # Every score is set: 0 means nothing near. A missing key means not scored yet, for
+    # prepared a way whose surface is not known, and for hills an edge without heights, as here.
+    # The road is an untagged path, so its surface is a guess.
+    expected = {a.key: 0.0 for a in ATTRIBUTES if a.key != "hills"} | {"prepared": 0.3}
     assert (await scores(admin_conn))[FAR] == expected
 
 

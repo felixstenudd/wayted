@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
@@ -101,9 +101,10 @@ SURFACE = """
 # each rise less than threshold_m still counts. Without the smoothing and ends_m, noise on a
 # short edge would read as a steep one. The height model sees the deck of a bridge as the valley
 # below it, so bridges and tunnels count only their ends; ferries count nothing. Besides the
-# score, returns the metres climbed and dropped from source to target, NULL without heights.
-# Ups and downs score alike: an average change of full_grade (the share of the length) or more
-# scores 1; an edge without heights, such as at sea, scores 0.
+# score, returns the metres climbed and dropped from source to target. Ups and downs score alike:
+# an average change of full_grade (the share of the length) or more scores 1. An edge without
+# heights, such as before its tile is downloaded, has neither score nor metres, so it counts as
+# unknown rather than flat.
 HEIGHT_CHANGE = """
     WITH edges AS (
         SELECT e.id, e.geom, e.length_m,
@@ -161,7 +162,7 @@ HEIGHT_CHANGE = """
         ) ends
     )
     SELECT id AS edge_id, ascent_m, descent_m,
-           CASE WHEN ascent_m IS NULL OR length_m = 0 THEN 0 ELSE least(
+           CASE WHEN ascent_m IS NULL THEN NULL WHEN length_m = 0 THEN 0 ELSE least(
                (ascent_m + descent_m) / length_m / %(full_grade)s, 1
            ) END AS value
     FROM climbs
@@ -172,6 +173,8 @@ HEIGHT_CHANGE = """
 class Attribute(ABC):
     key: str  # the key in graph.edges.scores
     layers: tuple[FeatureLayer, ...]
+    # graph.edges columns the score query also returns, written along with the score
+    columns: ClassVar[tuple[str, ...]] = ()
 
     @abstractmethod
     def score_query(self) -> tuple[str, dict[str, Any]]:
@@ -185,7 +188,7 @@ class Attribute(ABC):
     async def score(self, conn: AsyncConnection[TupleRow]) -> int:
         """Merge {key: value} into the scores of the claimed edges. Returns the edges written."""
         query, params = self.score_query()
-        sql = queries.MERGE_SCORES_HEAD + query + queries.MERGE_SCORES_TAIL
+        sql = queries.merge_scores_head(self.columns) + query + queries.MERGE_SCORES_TAIL
         return (await conn.execute(sql, {**params, "key": self.key})).rowcount
 
 
@@ -245,6 +248,7 @@ class SurfaceScore(Attribute):
 class HeightChange(Attribute):
     """Edges are queued for it when their elevation tiles change, not by feature layers."""
 
+    columns = ("ascent_m", "descent_m")
     sample_m: float
     smooth_m: float
     threshold_m: float
@@ -260,12 +264,7 @@ class HeightChange(Attribute):
             "full_grade": self.full_grade,
         }
 
-    async def score(self, conn: AsyncConnection[TupleRow]) -> int:
-        """Merge the score, and store the metres the claimed edges climb and drop."""
-        query, params = self.score_query()
-        sql = queries.MERGE_HEIGHTS_HEAD + query + queries.MERGE_SCORES_TAIL
-        return (await conn.execute(sql, {**params, "key": self.key})).rowcount
-
     @property
     def reach_m(self) -> float:
-        return 0
+        """A height this far from the edge is in the mean of one of its samples."""
+        return self.smooth_m

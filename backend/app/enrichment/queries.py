@@ -84,12 +84,14 @@ QUEUE_NEAR_CHANGED = """
     WHERE c.layer = %(layer)s AND ST_Intersects(c.geom, enrich.expand_m(e.geom, %(reach_m)s))
 """
 
-# Edges whose heights a changed elevation tile may have changed: those whose box meets it.
+# Edges whose heights a changed elevation tile may have changed: those whose box comes within
+# reach_m of it, as a height that far from an edge is in the mean of one of its samples.
 QUEUE_ON_CHANGED_ELEVATION = """
     INSERT INTO graph.pending_edges (edge_id)
     SELECT DISTINCT e.id
     FROM changed_elevation t
-    JOIN graph.edges e ON e.geom && ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326)
+    JOIN graph.edges e
+      ON e.geom && enrich.expand_m(ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326), %(reach_m)s)
 """
 
 CLAIM_EDGES = """
@@ -103,23 +105,20 @@ CLAIM_EDGES = """
 
 HAS_PENDING_EDGES = "SELECT EXISTS (SELECT 1 FROM graph.pending_edges)"
 
-# An attribute's query goes between the two, as the subquery s. A NULL value leaves the key out.
-MERGE_SCORES_HEAD = """
+
+def merge_scores_head(columns: tuple[str, ...] = ()) -> str:
+    """
+    An attribute's query goes between this and MERGE_SCORES_TAIL, as the subquery s. A NULL
+    value leaves the key out. Each of columns is copied from the subquery's column of that name.
+    """
+    copied = "".join(f",\n        {column} = s.{column}" for column in columns)
+    return f"""
     UPDATE graph.edges e
     SET scores = CASE WHEN s.value IS NULL THEN e.scores - %(key)s::text
-                      ELSE e.scores || jsonb_build_object(%(key)s::text, s.value) END
+                      ELSE e.scores || jsonb_build_object(%(key)s::text, s.value) END{copied}
     FROM (
 """
 
-# As MERGE_SCORES_HEAD, and the subquery's ascent_m and descent_m into their columns.
-MERGE_HEIGHTS_HEAD = """
-    UPDATE graph.edges e
-    SET scores = CASE WHEN s.value IS NULL THEN e.scores - %(key)s::text
-                      ELSE e.scores || jsonb_build_object(%(key)s::text, s.value) END,
-        ascent_m = s.ascent_m,
-        descent_m = s.descent_m
-    FROM (
-"""
 
 MERGE_SCORES_TAIL = """
     ) s

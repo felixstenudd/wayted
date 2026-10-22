@@ -238,7 +238,9 @@ REQUEUE_DROPPED_ENDS = """
 UPDATE_EDGES = """
     UPDATE graph.edges e
     SET geom = c.geom, length_m = c.length_m, forward = c.forward, backward = c.backward,
-        scores = CASE WHEN c.change = 'moved' THEN '{}' ELSE e.scores END
+        scores = CASE WHEN c.change = 'moved' THEN '{}' ELSE e.scores END,
+        ascent_m = CASE WHEN c.change = 'moved' THEN NULL ELSE e.ascent_m END,
+        descent_m = CASE WHEN c.change = 'moved' THEN NULL ELSE e.descent_m END
     FROM segment_changes c
     WHERE e.id = c.edge_id AND c.change IN ('moved', 'access')
 """
@@ -246,7 +248,7 @@ UPDATE_EDGES = """
 # Runs before INSERT_EDGES, so a new edge of a retagged way is queued only once.
 QUEUE_CHANGED_EDGES = """
     WITH retagged AS (
-        UPDATE graph.edges SET scores = '{}'
+        UPDATE graph.edges SET scores = '{}', ascent_m = NULL, descent_m = NULL
         WHERE way_id IN (SELECT id FROM retagged_ways)
         RETURNING id
     )

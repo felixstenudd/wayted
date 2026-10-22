@@ -11,7 +11,10 @@ from psycopg.rows import TupleRow
 from app.db import Connect, pipeline_lock
 
 from . import queries
+from .attributes import HeightChange
 from .definitions import ATTRIBUTES, LAYERS
+
+HEIGHTS_REACH_M = max((a.reach_m for a in ATTRIBUTES if isinstance(a, HeightChange)), default=0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +80,9 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
                 edges_queued += (
                     await conn.execute(queries.QUEUE_NEAR_CHANGED, queue_params)
                 ).rowcount
-        edges_queued += (await conn.execute(queries.QUEUE_ON_CHANGED_ELEVATION)).rowcount
+        edges_queued += (
+            await conn.execute(queries.QUEUE_ON_CHANGED_ELEVATION, {"reach_m": HEIGHTS_REACH_M})
+        ).rowcount
         # Sees the edges queued just above, so most are scored in this batch.
         edges_scored = (await conn.execute(queries.CLAIM_EDGES, params)).rowcount
         await conn.execute("ANALYZE claimed_edges")

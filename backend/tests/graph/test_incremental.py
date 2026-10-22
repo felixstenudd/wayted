@@ -14,7 +14,9 @@ RESIDENTIAL = {"highway": "residential"}
 
 async def forget_scoring_work(conn: Conn) -> None:
     """Score every edge and empty the enricher's queue, as if the enricher had run."""
-    await conn.execute("""UPDATE graph.edges SET scores = '{"green": 0.5}'""")
+    await conn.execute(
+        """UPDATE graph.edges SET scores = '{"green": 0.5}', ascent_m = 5, descent_m = 2"""
+    )
     await conn.execute("TRUNCATE graph.pending_edges")
 
 
@@ -54,9 +56,9 @@ async def test_moved_node_updates_the_edge_and_clears_its_scores(
     await map_pending(mapper_pool.connection)
 
     cur = await admin_conn.execute(
-        "SELECT id, ST_NPoints(geom), round(length_m), scores FROM graph.edges"
+        "SELECT id, ST_NPoints(geom), round(length_m), scores, ascent_m, descent_m FROM graph.edges"
     )
-    assert await cur.fetchall() == [(edge_id, 3, 250, {})]
+    assert await cur.fetchall() == [(edge_id, 3, 250, {}, None, None)]
     assert await pending_edges(admin_conn) == {edge_id}
 
 
@@ -183,8 +185,10 @@ async def test_retagged_way_updates_access_and_clears_scores(
     await add_way(admin_conn, 1, [1, 2], one_way)
     await map_pending(mapper_pool.connection)
 
-    cur = await admin_conn.execute("SELECT id, forward, backward, scores FROM graph.edges")
-    assert await cur.fetchall() == [(edge_id, BOTH, ["running"], {})]
+    cur = await admin_conn.execute(
+        "SELECT id, forward, backward, scores, ascent_m, descent_m FROM graph.edges"
+    )
+    assert await cur.fetchall() == [(edge_id, BOTH, ["running"], {}, None, None)]
     cur = await admin_conn.execute("SELECT tags FROM graph.ways")
     assert await cur.fetchall() == [(one_way,)]
     assert await pending_edges(admin_conn) == {edge_id}
