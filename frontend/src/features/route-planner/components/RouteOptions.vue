@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ArrowUpRight } from '@lucide/vue'
 import { RadioGroupItem, RadioGroupRoot } from 'reka-ui'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { formatClimbM, isFlat, scoreMessage } from '@/features/route'
+import { AttributeSymbol, formatClimbM, isFlat, scoreMessage } from '@/features/route'
 
 import { useShownRoute } from '../composables/useShownRoute'
 import { formatKm } from '../distance'
@@ -48,19 +47,16 @@ const anyClimbKnown = computed(() =>
 function climbOf(ascentM: number | null, descentM: number | null) {
 	if (ascentM === null || descentM === null) {
 		const spoken = t('route.climb.unknown')
-		return anyClimbKnown.value
-			? { text: t('route.climb.unknownShort'), spoken, withIcon: true }
-			: null
+		return anyClimbKnown.value ? { text: t('route.climb.unknownShort'), spoken } : null
 	}
 	if (isFlat(ascentM, descentM)) {
 		const flat = t('route.climb.flat')
-		return { text: flat, spoken: flat, withIcon: false }
+		return { text: flat, spoken: flat }
 	}
 	const m = formatClimbM(ascentM, locale.value)
 	return {
 		text: t('route.climb.metres', { m }),
 		spoken: t('route.climb.climbs', { m }),
-		withIcon: true,
 	}
 }
 
@@ -130,11 +126,7 @@ const options = computed(() =>
 			</span>
 			<span class="text-body font-semibold text-ink">{{ option.km }}</span>
 			<span v-if="option.climb" class="flex items-center gap-1 text-caption text-graphite">
-				<ArrowUpRight
-					v-if="option.climb.withIcon"
-					class="size-3.5 shrink-0"
-					aria-hidden="true"
-				/>
+				<AttributeSymbol attribute-key="hills" />
 				{{ option.climb.text }}
 			</span>
 			<span v-if="option.isEdited" class="text-caption font-semibold text-ink">

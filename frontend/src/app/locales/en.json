@@ -392,9 +392,8 @@
 		},
 		"detail": {
 			"title": "Route",
-			"details": "{activity}, {shape}, {km} km, saved {date}",
-			"detailsWithClimb": "{activity}, {shape}, {km} km, {climb}, saved {date}",
-			"flat": "flat",
+			"details": "{activity}, {shape}, saved {date}",
+			"distanceKm": "{km} km",
 			"more": "More for this route",
 			"loading": "Loading the route…",
 			"missingTitle": "Route not found",

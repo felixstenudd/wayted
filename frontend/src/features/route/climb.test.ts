@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatClimbM, isFlat, roundClimbM } from './climb'
+import { climbText, formatClimbM, isFlat, roundClimbM } from './climb'
 
 describe('roundClimbM', () => {
 	it('rounds to 5 m under 100 m and to 10 m from there', () => {
@@ -22,5 +22,22 @@ describe('formatClimbM', () => {
 	it('writes the rounded metres for the locale', () => {
 		expect(formatClimbM(1234, 'en')).toBe('1,230')
 		expect(formatClimbM(47, 'en')).toBe('45')
+	})
+})
+
+describe('climbText', () => {
+	const t = (key: string, named: Record<string, string>) => `${key} ${JSON.stringify(named)}`
+
+	it('says both ways in rounded metres', () => {
+		expect(climbText(122, 47, t, 'en')).toBe('route.climb.upDown {"up":"120","down":"45"}')
+	})
+
+	it('says flat when neither way reaches 10 m', () => {
+		expect(climbText(4, 6, t, 'en')).toBe('route.climb.flat {}')
+	})
+
+	it('says nothing while the heights are not known', () => {
+		expect(climbText(null, 3, t, 'en')).toBeNull()
+		expect(climbText(undefined, undefined, t, 'en')).toBeNull()
 	})
 })

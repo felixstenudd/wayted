@@ -4,7 +4,7 @@ import { useIsMutating } from '@tanstack/vue-query'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { formatClimbM, isFlat } from '@/features/route'
+import { climbText } from '@/features/route'
 
 import { rerouteKey } from '../api'
 import { useShownRoute } from '../composables/useShownRoute'
@@ -33,16 +33,9 @@ const editedFit = computed(() => {
 	const fit = routeFit(shown.value.properties.length_m, planner.search?.request.target_distance_m)
 	return fit && fit.kind !== 'close' ? fit : null
 })
-// Left out while the heights are not known: a missing climb is nothing the user can fix.
-const climb = computed(() => {
-	const { ascent_m: ascentM, descent_m: descentM } = shown.value?.properties ?? {}
-	if (ascentM == null || descentM == null) return null
-	if (isFlat(ascentM, descentM)) return t('route.climb.flat')
-	return t('route.climb.upDown', {
-		up: formatClimbM(ascentM, locale.value),
-		down: formatClimbM(descentM, locale.value),
-	})
-})
+const climb = computed(() =>
+	climbText(shown.value?.properties.ascent_m, shown.value?.properties.descent_m, t, locale.value),
+)
 const plannerWarnings = computed(() =>
 	isEdited.value ? [] : (shown.value?.properties.warnings ?? []),
 )

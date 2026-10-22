@@ -15,3 +15,23 @@ export const isFlat = (ascentM: number, descentM: number) =>
 export function formatClimbM(m: number, locale: string): string {
 	return new Intl.NumberFormat(locale).format(roundClimbM(m))
 }
+
+type Translate = (key: string, named: Record<string, string>) => string
+
+/**
+ * The climb as a route's length is followed by it: "120 m up, 115 m down", or "Flat". Null while
+ * the heights are not known, which is nothing the user can fix, so it is left out.
+ */
+export function climbText(
+	ascentM: number | null | undefined,
+	descentM: number | null | undefined,
+	t: Translate,
+	locale: string,
+): string | null {
+	if (ascentM == null || descentM == null) return null
+	if (isFlat(ascentM, descentM)) return t('route.climb.flat', {})
+	return t('route.climb.upDown', {
+		up: formatClimbM(ascentM, locale),
+		down: formatClimbM(descentM, locale),
+	})
+}
