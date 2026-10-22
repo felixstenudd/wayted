@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Areas } from '../../dev-api/types'
+import type { Areas, Lines } from '../../dev-api/types'
 import {
 	areaKey,
 	areaLayers,
@@ -70,6 +70,35 @@ describe('osmUrl', () => {
 	})
 })
 
+const river: Lines = {
+	type: 'FeatureCollection',
+	features: [
+		{
+			type: 'Feature',
+			geometry: {
+				type: 'MultiLineString',
+				coordinates: [
+					[
+						[18, 59],
+						[18.1, 59.1],
+					],
+				],
+			},
+			properties: { layer: 'water_lines', osm_type: 'way', osm_id: 7, tags: {} },
+		},
+	],
+}
+
+describe('line features', () => {
+	it('flatten and list their layers like areas', () => {
+		expect(toMapAreas(river).features[0]?.properties).toEqual({
+			key: 'water_lines/way/7',
+			layer: 'water_lines',
+		})
+		expect(areaLayers(river)).toEqual(['water_lines'])
+	})
+})
+
 describe('areaLayers', () => {
 	it('lists the layers in view once each, sorted', () => {
 		const inView = areas(
@@ -85,8 +114,13 @@ describe('layerToken', () => {
 	it('gives parks and nature their own colours, and other layers the plain one', () => {
 		expect(layerToken('parks')).toBe('--map-park')
 		expect(layerToken('nature')).toBe('--map-nature')
-		expect(layerToken('water')).toBe('--map-area')
+		expect(layerToken('bridges')).toBe('--map-area')
 		expect(layerToken('toString')).toBe('--map-area')
+	})
+
+	it('draws water areas and water lines in one water colour', () => {
+		expect(layerToken('water')).toBe('--map-water')
+		expect(layerToken('water_lines')).toBe('--map-water')
 	})
 })
 

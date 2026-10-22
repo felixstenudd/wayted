@@ -9,7 +9,17 @@ from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 from psycopg_pool import AsyncConnectionPool
 
-from app.sources.osm import NATURE, PARKS, ROADS, OsmData, OsmDownloader, OsmNode, OsmWay
+from app.sources.osm import (
+    NATURE,
+    PARKS,
+    ROADS,
+    WATER,
+    WATER_LINES,
+    OsmData,
+    OsmDownloader,
+    OsmNode,
+    OsmWay,
+)
 from app.sources.osm.layers import area_selectors
 from app.sources.osm.overpass import build_query
 from app.sources.tiles import Bounds
@@ -87,6 +97,34 @@ async def test_nature_asks_for_each_kind_of_land_as_ways_and_multipolygons() -> 
         assert f'relation["{key}"~"^({values})$"]["type"="multipolygon"]' in query
     assert 'way["leisure"="nature_reserve"]' in query
     assert 'relation["leisure"="nature_reserve"]["type"="multipolygon"]' in query
+
+
+async def test_water_asks_for_each_kind_as_ways_and_multipolygons() -> None:
+    seen: list[httpx.Request] = []
+    async with client_answering({"elements": []}, seen) as client:
+        await OsmDownloader(client, [WATER]).fetch(BOUNDS)
+
+    query = sent_query(seen[0])
+    assert "is_in" in query
+    for selector in [
+        '["natural"="water"]',
+        '["waterway"="riverbank"]',
+        '["landuse"~"^(reservoir|basin)$"]',
+    ]:
+        assert f"way{selector}" in query
+        assert f'relation{selector}["type"="multipolygon"]' in query
+
+
+async def test_water_lines_ask_for_ways_only() -> None:
+    seen: list[httpx.Request] = []
+    async with client_answering({"elements": []}, seen) as client:
+        await OsmDownloader(client, [WATER_LINES]).fetch(BOUNDS)
+
+    query = sent_query(seen[0])
+    assert 'way["natural"="coastline"]' in query
+    assert 'way["waterway"~"^(river|canal)$"]' in query
+    assert "relation" not in query
+    assert "is_in" not in query
 
 
 def test_area_selectors_merge_the_values_of_one_key() -> None:

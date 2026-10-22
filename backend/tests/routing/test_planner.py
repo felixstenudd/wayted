@@ -56,7 +56,7 @@ def ends(route: dict[str, Any]) -> tuple[list[float], list[float]]:
     return coordinates[0], coordinates[-1]
 
 
-def coordinates(column: int, row: int) -> object:
+def coordinates(column: float, row: float) -> object:
     """A grid crossing as GeoJSON coordinates, to compare with approximately."""
     return pytest.approx([ORIGIN_LON + column * COLUMN_STEPS * STEP, ORIGIN_LAT + row * STEP])
 
@@ -100,6 +100,7 @@ async def test_loop_returns_to_its_start_at_about_the_target(
 
     assert route["length_m"] == pytest.approx(target_m, rel=TOLERANCE)
     assert route["warnings"] == []
+    assert route["waypoint_order"] == []
     assert ends(route) == (coordinates(12, 12), coordinates(12, 12))
     # A grid has streets enough that the loop never has to go back the way it came.
     assert route["reused_m"] < 0.05 * route["length_m"]
@@ -116,10 +117,10 @@ async def test_route_line_is_continuous_and_matches_its_edges(
         cur = await conn.execute(
             """
             SELECT ST_Length(ST_GeomFromGeoJSON(%s)::geography),
-                   (SELECT sum(length_m) FROM graph.edges e, jsonb_array_elements_text(%s) i
-                    WHERE e.id = i::bigint)
+                   (SELECT sum(length_m) FROM graph.edges e, unnest(%s::bigint[]) i
+                    WHERE e.id = i)
             """,
-            (Jsonb(route["geometry"]), Jsonb(route["edges"])),
+            (Jsonb(route["geometry"]), [step["edge_id"] for step in route["edges"]]),
         )
         row = await cur.fetchone()
 
@@ -128,6 +129,62 @@ async def test_route_line_is_continuous_and_matches_its_edges(
     assert route["geometry"]["type"] == "LineString"
     assert line_m == pytest.approx(route["length_m"], rel=1e-3)
     assert edges_m == pytest.approx(route["length_m"])
+
+
+async def test_route_edges_say_which_way_each_is_travelled(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool, one_way_rows=frozenset({12}))
+
+    route = await plan(api_pool, "cycling", CENTRE, None, 3_000)
+
+    steps = route["edges"]
+    async with api_pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT CASE WHEN s.forward THEN e.source ELSE e.target END,
+                   CASE WHEN s.forward THEN e.target ELSE e.source END,
+                   'cycling' = ANY (CASE WHEN s.forward THEN e.forward ELSE e.backward END)
+            FROM unnest(%s::bigint[], %s::boolean[]) WITH ORDINALITY s (edge_id, forward, n)
+            JOIN graph.edges e ON e.id = s.edge_id
+            ORDER BY s.n
+            """,
+            ([s["edge_id"] for s in steps], [s["forward"] for s in steps]),
+        )
+        travelled = await cur.fetchall()
+
+    assert len(travelled) == len(steps)
+    # Each edge starts where the one before ends, in a direction the activity may go.
+    assert all(allowed for _, _, allowed in travelled)
+    assert all(a[1] == b[0] for a, b in zip(travelled, travelled[1:], strict=False))
+    assert travelled[0][0] == travelled[-1][1] == node_id(12, 12)
+
+
+async def test_route_scores_say_how_much_is_known_and_how_it_scores_there(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    cur = await admin_conn.execute(
+        """
+        UPDATE graph.edges SET scores = CASE source
+            WHEN %(a)s THEN '{"green": 1, "water": 0.5}'::jsonb ELSE '{"green": 0}'::jsonb END
+        WHERE (source, target) IN ((%(a)s, %(b)s), (%(b)s, %(c)s))
+        RETURNING id, length_m
+        """,
+        {"a": node_id(0, 0), "b": node_id(1, 0), "c": node_id(2, 0)},
+    )
+    (first, first_m), (second, second_m) = sorted(await cur.fetchall())
+
+    async with api_pool.connection() as conn:
+        cur = await conn.execute("SELECT routing.route_scores(%s)", ([first, second],))
+        row = await cur.fetchone()
+
+    assert row is not None
+    share = first_m / (first_m + second_m)
+    assert row[0] == {
+        "green": {"mean": pytest.approx(share, abs=1e-4), "coverage": 1},
+        "water": {"mean": 0.5, "coverage": pytest.approx(share, abs=1e-4)},
+    }
 
 
 async def test_route_runs_from_start_to_finish_at_about_the_target(
@@ -445,8 +502,9 @@ async def test_loop_heads_for_the_park_when_green_is_preferred(
     preferred = await plan(api_pool, "running", CENTRE, None, 4_000, {"green": 1})
     avoided = await plan(api_pool, "running", CENTRE, None, 4_000, {"green": -1})
 
-    assert preferred["scores"]["green"] > 0.5
-    assert avoided["scores"]["green"] < 0.1
+    assert preferred["scores"]["green"]["mean"] > 0.5
+    assert avoided["scores"]["green"]["mean"] < 0.1
+    assert preferred["scores"]["green"]["coverage"] == 1
     assert preferred["length_m"] == pytest.approx(4_000, rel=TOLERANCE)
 
 
@@ -512,6 +570,9 @@ async def test_unreachable_finish_is_an_error(
         (3_000, {"plan": {"snap": 50}}),
         (3_000, {"plan": {"snap_m": -1}}),
         (3_000, {"turns": {"turn_m": -1}}),
+        (3_000, {"options": {"count": 0}}),
+        (3_000, {"options": {"overlap": 0}}),
+        (3_000, {"options": {"overlap": 1.5}}),
     ],
 )
 async def test_bad_target_or_settings_are_rejected(
@@ -599,6 +660,8 @@ async def test_waypoint_as_soon_as_possible_is_reached_first_by_the_direct_way(
     assert first_m == pytest.approx(3 * 113.7 + 2 * 111.2, rel=0.02)
     assert anywhere_m > first_m
     assert route["length_m"] == pytest.approx(3_000, rel=TOLERANCE)
+    # The second waypoint given is passed first.
+    assert route["waypoint_order"] == [1, 0]
 
 
 async def test_route_without_a_target_passes_its_waypoint_by_the_direct_way(
@@ -662,3 +725,129 @@ async def test_bad_waypoints_are_rejected(api_pool: Pool, waypoints: object) -> 
     async with api_pool.connection() as conn:
         with pytest.raises(psycopg.errors.InvalidParameterValue, match="waypoint"):
             await conn.execute("SELECT * FROM routing.read_waypoints(%s)", (Jsonb(waypoints),))
+
+
+async def shared_m(pool: Pool, a: dict[str, Any], b: dict[str, Any]) -> float:
+    """The length of the edges two routes both use, each counted once."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT coalesce(sum(length_m), 0) FROM graph.edges
+            WHERE id = ANY (%s::bigint[]) AND id = ANY (%s::bigint[])
+            """,
+            ([s["edge_id"] for s in a["edges"]], [s["edge_id"] for s in b["edges"]]),
+        )
+        row = await cur.fetchone()
+    assert row is not None
+    shared: float = row[0]
+    return shared
+
+
+async def test_loop_comes_with_options_that_go_other_ways(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    route = await plan(api_pool, "running", CENTRE, None, 3_000)
+
+    routes = [route, *route["options"]]
+    assert len(routes) == 3
+    for option in route["options"]:
+        assert option["length_m"] == pytest.approx(3_000, rel=TOLERANCE)
+        assert ends(option) == (coordinates(12, 12), coordinates(12, 12))
+        assert set(option) >= {"geometry", "edges", "scores", "warnings", "waypoint_order"}
+    for i, a in enumerate(routes):
+        for b in routes[i + 1 :]:
+            shorter_m = min(a["length_m"], b["length_m"])
+            assert await shared_m(api_pool, a, b) <= 0.5 * shorter_m
+
+
+async def test_options_can_be_turned_off_or_run_out_of_time(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    single = await plan(
+        api_pool, "running", CENTRE, None, 3_000, settings={"options": {"count": 1}}
+    )
+    rushed = await plan(
+        api_pool, "running", CENTRE, None, 3_000, settings={"options": {"budget_ms": 0}}
+    )
+
+    assert single["options"] == []
+    assert rushed["options"] == []
+    assert rushed["edges"] == single["edges"]
+
+
+async def test_options_never_score_much_worse_than_the_best(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    # A park in one corner makes one way round clearly the best.
+    await admin_conn.execute(
+        """
+        UPDATE graph.edges SET scores = '{"green": 1}'
+        WHERE source IN (SELECT id FROM graph.vertices WHERE ST_Y(geom) > %s AND ST_X(geom) < %s)
+        """,
+        (ORIGIN_LAT + 13 * STEP, ORIGIN_LON + 11 * COLUMN_STEPS * STEP),
+    )
+
+    strict = await plan(
+        api_pool, "running", CENTRE, None, 3_000, {"green": 1}, {"options": {"margin": 0.01}}
+    )
+    loose = await plan(api_pool, "running", CENTRE, None, 3_000, {"green": 1})
+
+    assert len(strict["options"]) < len(loose["options"])
+    for option in strict["options"]:
+        assert option["scores"]["green"]["mean"] > 0.5
+
+
+async def test_options_with_waypoints_all_pass_them(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    # Reached first, so the piece after it, which options vary, has most of the target to shape.
+    near = waypoint(13, 13, at="asap")
+
+    route = await plan(api_pool, "running", CENTRE, None, 4_000, waypoints=[near])
+
+    assert route["options"]
+    for option in route["options"]:
+        _, off_m = await passed(api_pool, option, 13, 13)
+        assert off_m < 1
+        assert option["waypoint_order"] == [0]
+        assert option["length_m"] == pytest.approx(4_000, rel=TOLERANCE)
+
+
+async def test_loop_through_a_point_anywhere_has_options_that_pass_it(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    route = await plan(api_pool, "running", CENTRE, None, 4_000, waypoints=[waypoint(12, 16)])
+
+    routes = [route, *route["options"]]
+    assert len(routes) > 1
+    for option in route["options"]:
+        _, off_m = await passed(api_pool, option, 12, 16)
+        assert off_m < 1
+        assert option["length_m"] == pytest.approx(4_000, rel=TOLERANCE)
+    for i, a in enumerate(routes):
+        for b in routes[i + 1 :]:
+            assert await shared_m(api_pool, a, b) <= 0.5 * min(a["length_m"], b["length_m"])
+
+
+async def test_route_without_a_target_has_options_on_other_streets(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    # Twenty blocks east, so a street one block over adds about a tenth.
+    route = await plan(api_pool, "running", grid_point(2, 12), grid_point(22, 12), None)
+
+    assert route["options"]
+    for option in route["options"]:
+        assert ends(option) == (coordinates(2, 12), coordinates(22, 12))
+        assert option["length_m"] < 1.2 * route["length_m"]
+        assert option["warnings"] == []
+        assert await shared_m(api_pool, route, option) <= 0.5 * route["length_m"]

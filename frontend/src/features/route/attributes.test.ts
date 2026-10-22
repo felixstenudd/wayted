@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { groupAttributes, humanizeKey, weightWord } from './attributes'
+import { groupAttributes, humanizeKey, weightMessage, weightWord } from './attributes'
 import type { RouteAttribute } from './types'
 
 const attribute = (key: string, group: string, scored = true) =>
@@ -10,7 +10,7 @@ describe('groupAttributes', () => {
 	it('groups attributes in the order the groups first appear, keeping their order', () => {
 		const groups = groupAttributes([
 			attribute('green', 'surroundings'),
-			attribute('gravel', 'surface'),
+			attribute('prepared', 'surface'),
 			attribute('water', 'surroundings', false),
 		])
 
@@ -18,7 +18,7 @@ describe('groupAttributes', () => {
 			groups.map(({ group, attributes }) => [group, attributes.map((a) => a.key)]),
 		).toEqual([
 			['surroundings', ['green', 'water']],
-			['surface', ['gravel']],
+			['surface', ['prepared']],
 		])
 	})
 })
@@ -33,6 +33,22 @@ describe('weightWord', () => {
 		[0.9, 'prefer'],
 	])('calls %d "%s"', (weight, word) => {
 		expect(weightWord(weight)).toBe(word)
+	})
+})
+
+describe('weightMessage', () => {
+	const has = (path: string) => path.startsWith('planner.preferences.weightWords.water.')
+
+	it("uses the attribute's own word when it has one", () => {
+		expect(weightMessage('water', 1, has)).toBe('planner.preferences.weightWords.water.prefer')
+	})
+
+	it('falls back to the plain word for an attribute without its own', () => {
+		expect(weightMessage('bridges', -0.5, has)).toBe('planner.preferences.weights.ratherNot')
+	})
+
+	it("keeps the plain word for don't mind", () => {
+		expect(weightMessage('water', 0, has)).toBe('planner.preferences.weights.dontMind')
 	})
 })
 

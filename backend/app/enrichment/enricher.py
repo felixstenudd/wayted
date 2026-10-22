@@ -1,4 +1,7 @@
-"""Builds features from the elements queued by the triggers on raw and scores edges near them."""
+"""
+Builds features from the elements queued by the triggers on raw, scores edges near them, and
+counts users' segment reviews of queued edges.
+"""
 
 from dataclasses import dataclass
 
@@ -19,7 +22,7 @@ class BatchResult:
     elevation_tiles_claimed: int
     features_built: int
     features_deleted: int
-    features_skipped: int  # a missing member way or node, not closed, or empty
+    features_skipped: int  # a missing way or node, an open area, a line under two nodes, or empty
     edges_queued: int  # by changed features and heights
     edges_scored: int
 
@@ -80,6 +83,7 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
         await conn.execute("ANALYZE claimed_edges")
         for attribute in ATTRIBUTES:
             await attribute.score(conn)
+        await conn.execute(queries.COUNT_FEEDBACK)
     return BatchResult(
         ways_claimed=ways_claimed,
         relations_claimed=relations_claimed,

@@ -2,6 +2,7 @@ import httpx
 import pytest
 from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
+from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 from starlette.types import Message, Receive, Scope, Send
 
@@ -123,11 +124,26 @@ async def test_graph_returns_edges_and_their_vertices(
     assert properties["tags"] == {"highway": "residential", "name": "Main"}
     assert properties["forward"] == ["cycling", "running"]
     assert properties["scores"] == {}
+    assert properties["feedback"] == {}
     assert properties["length_m"] == pytest.approx(113.7, abs=0.5)
     assert [(v["properties"]["id"], v["geometry"]) for v in body["vertices"]["features"]] == [
         (1, {"type": "Point", "coordinates": [18.0, 59.3]}),
         (2, {"type": "Point", "coordinates": [18.002, 59.3]}),
     ]
+
+
+async def test_graph_edges_carry_their_review_votes(
+    client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    await add_line(admin_conn, 10, [(1, 0, 0), (2, 2, 0)], {"highway": "residential"})
+    await map_pending(mapper_pool.connection)
+    feedback = {"running": {"green": {"up": 2, "down": 1}}}
+    await admin_conn.execute("UPDATE graph.edges SET feedback = %s", (Jsonb(feedback),))
+
+    response = await client.get("/graph", params=GRID)
+
+    [edge] = response.json()["edges"]["features"]
+    assert edge["properties"]["feedback"] == feedback
 
 
 async def test_graph_of_an_empty_area_is_two_empty_collections(client: httpx.AsyncClient) -> None:
@@ -235,6 +251,51 @@ async def test_areas_outside_the_box_are_left_out(
 
 async def test_areas_refuses_an_inside_out_box(client: httpx.AsyncClient) -> None:
     response = await client.get("/areas", params={**GRID, "west": 18.02})
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {"detail": "West must not be east of east."},
+    )
+
+
+async def test_lines_returns_the_rivers_in_the_box(
+    client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    river = {"waterway": "river", "name": "Älven"}
+    await add_line(admin_conn, 101, [(1, 0, 0), (2, 2, 1)], river)
+    await map_pending(mapper_pool.connection)
+    await enrich_pending(enricher_pool.connection)
+
+    response = await client.get("/lines", params=GRID)
+
+    assert response.status_code == 200
+    [line] = response.json()["features"]
+    assert line["geometry"] == {
+        "type": "MultiLineString",
+        "coordinates": [[[18.0, 59.3], [18.002, 59.301]]],
+    }
+    assert line["properties"] == {
+        "layer": "water_lines",
+        "osm_type": "way",
+        "osm_id": 101,
+        "tags": river,
+    }
+
+
+async def test_lines_outside_the_box_are_left_out(
+    client: httpx.AsyncClient, admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_line(admin_conn, 101, [(1, 0, 0), (2, 2, 1)], {"waterway": "river"})
+    await map_pending(mapper_pool.connection)
+    await enrich_pending(enricher_pool.connection)
+
+    response = await client.get("/lines", params={**GRID, "west": 18.005})
+
+    assert response.json() == {"type": "FeatureCollection", "features": []}
+
+
+async def test_lines_refuses_an_inside_out_box(client: httpx.AsyncClient) -> None:
+    response = await client.get("/lines", params={**GRID, "west": 18.02})
 
     assert (response.status_code, response.json()) == (
         400,

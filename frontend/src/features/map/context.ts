@@ -17,13 +17,20 @@ export interface MapContext {
 	// the style is loaded, so sources and layers can be added
 	isReady: Ref<boolean>
 	hasBaseMapFailed: Ref<boolean>
+	// how far panels and sheets reach over the map's edges, so a fitted view is not hidden
+	coveredPx: Ref<{ left: number; bottom: number }>
 }
 
 const mapKey: InjectionKey<MapContext> = Symbol('map')
 
 /** Call in the component that holds both the MapView and everything that draws on it. */
 export function provideMap(): void {
-	provide(mapKey, { map: shallowRef(null), isReady: ref(false), hasBaseMapFailed: ref(false) })
+	provide(mapKey, {
+		map: shallowRef(null),
+		isReady: ref(false),
+		hasBaseMapFailed: ref(false),
+		coveredPx: ref({ left: 0, bottom: 0 }),
+	})
 }
 
 export function useMapContext(): MapContext {

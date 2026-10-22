@@ -5,6 +5,7 @@ import {
 	circleRing,
 	clampBounds,
 	distanceM,
+	distanceToLineM,
 	EARTH_RADIUS_M,
 	ringBounds,
 } from './geometry'
@@ -74,5 +75,33 @@ describe('boundsPolygon and ringBounds', () => {
 		expect(ring).toHaveLength(5)
 		expect(ring[4]).toEqual(ring[0])
 		expect(ringBounds(ring)).toEqual(bounds)
+	})
+})
+
+describe('distanceToLineM', () => {
+	// About 110 m of street running east.
+	const street = [
+		[18, 59],
+		[18.002, 59],
+	]
+
+	it('measures across to the middle of the line', () => {
+		const metres = distanceToLineM({ lon: 18.001, lat: 59.0001 }, street)
+		expect(metres).toBeCloseTo(
+			distanceM({ lon: 18.001, lat: 59 }, { lon: 18.001, lat: 59.0001 }),
+			0,
+		)
+	})
+
+	it('measures to the nearest end past it', () => {
+		const past = { lon: 18.003, lat: 59 }
+		expect(distanceToLineM(past, street)).toBeCloseTo(
+			distanceM(past, { lon: 18.002, lat: 59 }),
+			0,
+		)
+	})
+
+	it('is zero on the line', () => {
+		expect(distanceToLineM({ lon: 18.0005, lat: 59 }, street)).toBeCloseTo(0, 3)
 	})
 })

@@ -1,15 +1,29 @@
 import pytest
 
-from app.enrichment import LAYERS
+from app.enrichment import LAYERS, LineLayer
 from app.sources.osm import LAYERS as DOWNLOADED_LAYERS
 
-from ..graph.raw_data import ORIGIN_LAT, ORIGIN_LON, STEP, Conn, add_node, add_way
-from .area_data import Pool, add_relation, add_square, area_is, areas, feature_ways, grid_wkt, run
+from ..graph.raw_data import ORIGIN_LAT, ORIGIN_LON, STEP, Conn, add_line, add_node, add_way
+from .area_data import (
+    Pool,
+    add_relation,
+    add_square,
+    area_is,
+    areas,
+    feature_ways,
+    grid_line_wkt,
+    grid_wkt,
+    line_is,
+    lines,
+    run,
+)
 
 pytestmark = pytest.mark.db
 
 PARK = {"leisure": "park"}
 MULTIPOLYGON_PARK = {"leisure": "park", "type": "multipolygon"}
+RIVER = {"waterway": "river"}
+RIVER_POINTS = [(1, 0, 0), (2, 5, 2), (3, 10, 0)]
 
 
 async def test_closed_park_way_becomes_an_area(
@@ -189,4 +203,85 @@ async def test_every_downloaded_area_layer_is_built_from_the_same_tags() -> None
 
     for layer in DOWNLOADED_LAYERS:
         if layer.is_area:
+            assert built.get(layer.code) == layer.tags, layer.code
+
+
+async def test_lake_becomes_a_water_area(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_square(admin_conn, 101, 1, (0, 0, 10, 10), {"natural": "water"})
+
+    await run(mapper_pool, enricher_pool)
+
+    cur = await admin_conn.execute("SELECT layer, osm_type, osm_id FROM enrich.areas")
+    assert await cur.fetchall() == [("water", "way", 101)]
+
+
+@pytest.mark.parametrize("tags", [RIVER, {"waterway": "canal"}, {"natural": "coastline"}])
+async def test_water_way_becomes_a_line(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, tags: dict[str, str]
+) -> None:
+    await add_line(admin_conn, 101, RIVER_POINTS, tags)
+
+    result = await run(mapper_pool, enricher_pool)
+
+    assert await lines(admin_conn) == [("water_lines", 101)]
+    assert await line_is(admin_conn, 101, grid_line_wkt([(0, 0), (5, 2), (10, 0)]))
+    assert await feature_ways(admin_conn) == {("way", 101, 101)}
+    assert sum(b.features_built for b in result.batches) == 1
+
+
+async def test_stream_is_not_a_line(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_line(admin_conn, 101, RIVER_POINTS, {"waterway": "stream"})
+
+    await run(mapper_pool, enricher_pool)
+
+    assert await lines(admin_conn) == []
+
+
+async def test_river_tag_removed_deletes_the_line(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_line(admin_conn, 101, RIVER_POINTS, RIVER)
+    await run(mapper_pool, enricher_pool)
+
+    await add_way(admin_conn, 101, [1, 2, 3], {"name": "Former river"})
+    result = await run(mapper_pool, enricher_pool)
+
+    assert await lines(admin_conn) == []
+    assert sum(b.features_deleted for b in result.batches) == 1
+
+
+async def test_moving_a_river_node_rebuilds_the_line(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_line(admin_conn, 101, RIVER_POINTS, RIVER)
+    await run(mapper_pool, enricher_pool)
+
+    await add_node(admin_conn, 2, 5, 4)
+    await run(mapper_pool, enricher_pool)
+
+    assert await line_is(admin_conn, 101, grid_line_wkt([(0, 0), (5, 4), (10, 0)]))
+
+
+async def test_river_with_a_missing_node_is_skipped(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_node(admin_conn, 1, 0, 0)
+    await add_node(admin_conn, 3, 10, 0)
+    await add_way(admin_conn, 101, [1, 2, 3], RIVER)
+
+    result = await run(mapper_pool, enricher_pool)
+
+    assert await lines(admin_conn) == []
+    assert sum(b.features_skipped for b in result.batches) == 1
+
+
+async def test_every_downloaded_line_layer_is_built_from_the_same_tags() -> None:
+    built = {layer.code: layer.match for layer in LAYERS if isinstance(layer, LineLayer)}
+
+    for layer in DOWNLOADED_LAYERS:
+        if not layer.is_area and layer.tags:
             assert built.get(layer.code) == layer.tags, layer.code

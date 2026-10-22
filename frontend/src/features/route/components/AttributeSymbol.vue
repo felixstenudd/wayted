@@ -42,8 +42,10 @@ defineProps<{ attributeKey: string }>()
 			<path class="road" d="M1 8h14" />
 			<path class="bridge" d="M3 4.5q5 2 10 0M3 11.5q5-2 10 0" />
 		</template>
-		<path v-else-if="attributeKey === 'asphalt'" class="asphalt" d="M1 8h14" />
-		<path v-else-if="attributeKey === 'gravel'" class="gravel" d="M1.5 8h13" />
+		<template v-else-if="attributeKey === 'prepared'">
+			<path class="prepared-solid" d="M1.5 8h6" />
+			<path class="prepared-loose" d="M11 8h3.6" />
+		</template>
 		<circle v-else-if="attributeKey === 'sights'" class="sight" cx="8" cy="8" r="4" />
 		<circle v-else class="unknown" cx="8" cy="8" r="2.5" />
 	</svg>
@@ -70,8 +72,8 @@ defineProps<{ attributeKey: string }>()
 	stroke-width: 4;
 }
 .bridge,
-.asphalt,
-.gravel {
+.prepared-solid,
+.prepared-loose {
 	fill: none;
 	stroke: var(--graphite);
 	stroke-linecap: round;
@@ -79,11 +81,12 @@ defineProps<{ attributeKey: string }>()
 .bridge {
 	stroke-width: 1.25;
 }
-.asphalt {
+/* From paved to loose: the scale the slider moves along. */
+.prepared-solid {
 	stroke: var(--ink);
 	stroke-width: 3;
 }
-.gravel {
+.prepared-loose {
 	stroke-dasharray: 0.1 3.5;
 	stroke-width: 2.25;
 }

@@ -43,6 +43,14 @@ WHERE a.code = ANY (e.forward) OR a.code = ANY (e.backward);
 --   the road it starts on; loop_network, how much road a loop needs around its start, as a share
 --   of the target (see routing.snap_points); attempts at a goal, candidates kept from each and
 --   routes tried.
+-- - options: how many routes a plan offers at most, the best among them (count); how many
+--   candidates are routed to find the others (routed); how much of the shorter of two options
+--   they may share (overlap); how much worse than the best an option may score (margin); how much
+--   longer than the best an option of a route without a target may be (longer); and how long,
+--   from the start of planning, options are looked for (budget_ms). See routing.segment_route.
+-- - edit: how far either side of where a route is grabbed an edit may change it, at least
+--   window_min_m and window_share times the drag; and how far around that stretch its new way
+--   is looked for (area_m). See routing.reroute.
 CREATE FUNCTION routing.defaults() RETURNS jsonb
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT '{
@@ -72,7 +80,12 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
         "plan":     {
             "tolerance": 0.07, "snap_m": 200, "loop_network": 1,
             "attempts": 2, "kept": 3, "routed": 3
-        }
+        },
+        "options":  {
+            "count": 3, "routed": 8, "overlap": 0.5, "margin": 0.15, "longer": 0.25,
+            "budget_ms": 10000
+        },
+        "edit":     {"window_min_m": 300, "window_share": 1.5, "area_m": 1000}
     }'::jsonb
 $$;
 
@@ -224,6 +237,14 @@ BEGIN
         routing.setting(v_profile, 'plan', 'routed')
     ) < 1 THEN
         RAISE EXCEPTION 'plan.attempts, kept and routed must be at least 1'
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF routing.setting(v_profile, 'options', 'count') < 1 THEN
+        RAISE EXCEPTION 'options.count must be at least 1'
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    IF routing.setting(v_profile, 'options', 'overlap') NOT BETWEEN 1e-9 AND 1 THEN
+        RAISE EXCEPTION 'options.overlap must be in (0, 1]'
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
     RETURN v_profile;
@@ -1338,14 +1359,14 @@ $$;
 -- via costs what any other turn does and the route does not double back there. A leg is routed
 -- in a corridor first, corridor_share (half) as wide as its vias are apart and at least
 -- corridor_min_m (300 m), which holds far fewer edges than the whole area; only when it has no way
--- through is the whole area searched.
+-- through is the whole area searched. Edges in p_avoid pay the reuse penalty from the start.
 -- Raises no_data_found (detail unreachable) when a leg cannot be travelled.
 CREATE FUNCTION routing.route_edges(
-    p_profile routing.profile, p_area geometry, p_vias bigint[]
+    p_profile routing.profile, p_area geometry, p_vias bigint[], p_avoid bigint[] DEFAULT '{}'
 ) RETURNS TABLE (step integer, vertex bigint, edge_id bigint)
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_used     bigint[] := '{}';
+    v_used     bigint[] := p_avoid;
     -- The departure node of the first leg, then the arc each leg arrived by.
     v_from     bigint := routing.departure(p_vias[1]);
     v_arcs     bigint[];
@@ -1375,7 +1396,9 @@ BEGIN
                 routing.turns_sql(
                     routing.cost_sql(p_profile, v_leg_area, v_used),
                     p_profile,
-                    CASE WHEN i = 1 THEN ARRAY[p_vias[1]] END,
+                    -- The first leg routed leaves its via any way; the legs before it, if any,
+                    -- went nowhere.
+                    CASE WHEN v_step = 0 THEN ARRAY[p_vias[i]] END,
                     ARRAY[p_vias[i + 1]]
                 ),
                 v_from,
@@ -1402,11 +1425,47 @@ BEGIN
 END
 $$;
 
--- The route through p_vias as the API returns it: the line in travel order, its length, the
--- length-weighted share of every edge score along it, the length travelled more than once, the
--- edge ids in order and p_warnings.
+-- How a route along p_edge_ids (in travel order; an edge travelled twice counts twice) scores, as
+-- the API and saved routes describe it: per score key, the mean over the length that has the key,
+-- and the share of the route's length that has it (coverage), both to four decimals. Keys no edge
+-- has are left out.
+CREATE FUNCTION routing.route_scores(p_edge_ids bigint[]) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    WITH legs AS (
+        SELECT e.length_m, e.scores
+        FROM unnest(p_edge_ids) AS s (id)
+        JOIN graph.edges e ON e.id = s.id
+    ),
+    total AS (
+        SELECT sum(length_m) AS length_m FROM legs
+    ),
+    scored AS (
+        SELECT kv.key, sum(l.length_m * kv.value::float8) AS weighted, sum(l.length_m) AS length_m
+        FROM legs l
+        CROSS JOIN LATERAL jsonb_each(l.scores) kv
+        GROUP BY kv.key
+    )
+    SELECT coalesce(
+        jsonb_object_agg(s.key, jsonb_build_object(
+            'mean', round((s.weighted / s.length_m)::numeric, 4),
+            'coverage', round((s.length_m / total.length_m)::numeric, 4)
+        )) FILTER (WHERE s.length_m > 0),
+        '{}'
+    )
+    FROM scored s, total
+$$;
+
+-- The route through p_vias as the planner works with it: the line in travel order, its length,
+-- the length-weighted share of every edge score along it, the length travelled more than once,
+-- the edge ids in order, whether each is travelled from its source to its target (forward), and
+-- p_warnings. p_avoid is passed on to routing.route_edges. routing.route_out turns it into what
+-- the API returns.
 CREATE FUNCTION routing.route_json(
-    p_profile routing.profile, p_area geometry, p_vias bigint[], p_warnings text[]
+    p_profile routing.profile,
+    p_area geometry,
+    p_vias bigint[],
+    p_warnings text[],
+    p_avoid bigint[] DEFAULT '{}'
 ) RETURNS jsonb
 LANGUAGE sql AS $$
     WITH path AS MATERIALIZED (
@@ -1415,9 +1474,10 @@ LANGUAGE sql AS $$
             e.id,
             e.length_m,
             e.scores,
+            r.vertex = e.source AS forward,
             -- pgRouting gives the vertex an edge is entered from; turn the rest around.
             CASE WHEN r.vertex = e.source THEN e.geom ELSE ST_Reverse(e.geom) END AS geom
-        FROM routing.route_edges(p_profile, p_area, p_vias) r
+        FROM routing.route_edges(p_profile, p_area, p_vias, p_avoid) r
         JOIN graph.edges e ON e.id = r.edge_id
     ),
     -- Summed in travel order, so the same route always has the same length to the last digit.
@@ -1443,6 +1503,7 @@ LANGUAGE sql AS $$
         'scores', shares.scores,
         'reused_m', reused.length_m,
         'edges', (SELECT to_jsonb(array_agg(id ORDER BY step)) FROM path),
+        'forward', (SELECT to_jsonb(array_agg(forward ORDER BY step)) FROM path),
         'warnings', to_jsonb(p_warnings)
     )
     FROM total, shares, reused
@@ -1526,8 +1587,75 @@ BEGIN
 END
 $$;
 
+-- The points a route from p_start to p_end passes, in travel order (k, from 1), with what each
+-- is (kind: start, asap, after, any or end), after_m for after waypoints, and n, the waypoint's
+-- place in p_waypoints (from 1; NULL for the start and end): the start and the asap waypoints in
+-- the order given, then the after waypoints by after_m and the end, with the any waypoints put in
+-- among them where they lengthen the way least (see routing.insertion_order). The waypoints are
+-- as routing.read_waypoints takes them.
+CREATE FUNCTION routing.travel_points(p_start geometry, p_end geometry, p_waypoints jsonb)
+RETURNS TABLE (k integer, geom geometry, kind text, after_m double precision, n integer)
+LANGUAGE plpgsql STABLE AS $$
+#variable_conflict use_column
+DECLARE
+    v_points    geometry[];
+    v_kinds     text[];
+    v_after_m   double precision[];
+    v_ns        integer[];
+    v_tail      geometry[];
+    v_tail_kind text[];
+    v_tail_m    double precision[];
+    v_tail_n    integer[];
+    v_any       geometry[];
+    v_any_n     integer[];
+BEGIN
+    -- The start and the asap waypoints, then the after waypoints and the end with the any
+    -- waypoints put in among them.
+    SELECT ARRAY[p_start] || coalesce(array_agg(w.geom ORDER BY w.n), '{}'),
+           ARRAY['start'] || coalesce(array_agg(w.at ORDER BY w.n), '{}'),
+           ARRAY[NULL::double precision] || coalesce(array_agg(w.after_m ORDER BY w.n), '{}'),
+           ARRAY[NULL::integer] || coalesce(array_agg(w.n ORDER BY w.n), '{}')
+    INTO v_points, v_kinds, v_after_m, v_ns
+    FROM routing.read_waypoints(p_waypoints) w
+    WHERE w.at = 'asap';
+    SELECT ARRAY[v_points[cardinality(v_points)]]
+               || coalesce(array_agg(w.geom ORDER BY w.after_m, w.n), '{}') || p_end,
+           ARRAY['from'] || coalesce(array_agg(w.at ORDER BY w.after_m, w.n), '{}') || 'end'::text,
+           ARRAY[NULL::double precision]
+               || coalesce(array_agg(w.after_m ORDER BY w.after_m, w.n), '{}')
+               || NULL::double precision,
+           ARRAY[NULL::integer] || coalesce(array_agg(w.n ORDER BY w.after_m, w.n), '{}')
+               || NULL::integer
+    INTO v_tail, v_tail_kind, v_tail_m, v_tail_n
+    FROM routing.read_waypoints(p_waypoints) w
+    WHERE w.at = 'after';
+    SELECT coalesce(array_agg(w.geom ORDER BY w.n), '{}'),
+           coalesce(array_agg(w.n ORDER BY w.n), '{}')
+    INTO v_any, v_any_n
+    FROM routing.read_waypoints(p_waypoints) w
+    WHERE w.at = 'any';
+    SELECT v_points || array_agg(t.geom ORDER BY o.n),
+           v_kinds || array_agg(t.kind ORDER BY o.n),
+           v_after_m || array_agg(t.after_m ORDER BY o.n),
+           v_ns || array_agg(t.n ORDER BY o.n)
+    INTO v_points, v_kinds, v_after_m, v_ns
+    FROM unnest(routing.insertion_order(v_tail, v_any)) WITH ORDINALITY AS o(i, n)
+    JOIN LATERAL (
+        SELECT (v_tail || v_any)[o.i] AS geom,
+               (v_tail_kind || array_fill('any'::text, ARRAY[cardinality(v_any)]))[o.i] AS kind,
+               v_tail_m[o.i] AS after_m,
+               (v_tail_n || v_any_n)[o.i] AS n
+    ) t ON true
+    WHERE o.n > 1;
+
+    RETURN QUERY
+        SELECT u.k::integer, u.geom, v_kinds[u.k], v_after_m[u.k], v_ns[u.k]
+        FROM unnest(v_points) WITH ORDINALITY AS u(geom, k);
+END
+$$;
+
 -- p_a followed by p_b, as much of routing.route_json as carrying a route on needs: the line,
--- the length and the edges. p_a may be NULL, for nothing before.
+-- the length and the edges with their directions. p_a may be NULL, for nothing before.
 CREATE FUNCTION routing.joined(p_a jsonb, p_b jsonb) RETURNS jsonb
 LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT CASE WHEN p_a IS NULL THEN p_b ELSE jsonb_build_object(
@@ -1535,7 +1663,8 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
             ST_GeomFromGeoJSON(p_a -> 'geometry'), ST_GeomFromGeoJSON(p_b -> 'geometry')
         ))::jsonb,
         'length_m', (p_a ->> 'length_m')::double precision + (p_b ->> 'length_m')::double precision,
-        'edges', (p_a -> 'edges') || (p_b -> 'edges')
+        'edges', (p_a -> 'edges') || (p_b -> 'edges'),
+        'forward', (p_a -> 'forward') || (p_b -> 'forward')
     ) END
 $$;
 
@@ -1573,6 +1702,18 @@ LANGUAGE sql STABLE AS $$
     FROM lines
 $$;
 
+-- The share of the shorter of two routes (as routing.route_json gives them) that is on edges
+-- both use, each edge counted once.
+CREATE FUNCTION routing.overlap(p_a jsonb, p_b jsonb) RETURNS double precision
+LANGUAGE sql STABLE AS $$
+    SELECT coalesce(sum(e.length_m), 0) / nullif(least(
+        (p_a ->> 'length_m')::double precision, (p_b ->> 'length_m')::double precision
+    ), 0)
+    FROM graph.edges e
+    WHERE e.id IN (SELECT a::bigint FROM jsonb_array_elements_text(p_a -> 'edges') a)
+      AND e.id IN (SELECT b::bigint FROM jsonb_array_elements_text(p_b -> 'edges') b)
+$$;
+
 -- One piece of a route: from p_from to p_to (the same vertex for a loop), after p_before, the
 -- route so far (NULL: nothing before). Without p_target_m it is the cheapest way there. With it,
 -- the piece that comes nearest p_target_m and scores best, going back over p_before and
@@ -1584,6 +1725,14 @@ $$;
 -- the best kept (3) of each. Evaluation leaves out the reuse penalty, so a route can come out
 -- otherwise than evaluated; when it misses the tolerance, the next best candidates are routed
 -- too, up to routed (3) in all, and the one whose route scores best is returned.
+-- With p_options above 1 and a target, up to p_options - 1 other routes come with it as options,
+-- best first: the next ranked candidates are routed too, up to options.routed in all, and an
+-- option is kept if it scores at most options.margin worse than the best, misses the target by
+-- no more than the tolerance or the best does, and shares no more than options.overlap of the
+-- shorter route with the best or another option. No more candidates are routed after p_until.
+-- Without a target, options are the cheapest way there again with the edges of the best and of
+-- those found before penalised (see routing.route_edges), up to options.routed tries, kept on the
+-- same terms but for their length, which may be up to options.longer more than the best's.
 -- Raises no_data_found with DETAIL no_loop or unreachable when there is no candidate.
 CREATE FUNCTION routing.segment_route(
     p_profile   routing.profile,
@@ -1591,7 +1740,9 @@ CREATE FUNCTION routing.segment_route(
     p_from      bigint,
     p_to        bigint,
     p_target_m  double precision,
-    p_before    jsonb DEFAULT NULL
+    p_before    jsonb DEFAULT NULL,
+    p_options   integer DEFAULT 1,
+    p_until     timestamptz DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -1609,10 +1760,50 @@ DECLARE
     v_route      jsonb;
     v_vias       bigint[];
     v_best_score double precision;
+    v_kept       integer := routing.setting(p_profile, 'plan', 'kept')::integer;
+    -- Every route found so far, with its vias and score, so an option is not routed twice.
+    v_tried      jsonb := '[]';
+    v_option     jsonb;
+    v_options    jsonb := '[]';
+    v_avoid      bigint[];
 BEGIN
     IF p_target_m IS NULL THEN
-        RETURN routing.route_json(p_profile, p_area, v_direct, '{}')
-            || jsonb_build_object('vias', v_direct, 'direct', true);
+        v_route := routing.route_json(p_profile, p_area, v_direct, '{}');
+        -- Options go other ways: each is routed again with every edge taken so far penalised.
+        -- Its length is held to options.longer, so it is scored as if it were the length wanted.
+        v_best_score := routing.route_score(
+            p_profile, (v_route ->> 'length_m')::double precision, v_route, p_before
+        );
+        v_avoid := ARRAY(SELECT e::bigint FROM jsonb_array_elements_text(v_route -> 'edges') e);
+        FOR k IN 1 .. CASE WHEN p_options > 1
+            THEN routing.setting(p_profile, 'options', 'routed')::integer
+            ELSE 0
+        END LOOP
+            EXIT WHEN jsonb_array_length(v_options) >= p_options - 1
+                OR clock_timestamp() > p_until;
+            v_option := routing.route_json(p_profile, p_area, v_direct, '{}', v_avoid);
+            v_avoid := v_avoid
+                || ARRAY(SELECT e::bigint FROM jsonb_array_elements_text(v_option -> 'edges') e);
+            CONTINUE WHEN (v_option ->> 'length_m')::double precision
+                > (1 + routing.setting(p_profile, 'options', 'longer'))
+                    * (v_route ->> 'length_m')::double precision;
+            CONTINUE WHEN routing.route_score(
+                    p_profile, (v_option ->> 'length_m')::double precision, v_option, p_before
+                ) > v_best_score + routing.setting(p_profile, 'options', 'margin');
+            CONTINUE WHEN EXISTS (
+                SELECT FROM jsonb_array_elements(v_options || jsonb_build_array(v_route)) o
+                WHERE routing.overlap(o, v_option)
+                    > routing.setting(p_profile, 'options', 'overlap')
+            );
+            v_options := v_options || jsonb_build_array(
+                v_option || jsonb_build_object('vias', v_direct, 'direct', true)
+            );
+        END LOOP;
+        RETURN v_route
+            || jsonb_build_object('vias', v_direct, 'direct', true, 'options', v_options);
+    END IF;
+    IF p_options > 1 THEN
+        v_kept := greatest(v_kept, routing.setting(p_profile, 'options', 'routed')::integer);
     END IF;
 
     FOR attempt IN 1 .. routing.setting(p_profile, 'plan', 'attempts')::integer LOOP
@@ -1633,7 +1824,7 @@ BEGIN
                 p_before
             ) e
             ORDER BY e.score
-            LIMIT routing.setting(p_profile, 'plan', 'kept')::integer
+            LIMIT v_kept
         );
         SELECT * INTO v_retry FROM unnest(v_ranked) e ORDER BY e.score LIMIT 1;
         IF FOUND AND (v_best.vias IS NULL OR v_retry.score < v_best.score) THEN
@@ -1663,6 +1854,9 @@ BEGIN
     LOOP
         v_routed := routing.route_json(p_profile, p_area, v_try.vias, '{}');
         v_score := routing.route_score(p_profile, p_target_m, v_routed, p_before);
+        v_tried := v_tried || jsonb_build_array(
+            v_routed || jsonb_build_object('vias', v_try.vias, 'score', v_score)
+        );
         IF v_route IS NULL OR v_score < v_best_score THEN
             v_route := v_routed;
             v_vias := v_try.vias;
@@ -1671,7 +1865,206 @@ BEGIN
         EXIT WHEN abs((v_route ->> 'length_m')::double precision - p_target_m)
             <= v_tolerance * p_target_m;
     END LOOP;
-    RETURN v_route || jsonb_build_object('vias', v_vias, 'direct', v_vias = v_direct);
+
+    IF p_options > 1 THEN
+        FOR v_try IN
+            SELECT d.* FROM (
+                SELECT DISTINCT ON (e.vias) e.* FROM unnest(v_ranked) e ORDER BY e.vias, e.score
+            ) d
+            WHERE d.vias <> v_vias
+            ORDER BY d.score
+            LIMIT routing.setting(p_profile, 'options', 'routed')::integer
+        LOOP
+            EXIT WHEN jsonb_array_length(v_options) >= p_options - 1;
+            SELECT t INTO v_option FROM jsonb_array_elements(v_tried) t
+            WHERE t -> 'vias' = to_jsonb(v_try.vias);
+            IF v_option IS NULL THEN
+                EXIT WHEN clock_timestamp() > p_until;
+                v_routed := routing.route_json(p_profile, p_area, v_try.vias, '{}');
+                v_option := v_routed || jsonb_build_object(
+                    'vias', v_try.vias,
+                    'score', routing.route_score(p_profile, p_target_m, v_routed, p_before)
+                );
+            END IF;
+            CONTINUE WHEN (v_option ->> 'score')::double precision
+                > v_best_score + routing.setting(p_profile, 'options', 'margin');
+            CONTINUE WHEN abs((v_option ->> 'length_m')::double precision - p_target_m)
+                > greatest(
+                    v_tolerance * p_target_m,
+                    abs((v_route ->> 'length_m')::double precision - p_target_m)
+                );
+            CONTINUE WHEN EXISTS (
+                SELECT FROM jsonb_array_elements(v_options || jsonb_build_array(v_route)) k
+                WHERE routing.overlap(k, v_option)
+                    > routing.setting(p_profile, 'options', 'overlap')
+            );
+            v_options := v_options || jsonb_build_array(
+                v_option || jsonb_build_object('direct', v_try.vias = v_direct)
+            );
+        END LOOP;
+        v_options := coalesce((
+            SELECT jsonb_agg(o - 'score' ORDER BY (o ->> 'score')::double precision)
+            FROM jsonb_array_elements(v_options) o
+        ), '[]');
+    END IF;
+    RETURN v_route || jsonb_build_object(
+        'vias', v_vias, 'direct', v_vias = v_direct, 'options', v_options
+    );
+END
+$$;
+
+-- The warnings for a route of p_length_m planned to p_target_m (NULL: none): too_short when it
+-- misses the target by more than p_tolerance (a share of it) and is longer, while it takes the
+-- direct way (p_direct), so nothing shorter exists; target_missed when it misses it otherwise.
+CREATE FUNCTION routing.length_warnings(
+    p_length_m double precision,
+    p_target_m double precision,
+    p_tolerance double precision,
+    p_direct boolean
+) RETURNS jsonb
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT CASE
+        WHEN abs(p_length_m - p_target_m) > p_tolerance * p_target_m THEN to_jsonb(ARRAY[CASE
+            WHEN p_direct AND p_length_m > p_target_m THEN 'too_short'
+            ELSE 'target_missed'
+        END])
+        ELSE '[]'::jsonb
+    END
+$$;
+
+-- A route from routing.route_json as the API returns it: the line, length, reused length and
+-- warnings, the edges in travel order as {edge_id, forward}, and the scores as
+-- routing.route_scores gives them.
+CREATE FUNCTION routing.route_out(p_route jsonb) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    WITH steps AS (
+        SELECT e.id::bigint AS edge_id, f.forward::boolean AS forward, e.n
+        FROM jsonb_array_elements_text(p_route -> 'edges') WITH ORDINALITY AS e (id, n)
+        JOIN jsonb_array_elements_text(p_route -> 'forward') WITH ORDINALITY AS f (forward, n)
+            ON f.n = e.n
+    )
+    SELECT jsonb_build_object(
+        'geometry', p_route -> 'geometry',
+        'length_m', p_route -> 'length_m',
+        'reused_m', p_route -> 'reused_m',
+        'warnings', p_route -> 'warnings',
+        'edges', (
+            SELECT jsonb_agg(jsonb_build_object('edge_id', edge_id, 'forward', forward) ORDER BY n)
+            FROM steps
+        ),
+        'scores', routing.route_scores(ARRAY(SELECT edge_id FROM steps ORDER BY n))
+    )
+$$;
+
+-- The vias of a plan from routing.plan_rest, or of its varied piece, as an array.
+CREATE FUNCTION routing.vias(p_plan jsonb) RETURNS bigint[]
+LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT ARRAY(
+        SELECT u.v::bigint
+        FROM jsonb_array_elements_text(p_plan -> 'vias') WITH ORDINALITY AS u(v, n)
+        ORDER BY u.n
+    )
+$$;
+
+-- The pieces of a route after point p_from of p_points (in travel order, with p_kinds, p_after_m
+-- and the vertices they snapped to, as routing.plan_route has them), carrying on p_before (the
+-- route so far, NULL for none), p_vias (its vias) and p_direct (whether every piece shaped to a
+-- target so far took the direct way). A piece to an after waypoint is shaped to the length still
+-- to go before it, one to the end to what is left of p_target_m, and one to an any waypoint to its
+-- share of the length still to go to the next of those, by straight distance; a piece to where
+-- the last one ended is left out, but for a loop with nothing else.
+-- With p_options above 1, the first piece shaped to a target (the first piece, when p_target_m is
+-- NULL) is asked for options; that piece and the plan before it come back as varied: at (the
+-- point it ends at), before, vias and direct (as they were before it), targeted, and options.
+-- Returns vias, direct, pieces (how many were planned), piece (the last one) and varied.
+CREATE FUNCTION routing.plan_rest(
+    p_profile  routing.profile,
+    p_area     geometry,
+    p_points   geometry[],
+    p_kinds    text[],
+    p_after_m  double precision[],
+    p_vertices bigint[],
+    p_target_m double precision,
+    p_from     integer,
+    p_before   jsonb,
+    p_vias     bigint[],
+    p_direct   boolean,
+    p_options  integer,
+    p_until    timestamptz
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_from     integer := p_from;
+    v_before   jsonb := p_before;
+    v_vias     bigint[] := p_vias;
+    v_direct   boolean := p_direct;
+    v_next     integer;
+    v_target_m double precision;
+    v_asked    integer;
+    v_piece    jsonb;
+    v_pieces   integer := 0;
+    v_varied   jsonb;
+BEGIN
+    FOR i IN p_from + 1 .. cardinality(p_points) LOOP
+        -- The next point whose place on the route is known: an asap waypoint (as soon as
+        -- possible), an after waypoint or the end.
+        SELECT min(k) INTO v_next
+        FROM generate_series(i, cardinality(p_points)) k
+        WHERE p_kinds[k] <> 'any';
+        v_target_m := CASE p_kinds[v_next]
+                WHEN 'asap' THEN NULL
+                WHEN 'after' THEN p_after_m[v_next]
+                ELSE p_target_m
+            END - coalesce((v_before ->> 'length_m')::double precision, 0);
+        -- An any waypoint's piece gets its share of the way to the next point.
+        IF i < v_next THEN
+            v_target_m := v_target_m
+                * ST_Distance(p_points[v_from]::geography, p_points[i]::geography)
+                / nullif((
+                    SELECT sum(ST_Distance(p_points[k - 1]::geography, p_points[k]::geography))
+                    FROM generate_series(v_from + 1, v_next) k
+                ), 0);
+        END IF;
+        -- Already past where the piece should end: the direct way is all there is.
+        IF v_target_m <= 0 THEN
+            v_target_m := NULL;
+        END IF;
+        IF p_vertices[v_from] <> p_vertices[i] OR (p_kinds[i] = 'end' AND v_before IS NULL) THEN
+            v_asked := CASE
+                WHEN v_varied IS NULL AND (v_target_m IS NOT NULL OR p_target_m IS NULL)
+                THEN p_options
+                ELSE 1
+            END;
+            v_piece := routing.segment_route(
+                p_profile, p_area, p_vertices[v_from], p_vertices[i], v_target_m, v_before,
+                v_asked, p_until
+            );
+            IF v_asked > 1 THEN
+                v_varied := jsonb_build_object(
+                    'at', i, 'before', v_before, 'vias', v_vias, 'direct', v_direct,
+                    'targeted', v_target_m IS NOT NULL, 'options', v_piece -> 'options'
+                );
+            END IF;
+            v_pieces := v_pieces + 1;
+            -- The piece starts where the last one ended.
+            v_vias := v_vias || ARRAY(
+                SELECT u.v::bigint
+                FROM jsonb_array_elements_text(v_piece -> 'vias') WITH ORDINALITY AS u(v, n)
+                WHERE u.n > 1
+                ORDER BY u.n
+            );
+            -- Only pieces shaped to a target say whether the route could be shorter.
+            IF v_target_m IS NOT NULL THEN
+                v_direct := v_direct AND (v_piece ->> 'direct')::boolean;
+            END IF;
+            v_before := routing.joined(v_before, v_piece);
+            v_from := i;
+        END IF;
+    END LOOP;
+    RETURN jsonb_build_object(
+        'vias', v_vias, 'direct', v_direct, 'pieces', v_pieces, 'piece', v_piece,
+        'varied', v_varied
+    );
 END
 $$;
 
@@ -1687,8 +2080,14 @@ $$;
 -- before it, so that it does not come back along them: a piece to an after waypoint is shaped
 -- to the length still to go before it, one to the end to what is left of the target, and one
 -- to an any waypoint to its share of the length still to go to the next of those, by straight
--- distance. A piece to where the last one ended is left out, but for a loop with nothing else.
--- The whole route is then routed through all their vias in one go.
+-- distance. A piece to where the last one ended is left out, but for a loop with nothing else
+-- (see routing.plan_rest). The whole route is then routed through all their vias in one go, and
+-- returned as routing.route_out gives it, with waypoint_order: the waypoints' indexes in
+-- p_waypoints (from 0) in the order the route passes them; and options, other routes in the same
+-- form, best first. Options differ from the first piece shaped to a target on (the first piece,
+-- without a target), which offers them as routing.segment_route does; the pieces after it are
+-- planned anew behind each. Put together, none misses the target by more than the tolerance or
+-- the route does, or shares more than options.overlap with the route or another option.
 -- The points are snapped to roads that join (see routing.snap_points), so a path cut off from
 -- the rest is not taken for the way there.
 -- Warnings, judged on the route: too_short (the direct way through the points is longer than
@@ -1720,60 +2119,38 @@ DECLARE
     v_points    geometry[];
     v_kinds     text[];
     v_after_m   double precision[];
-    v_tail      geometry[];
-    v_tail_kind text[];
-    v_tail_m    double precision[];
-    v_any       geometry[];
+    -- Which waypoint each point is (its place in p_waypoints, from 1); NULL for the start and end.
+    v_ns        integer[];
     v_area      geometry;
     v_vertices  bigint[];
-    v_from      integer := 1;
-    v_next      integer;
-    v_target_m  double precision;
-    v_piece     jsonb;
-    v_pieces    integer := 0;
-    v_before    jsonb;
-    v_vias      bigint[];
-    v_direct    boolean := true;
+    v_plan      jsonb;
     v_route     jsonb;
-    v_length_m  double precision;
+    v_tolerance double precision;
+    v_count     integer;
+    v_until     timestamptz;
+    -- How long the last option took to put together, to stop before one would run past v_until.
+    v_took      interval := '0';
+    v_began     timestamptz;
+    v_varied    jsonb;
+    v_rest      jsonb;
+    v_option    jsonb;
+    v_options   jsonb := '[]';
+    v_order     jsonb;
 BEGIN
     IF p_start IS NULL OR p_target_m <= 0 OR (p_target_m IS NULL AND p_finish IS NULL) THEN
         RAISE EXCEPTION 'need a start, and a positive target or a finish'
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
     v_profile := routing.make_profile(p_activity, p_weights, p_settings);
+    v_tolerance := routing.setting(v_profile, 'plan', 'tolerance');
+    v_count := routing.setting(v_profile, 'options', 'count')::integer;
+    v_until := clock_timestamp()
+        + make_interval(secs => routing.setting(v_profile, 'options', 'budget_ms') / 1000);
 
-    -- The start and the asap waypoints, then the after waypoints and the end with the any
-    -- waypoints put in among them.
-    SELECT ARRAY[p_start] || coalesce(array_agg(w.geom ORDER BY w.n), '{}'),
-           ARRAY['start'] || coalesce(array_agg(w.at ORDER BY w.n), '{}'),
-           ARRAY[NULL::double precision] || coalesce(array_agg(w.after_m ORDER BY w.n), '{}')
-    INTO v_points, v_kinds, v_after_m
-    FROM routing.read_waypoints(p_waypoints) w
-    WHERE w.at = 'asap';
-    SELECT ARRAY[v_points[cardinality(v_points)]]
-               || coalesce(array_agg(w.geom ORDER BY w.after_m, w.n), '{}') || v_end,
-           ARRAY['from'] || coalesce(array_agg(w.at ORDER BY w.after_m, w.n), '{}') || 'end'::text,
-           ARRAY[NULL::double precision]
-               || coalesce(array_agg(w.after_m ORDER BY w.after_m, w.n), '{}')
-               || NULL::double precision
-    INTO v_tail, v_tail_kind, v_tail_m
-    FROM routing.read_waypoints(p_waypoints) w
-    WHERE w.at = 'after';
-    SELECT coalesce(array_agg(w.geom ORDER BY w.n), '{}') INTO v_any
-    FROM routing.read_waypoints(p_waypoints) w
-    WHERE w.at = 'any';
-    SELECT v_points || array_agg(t.geom ORDER BY o.n),
-           v_kinds || array_agg(t.kind ORDER BY o.n),
-           v_after_m || array_agg(t.after_m ORDER BY o.n)
-    INTO v_points, v_kinds, v_after_m
-    FROM unnest(routing.insertion_order(v_tail, v_any)) WITH ORDINALITY AS o(i, n)
-    JOIN LATERAL (
-        SELECT (v_tail || v_any)[o.i] AS geom,
-               (v_tail_kind || array_fill('any'::text, ARRAY[cardinality(v_any)]))[o.i] AS kind,
-               v_tail_m[o.i] AS after_m
-    ) t ON true
-    WHERE o.n > 1;
+    SELECT array_agg(t.geom ORDER BY t.k), array_agg(t.kind ORDER BY t.k),
+           array_agg(t.after_m ORDER BY t.k), array_agg(t.n ORDER BY t.k)
+    INTO v_points, v_kinds, v_after_m, v_ns
+    FROM routing.travel_points(p_start, v_end, p_waypoints) t;
 
     v_area := routing.search_area(
         p_start, p_finish, p_target_m, v_profile.settings -> 'area',
@@ -1807,64 +2184,311 @@ BEGIN
                   DETAIL = CASE WHEN p_finish IS NULL THEN 'no_loop' ELSE 'unreachable' END;
     END IF;
 
-    v_vias := ARRAY[v_vertices[1]];
-    FOR i IN 2 .. cardinality(v_points) LOOP
-        -- The next point whose place on the route is known: an asap waypoint (as soon as
-        -- possible), an after waypoint or the end.
-        SELECT min(k) INTO v_next
-        FROM generate_series(i, cardinality(v_points)) k
-        WHERE v_kinds[k] <> 'any';
-        v_target_m := CASE v_kinds[v_next]
-                WHEN 'asap' THEN NULL
-                WHEN 'after' THEN v_after_m[v_next]
-                ELSE p_target_m
-            END - coalesce((v_before ->> 'length_m')::double precision, 0);
-        -- An any waypoint's piece gets its share of the way to the next point.
-        IF i < v_next THEN
-            v_target_m := v_target_m
-                * ST_Distance(v_points[v_from]::geography, v_points[i]::geography)
-                / nullif((
-                    SELECT sum(ST_Distance(v_points[k - 1]::geography, v_points[k]::geography))
-                    FROM generate_series(v_from + 1, v_next) k
-                ), 0);
+    v_plan := routing.plan_rest(
+        v_profile, v_area, v_points, v_kinds, v_after_m, v_vertices, p_target_m,
+        1, NULL, ARRAY[v_vertices[1]], true, v_count, v_until
+    );
+    v_route := CASE WHEN (v_plan ->> 'pieces')::integer = 1
+        THEN (v_plan -> 'piece') - 'vias' - 'direct' - 'options'
+        ELSE routing.route_json(v_profile, v_area, routing.vias(v_plan), '{}')
+    END;
+    v_route := jsonb_set(v_route, '{warnings}', routing.length_warnings(
+        (v_route ->> 'length_m')::double precision, p_target_m, v_tolerance,
+        (v_plan ->> 'direct')::boolean
+    ));
+
+    -- Each option takes the varied piece's place, and the pieces after it are planned anew.
+    v_varied := v_plan -> 'varied';
+    -- Planning the pieces after the varied one again takes about as long as planning them did.
+    IF (v_plan ->> 'pieces')::integer > 1 THEN
+        v_took := clock_timestamp() - (v_until
+            - make_interval(secs => routing.setting(v_profile, 'options', 'budget_ms') / 1000));
+    END IF;
+    FOR v_option IN SELECT o FROM jsonb_array_elements(v_varied -> 'options') o LOOP
+        IF v_began IS NOT NULL THEN
+            v_took := clock_timestamp() - v_began;
         END IF;
-        -- Already past where the piece should end: the direct way is all there is.
-        IF v_target_m <= 0 THEN
-            v_target_m := NULL;
-        END IF;
-        IF v_vertices[v_from] <> v_vertices[i] OR (v_kinds[i] = 'end' AND v_before IS NULL) THEN
-            v_piece := routing.segment_route(
-                v_profile, v_area, v_vertices[v_from], v_vertices[i], v_target_m, v_before
+        EXIT WHEN clock_timestamp() + v_took > v_until;
+        v_began := clock_timestamp();
+        IF (v_plan ->> 'pieces')::integer = 1 THEN
+            v_option := v_option - 'vias' || jsonb_build_object(
+                'direct', (v_option ->> 'direct')::boolean OR NOT (v_varied ->> 'targeted')::boolean
             );
-            v_pieces := v_pieces + 1;
-            -- The piece starts where the last one ended.
-            v_vias := v_vias || ARRAY(
-                SELECT u.v::bigint
-                FROM jsonb_array_elements_text(v_piece -> 'vias') WITH ORDINALITY AS u(v, n)
-                WHERE u.n > 1
-                ORDER BY u.n
+        ELSE
+            v_rest := routing.plan_rest(
+                v_profile, v_area, v_points, v_kinds, v_after_m, v_vertices, p_target_m,
+                (v_varied ->> 'at')::integer,
+                routing.joined(nullif(v_varied -> 'before', 'null'), v_option),
+                routing.vias(v_varied) || ARRAY(
+                    SELECT u.v::bigint
+                    FROM jsonb_array_elements_text(v_option -> 'vias') WITH ORDINALITY AS u(v, n)
+                    WHERE u.n > 1
+                    ORDER BY u.n
+                ),
+                (v_varied ->> 'direct')::boolean AND (
+                    (v_option ->> 'direct')::boolean OR NOT (v_varied ->> 'targeted')::boolean
+                ),
+                1, v_until
             );
-            -- Only pieces shaped to a target say whether the route could be shorter.
-            IF v_target_m IS NOT NULL THEN
-                v_direct := v_direct AND (v_piece ->> 'direct')::boolean;
-            END IF;
-            v_before := routing.joined(v_before, v_piece);
-            v_from := i;
+            v_option := routing.route_json(v_profile, v_area, routing.vias(v_rest), '{}')
+                || jsonb_build_object('direct', v_rest -> 'direct');
         END IF;
+        v_option := jsonb_set(v_option - 'direct', '{warnings}', routing.length_warnings(
+            (v_option ->> 'length_m')::double precision, p_target_m, v_tolerance,
+            (v_option ->> 'direct')::boolean
+        ));
+        -- Put together, an option may come out longer or shorter than its piece did, or run
+        -- along the route after it.
+        CONTINUE WHEN abs((v_option ->> 'length_m')::double precision - p_target_m) > greatest(
+            v_tolerance * p_target_m,
+            abs((v_route ->> 'length_m')::double precision - p_target_m)
+        );
+        CONTINUE WHEN EXISTS (
+            SELECT FROM jsonb_array_elements(v_options || jsonb_build_array(v_route)) k
+            WHERE routing.overlap(k, v_option) > routing.setting(v_profile, 'options', 'overlap')
+        );
+        v_options := v_options || jsonb_build_array(v_option);
     END LOOP;
 
-    v_route := CASE WHEN v_pieces = 1
-        THEN v_piece - 'vias' - 'direct'
-        ELSE routing.route_json(v_profile, v_area, v_vias, '{}')
-    END;
-    v_length_m := (v_route ->> 'length_m')::double precision;
-    IF abs(v_length_m - p_target_m) > routing.setting(v_profile, 'plan', 'tolerance') * p_target_m
+    v_order := to_jsonb(ARRAY(
+        SELECT u.n - 1 FROM unnest(v_ns) WITH ORDINALITY AS u(n, k)
+        WHERE u.n IS NOT NULL
+        ORDER BY u.k
+    ));
+    RETURN routing.route_out(v_route) || jsonb_build_object(
+        'waypoint_order', v_order,
+        'options', coalesce((
+            SELECT jsonb_agg(
+                routing.route_out(o) || jsonb_build_object('waypoint_order', v_order)
+                ORDER BY n
+            )
+            FROM jsonb_array_elements(v_options) WITH ORDINALITY AS u(o, n)
+        ), '[]')
+    );
+END
+$$;
+
+-- A route along p_edge_ids, travelled from source to target where p_forward says so, in the form
+-- routing.route_json gives (without scores): its line, length, the length travelled more than
+-- once, the edges and their directions, and no warnings.
+CREATE FUNCTION routing.steps_json(p_edge_ids bigint[], p_forward boolean[]) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    WITH path AS MATERIALIZED (
+        SELECT s.n, e.id, e.length_m, s.forward,
+               CASE WHEN s.forward THEN e.geom ELSE ST_Reverse(e.geom) END AS geom
+        FROM unnest(p_edge_ids, p_forward) WITH ORDINALITY AS s (id, forward, n)
+        JOIN graph.edges e ON e.id = s.id
+    ),
+    total AS (
+        SELECT sum(length_m ORDER BY n) AS length_m FROM path
+    ),
+    reused AS (
+        SELECT coalesce(sum(length_m * (times - 1)), 0) AS length_m
+        FROM (SELECT min(length_m) AS length_m, count(*) AS times FROM path GROUP BY id) u
+    )
+    SELECT jsonb_build_object(
+        'geometry', (SELECT ST_AsGeoJSON(ST_MakeLine(geom ORDER BY n))::jsonb FROM path),
+        'length_m', total.length_m,
+        'reused_m', reused.length_m,
+        'edges', (SELECT to_jsonb(array_agg(id ORDER BY n)) FROM path),
+        'forward', (SELECT to_jsonb(array_agg(forward ORDER BY n)) FROM path),
+        'warnings', '[]'::jsonb
+    )
+    FROM total, reused
+$$;
+
+-- p_activity's route along p_edge_ids (in travel order, from source to target where p_forward
+-- says so) changed where it was grabbed at p_grab, so that it passes p_drop: the stretch from the
+-- junction at or before edit.window_min_m, or window_share times the drag, before the grab to the
+-- one as far after it is routed again through the edge p_activity may use nearest p_drop (within
+-- plan.snap_m), in whichever direction is shorter. Everything outside the stretch stays as it
+-- was. The new way is the cheapest by the activity's own cost, highway class and turns, without
+-- preferences, so an edit goes the way it was dragged; edges outside the stretch pay the reuse
+-- penalty. Without p_drop, the stretch is routed again with nothing to pass, which takes an edit
+-- back out; p_before_m and p_after_m, what an earlier edit returned, make the stretch reach at
+-- least that far before and after the grab, so it covers all that edit moved. p_settings
+-- overrides routing.defaults() as in routing.make_profile.
+-- Returns the route as routing.route_out gives it, warned against p_target_m (NULL: no target) as
+-- a planned one is, with handle: where p_drop came onto the road, a GeoJSON point (NULL without
+-- p_drop); and before_m and after_m, how far the new stretch reaches before and after the handle
+-- along the new route (NULL without p_drop).
+-- Raises invalid_parameter_value for edges that are not in the graph, do not join up or may not
+-- be used that way, and no_data_found with DETAIL drop_off_road (no road near p_drop) or
+-- unreachable.
+CREATE FUNCTION routing.reroute(
+    p_activity text,
+    p_edge_ids bigint[],
+    p_forward  boolean[],
+    p_grab     geometry,
+    p_drop     geometry,
+    p_target_m double precision DEFAULT NULL,
+    p_before_m double precision DEFAULT NULL,
+    p_after_m  double precision DEFAULT NULL,
+    p_settings jsonb DEFAULT '{}'
+) RETURNS jsonb
+LANGUAGE plpgsql
+SET jit = off
+AS $$
+DECLARE
+    v_profile  routing.profile := routing.make_profile(p_activity, '{}', p_settings);
+    v_n        integer := cardinality(p_edge_ids);
+    -- Per edge in travel order: the vertex it is entered from and left at, and where it ends
+    -- along the route.
+    v_enter    bigint[];
+    v_leave    bigint[];
+    v_end_m    double precision[];
+    v_line     geometry;
+    v_grab_m   double precision;
+    v_reach_m  double precision;
+    v_new_line geometry;
+    v_handle_m double precision;
+    v_from_m   double precision;
+    -- The stretch is edges v_first + 1 .. v_last - 1.
+    v_first    integer;
+    v_last     integer;
+    v_area     geometry;
+    v_edge     record;
+    v_handle   geometry;
+    v_tries    bigint[][];
+    v_stretch  bigint[];
+    v_forward  boolean[];
+    v_best_ids bigint[];
+    v_best_fw  boolean[];
+    v_best_m   double precision;
+    v_m        double precision;
+    v_route    jsonb;
+BEGIN
+    SELECT array_agg(t.enter ORDER BY t.n), array_agg(t.leave ORDER BY t.n),
+           array_agg(t.end_m ORDER BY t.n)
+    INTO v_enter, v_leave, v_end_m
+    FROM (
+        SELECT s.n,
+               CASE WHEN s.forward THEN e.source ELSE e.target END AS enter,
+               CASE WHEN s.forward THEN e.target ELSE e.source END AS leave,
+               sum(e.length_m) OVER (ORDER BY s.n) AS end_m
+        FROM unnest(p_edge_ids, p_forward) WITH ORDINALITY AS s (id, forward, n)
+        JOIN graph.edges e ON e.id = s.id
+        WHERE p_activity = ANY (CASE WHEN s.forward THEN e.forward ELSE e.backward END)
+    ) t;
+    IF v_n = 0 OR cardinality(p_forward) <> v_n OR coalesce(cardinality(v_enter), 0) <> v_n
+        OR EXISTS (SELECT FROM generate_series(1, v_n - 1) i WHERE v_leave[i] <> v_enter[i + 1])
     THEN
-        v_route := jsonb_set(v_route, '{warnings}', to_jsonb(ARRAY[CASE
-            WHEN v_direct AND v_length_m > p_target_m THEN 'too_short'
-            ELSE 'target_missed'
-        END]));
+        RAISE EXCEPTION 'the edges must be in the graph, join up and allow %', p_activity
+            USING ERRCODE = 'invalid_parameter_value';
     END IF;
-    RETURN v_route;
+
+    -- In Web Mercator, where shares of the line's length are true to those in metres.
+    v_line := ST_Transform(
+        ST_GeomFromGeoJSON(routing.steps_json(p_edge_ids, p_forward) -> 'geometry'), 3857
+    );
+    v_grab_m := ST_LineLocatePoint(v_line, ST_Transform(p_grab, 3857)) * v_end_m[v_n];
+    v_reach_m := greatest(
+        routing.setting(v_profile, 'edit', 'window_min_m'),
+        routing.setting(v_profile, 'edit', 'window_share')
+            * coalesce(ST_Distance(p_grab::geography, p_drop::geography), 0)
+    );
+    SELECT coalesce(max(i), 0) INTO v_first
+    FROM generate_series(1, v_n) i
+    WHERE v_end_m[i] <= v_grab_m - greatest(v_reach_m, coalesce(p_before_m, 0));
+    SELECT coalesce(min(i), v_n + 1) INTO v_last
+    FROM generate_series(1, v_n) i
+    WHERE coalesce(v_end_m[i - 1], 0) >= v_grab_m + greatest(v_reach_m, coalesce(p_after_m, 0));
+
+    v_area := ST_Buffer(
+        ST_Collect(ARRAY[
+            ST_Transform(ST_LineSubstring(
+                v_line,
+                coalesce(v_end_m[v_first], 0) / v_end_m[v_n],
+                coalesce(v_end_m[v_last - 1], v_end_m[v_n]) / v_end_m[v_n]
+            ), 4326),
+            coalesce(p_drop, p_grab)
+        ])::geography,
+        routing.setting(v_profile, 'edit', 'area_m')
+    )::geometry;
+
+    IF p_drop IS NULL THEN
+        v_tries := ARRAY[ARRAY[
+            coalesce(v_leave[v_first], v_enter[1]), coalesce(v_enter[v_last], v_leave[v_n])
+        ]];
+    ELSE
+        SELECT a.source, a.target, a.forward, a.backward, a.geom INTO v_edge
+        FROM routing.activity_edges a
+        WHERE a.activity = p_activity
+          AND a.geom && ST_Buffer(
+              p_drop::geography, routing.setting(v_profile, 'plan', 'snap_m')
+          )::geometry
+          AND ST_DWithin(
+              a.geom::geography, p_drop::geography, routing.setting(v_profile, 'plan', 'snap_m')
+          )
+        ORDER BY ST_Distance(a.geom::geography, p_drop::geography)
+        LIMIT 1;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'no road near where the route was dropped'
+                USING ERRCODE = 'no_data_found', DETAIL = 'drop_off_road';
+        END IF;
+        v_handle := ST_ClosestPoint(v_edge.geom, p_drop);
+        v_tries := '{}';
+        IF v_edge.forward THEN
+            v_tries := v_tries || ARRAY[ARRAY[
+                coalesce(v_leave[v_first], v_enter[1]), v_edge.source, v_edge.target,
+                coalesce(v_enter[v_last], v_leave[v_n])
+            ]];
+        END IF;
+        IF v_edge.backward THEN
+            v_tries := v_tries || ARRAY[ARRAY[
+                coalesce(v_leave[v_first], v_enter[1]), v_edge.target, v_edge.source,
+                coalesce(v_enter[v_last], v_leave[v_n])
+            ]];
+        END IF;
+    END IF;
+
+    FOR i IN 1 .. array_length(v_tries, 1) LOOP
+        BEGIN
+            SELECT array_agg(r.edge_id ORDER BY r.step),
+                   array_agg(r.vertex = e.source ORDER BY r.step),
+                   coalesce(sum(e.length_m), 0)
+            INTO v_stretch, v_forward, v_m
+            FROM routing.route_edges(
+                v_profile,
+                v_area,
+                ARRAY(SELECT unnest(v_tries[i:i][:])),
+                p_edge_ids[1:v_first] || p_edge_ids[v_last:]
+            ) r
+            JOIN graph.edges e ON e.id = r.edge_id;
+        EXCEPTION WHEN no_data_found THEN
+            CONTINUE;
+        END;
+        IF v_best_m IS NULL OR v_m < v_best_m THEN
+            v_best_ids := coalesce(v_stretch, '{}');
+            v_best_fw := coalesce(v_forward, '{}');
+            v_best_m := v_m;
+        END IF;
+    END LOOP;
+    IF v_best_m IS NULL THEN
+        RAISE EXCEPTION 'no way through where the route was dropped'
+            USING ERRCODE = 'no_data_found', DETAIL = 'unreachable';
+    END IF;
+
+    v_route := routing.steps_json(
+        p_edge_ids[1:v_first] || v_best_ids || p_edge_ids[v_last:],
+        p_forward[1:v_first] || v_best_fw || p_forward[v_last:]
+    );
+    v_route := jsonb_set(v_route, '{warnings}', routing.length_warnings(
+        (v_route ->> 'length_m')::double precision, p_target_m,
+        routing.setting(v_profile, 'plan', 'tolerance'), false
+    ));
+    -- How far the new stretch reaches before and after the handle along the new route, for taking
+    -- this edit back out over all of it.
+    IF v_handle IS NOT NULL THEN
+        v_new_line := ST_Transform(ST_GeomFromGeoJSON(v_route -> 'geometry'), 3857);
+        v_handle_m := ST_LineLocatePoint(v_new_line, ST_Transform(v_handle, 3857))
+            * (v_route ->> 'length_m')::double precision;
+        v_from_m := coalesce(v_end_m[v_first], 0);
+    END IF;
+    RETURN routing.route_out(v_route) || jsonb_build_object(
+        'handle', ST_AsGeoJSON(v_handle)::jsonb,
+        'before_m', greatest(v_handle_m - v_from_m, 0),
+        'after_m', greatest(v_from_m + v_best_m - v_handle_m, 0)
+    );
 END
 $$;

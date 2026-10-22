@@ -8,6 +8,8 @@ import type { CourseSymbolKind } from '.'
 defineProps<{
 	kind: CourseSymbolKind
 	controlNumber?: number | undefined
+	/** A control the course no longer visits: drawn hollow, the map showing through, as left out. */
+	missed?: boolean
 }>()
 </script>
 
@@ -17,7 +19,8 @@ defineProps<{
 		stroke="currentColor"
 		stroke-width="2.5"
 		stroke-linejoin="round"
-		class="fill-overprint text-overprint-contrast"
+		:class="missed ? 'fill-none' : 'fill-overprint'"
+		class="text-overprint-contrast"
 		aria-hidden="true"
 	>
 		<path v-if="kind === 'start'" d="M14 3.5 25 23.5H3Z" />

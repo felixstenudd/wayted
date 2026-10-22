@@ -7,8 +7,10 @@ import type { LonLat } from '../geometry'
 
 const props = defineProps<{
 	lonLat: LonLat
-	/** What the marker stands for, read out by screen readers. */
-	label: string
+	/** What the marker stands for, read out by screen readers. Without one it is decoration. */
+	label?: string
+	/** The content is a control that names itself, such as a button; the marker adds no role. */
+	control?: boolean
 	draggable?: boolean
 }>()
 const emit = defineEmits<{ move: [to: LonLat] }>()
@@ -38,6 +40,10 @@ watch(
 	() => props.lonLat,
 	({ lon, lat }) => marker?.setLngLat([lon, lat]),
 )
+watch(
+	() => props.draggable,
+	(draggable) => marker?.setDraggable(draggable),
+)
 
 // Before Vue removes the element, so MapLibre lets go of it first.
 onBeforeUnmount(() => {
@@ -47,7 +53,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-	<div ref="element" role="img" :aria-label="props.label">
+	<div
+		ref="element"
+		:role="props.label ? 'img' : undefined"
+		:aria-label="props.label"
+		:aria-hidden="props.label || props.control ? undefined : 'true'"
+	>
 		<slot />
 	</div>
 </template>

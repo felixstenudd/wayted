@@ -13,6 +13,19 @@ CREATE TABLE enrich.areas (
 
 CREATE INDEX areas_geom_idx ON enrich.areas USING gist (geom);
 
+-- Line features of every line layer, from ways.
+CREATE TABLE enrich.lines (
+    -- a FeatureLayer code
+    layer    text   NOT NULL,
+    osm_type text   NOT NULL CHECK (osm_type = 'way'),
+    osm_id   bigint NOT NULL,
+    tags     jsonb  NOT NULL,
+    geom     geometry(MultiLineString, 4326) NOT NULL,
+    PRIMARY KEY (layer, osm_type, osm_id)
+);
+
+CREATE INDEX lines_geom_idx ON enrich.lines USING gist (geom);
+
 -- The ways each feature is built from: itself for a way, its member ways for a relation. Kept
 -- also when the feature could not be built, so a missing member arriving later finds it.
 CREATE TABLE enrich.feature_ways (

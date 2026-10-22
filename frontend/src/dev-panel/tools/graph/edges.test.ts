@@ -4,15 +4,23 @@ import type { Graph } from '../../dev-api/types'
 import {
 	colorScale,
 	edgeColor,
+	feedbackActivities,
+	feedbackColor,
+	feedbackOption,
+	feedbackOptionActivity,
 	isFixedScale,
+	netVotes,
 	scoredCount,
 	scoreNames,
 	scoreToken,
 	scoreRange,
 	toMapEdges,
+	votedCount,
 } from './edges'
 
-const edge = (id: number, scores: Record<string, unknown>) => ({
+type Feedback = Record<string, Record<string, { up: number; down: number }>>
+
+const edge = (id: number, scores: Record<string, unknown>, feedback: Feedback = {}) => ({
 	type: 'Feature' as const,
 	geometry: {
 		type: 'LineString' as const,
@@ -30,6 +38,7 @@ const edge = (id: number, scores: Record<string, unknown>) => ({
 		forward: ['cycling', 'running'],
 		backward: ['running'],
 		scores,
+		feedback,
 		tags: { highway: 'residential' },
 	},
 })
@@ -83,8 +92,10 @@ describe('colorScale', () => {
 		expect(isFixedScale('green')).toBe(true)
 	})
 
-	it('runs from 0 to 1 for nature too', () => {
+	it('runs from 0 to 1 for nature, water and prepared too', () => {
 		expect(isFixedScale('nature')).toBe(true)
+		expect(isFixedScale('water')).toBe(true)
+		expect(isFixedScale('prepared')).toBe(true)
 	})
 
 	it('runs over the values in view for other scores', () => {
@@ -129,10 +140,71 @@ describe('edgeColor', () => {
 	})
 })
 
+const reviewed = graph(
+	edge(1, {}, { running: { green: { up: 3, down: 1 }, safety: { up: 0, down: 2 } } }),
+	edge(2, {}, { cycling: { access: { up: 0, down: 1 } }, running: {} }),
+	edge(3, {}),
+)
+
+describe('netVotes', () => {
+	it('is up minus down over every topic, as a share of all votes', () => {
+		expect(netVotes({ green: { up: 3, down: 1 }, safety: { up: 0, down: 2 } })).toBe(0)
+		expect(netVotes({ access: { up: 0, down: 1 } })).toBe(-1)
+	})
+
+	it('is null without votes', () => {
+		expect(netVotes({})).toBeNull()
+	})
+})
+
+describe('review votes on the map', () => {
+	it('flattens net votes per activity next to the scores', () => {
+		expect(toMapEdges(reviewed).features.map((f) => f.properties)).toEqual([
+			{ id: 1, 'feedback:running': 0 },
+			{ id: 2, 'feedback:cycling': -1 },
+			{ id: 3 },
+		])
+	})
+
+	it('lists the activities with votes and counts their edges', () => {
+		expect(feedbackActivities(reviewed)).toEqual(['cycling', 'running'])
+		expect(votedCount(reviewed, 'running')).toBe(1)
+		expect(votedCount(reviewed, 'cycling')).toBe(1)
+	})
+
+	it('runs from all down through mixed to all up, and stays plain without votes', () => {
+		const colors = { plain: 'black', bad: 'brown', mixed: 'grey', good: 'green' }
+		expect(feedbackColor('running', colors)).toEqual([
+			'case',
+			['has', 'feedback:running'],
+			[
+				'interpolate',
+				['linear'],
+				['get', 'feedback:running'],
+				-1,
+				'brown',
+				0,
+				'grey',
+				1,
+				'green',
+			],
+			'black',
+		])
+	})
+
+	it('shares the colour-by choice with the scores', () => {
+		expect(feedbackOptionActivity(feedbackOption('cycling'))).toBe('cycling')
+		expect(feedbackOptionActivity('green')).toBeNull()
+		expect(feedbackOptionActivity(null)).toBeNull()
+	})
+})
+
 describe('scoreToken', () => {
 	it('ends a share in the colour of the layer it measures', () => {
 		expect(scoreToken('green')).toBe('--map-park')
 		expect(scoreToken('nature')).toBe('--map-nature')
+		expect(scoreToken('water')).toBe('--map-water')
+		expect(scoreToken('prepared')).toBe('--map-score-high')
 		expect(scoreToken('quiet')).toBe('--map-score-high')
 	})
 })

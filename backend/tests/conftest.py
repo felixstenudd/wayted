@@ -35,7 +35,7 @@ async def admin_conn() -> AsyncIterator[AsyncConnection[TupleRow]]:
             raw.osm_nodes, raw.osm_ways, raw.osm_relations, raw.elevation_tiles,
             graph.ways, graph.vertices, graph.edges,
             graph.pending_ways, graph.pending_nodes, graph.pending_edges,
-            enrich.areas, enrich.feature_ways,
+            enrich.areas, enrich.lines, enrich.feature_ways,
             enrich.pending_ways, enrich.pending_relations, enrich.pending_nodes,
             enrich.pending_elevation
         RESTART IDENTITY

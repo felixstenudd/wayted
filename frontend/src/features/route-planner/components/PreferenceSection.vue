@@ -3,11 +3,12 @@ import { CircleAlert } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { groupAttributes, humanizeKey, useRouteAttributes } from '@/features/route'
+
 import { Button } from '@/shared/ui/button'
 
-import { useRouteAttributes } from '../api'
-import { groupAttributes, humanizeKey } from '../attributes'
 import { usePlannerStore } from '../store'
+import PlannerDefaults from './PlannerDefaults.vue'
 import PreferenceRow from './PreferenceRow.vue'
 
 const HEADING_ID = 'preferences-heading'
@@ -29,14 +30,6 @@ const groupName = (group: string) =>
 	i18n.te(`planner.preferences.groups.${group}`)
 		? t(`planner.preferences.groups.${group}`)
 		: humanizeKey(group)
-
-// Listed in one line so the panel shows what is coming without a row of dead sliders.
-const comingLater = computed(() => {
-	const names = (attributes.data.value ?? []).filter((a) => !a.scored).map((a) => name(a.key))
-	if (names.length === 0) return null
-	const list = new Intl.ListFormat(i18n.locale.value, { type: 'conjunction' }).format(names)
-	return t('planner.preferences.comingLater', { attributes: list })
-})
 </script>
 
 <template>
@@ -48,14 +41,8 @@ const comingLater = computed(() => {
 	>
 		<div class="flex items-baseline justify-between gap-2">
 			<h2 :id="HEADING_ID" class="text-title">{{ t('planner.preferences.title') }}</h2>
-			<p
-				v-if="planner.setWeightCount > 0"
-				class="flex items-baseline gap-3 text-small text-graphite"
-			>
+			<p v-if="planner.setWeightCount > 0" class="text-small text-graphite">
 				{{ t('planner.preferences.setCount', planner.setWeightCount) }}
-				<Button variant="link" class="text-small" @click="planner.resetWeights()">
-					{{ t('planner.preferences.reset') }}
-				</Button>
 			</p>
 		</div>
 
@@ -111,7 +98,8 @@ const comingLater = computed(() => {
 					:name="name(attribute.key)"
 				/>
 			</div>
-			<p v-if="comingLater" class="pt-1 text-small text-graphite">{{ comingLater }}</p>
+			<!-- Under the sliders, so its links appearing on the first move shift nothing being dragged. -->
+			<PlannerDefaults />
 		</template>
 	</section>
 </template>

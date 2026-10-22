@@ -1,5 +1,7 @@
 """Area fixtures written straight into raw, and readers for what the enricher built."""
 
+import math
+
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
@@ -25,6 +27,21 @@ async def add_square(
     await add_way(conn, way_id, [*nodes, first_node], tags)
 
 
+async def add_node_m(conn: Conn, node_id: int, east_m: float, north_m: float) -> None:
+    """A node placed in metres from the grid origin, for distances finer than a grid step."""
+    lon = ORIGIN_LON + east_m / (111320 * math.cos(math.radians(ORIGIN_LAT)))
+    lat = ORIGIN_LAT + north_m / 110574
+    await conn.execute(
+        """
+        INSERT INTO raw.osm_nodes AS existing (id, tags, geom)
+        VALUES (%s, '{}', ST_Point(%s, %s, 4326))
+        ON CONFLICT (id) DO UPDATE SET geom = EXCLUDED.geom
+        WHERE existing.geom IS DISTINCT FROM EXCLUDED.geom
+        """,
+        (node_id, lon, lat),
+    )
+
+
 async def add_relation(
     conn: Conn, relation_id: int, ways: list[tuple[int, str]], tags: dict[str, str]
 ) -> None:
@@ -43,6 +60,12 @@ async def add_relation(
 async def add_road(conn: Conn, way_id: int, a: Point, b: Point) -> None:
     """A highway=path from a to b, one edge once mapped."""
     await add_line(conn, way_id, [a, b], {"highway": "path"})
+
+
+def grid_line_wkt(points: list[tuple[int, int]]) -> str:
+    """WKT of a line on the grid, for comparing with ST_Equals."""
+    coords = ", ".join(f"{ORIGIN_LON + x * STEP} {ORIGIN_LAT + y * STEP}" for x, y in points)
+    return f"LINESTRING({coords})"
 
 
 def grid_wkt(outer: Box, *holes: Box) -> str:
@@ -75,6 +98,22 @@ async def area_is(conn: Conn, osm_type: str, osm_id: int, wkt: str) -> bool:
         WHERE osm_type = %s AND osm_id = %s
         """,
         (wkt, osm_type, osm_id),
+    )
+    row = await cur.fetchone()
+    return row is not None and bool(row[0])
+
+
+async def lines(conn: Conn) -> list[tuple[str, int]]:
+    """(layer, osm_id) of every row in enrich.lines, sorted."""
+    cur = await conn.execute("SELECT layer, osm_id FROM enrich.lines ORDER BY layer, osm_id")
+    return [(layer, osm_id) for layer, osm_id in await cur.fetchall()]
+
+
+async def line_is(conn: Conn, osm_id: int, wkt: str) -> bool:
+    """Whether the line feature's geometry is topologically equal to wkt."""
+    cur = await conn.execute(
+        "SELECT ST_Equals(geom, ST_GeomFromText(%s, 4326)) FROM enrich.lines WHERE osm_id = %s",
+        (wkt, osm_id),
     )
     row = await cur.fetchone()
     return row is not None and bool(row[0])

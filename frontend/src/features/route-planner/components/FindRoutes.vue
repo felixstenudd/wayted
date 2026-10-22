@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleAlert, Info } from '@lucide/vue'
+import { CircleAlert, Info, LoaderCircle } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -7,7 +7,11 @@ import { Button } from '@/shared/ui/button'
 
 import { useFoundRoute } from '../api'
 import { usePlannerStore } from '../store'
-import RouteSummary from './RouteSummary.vue'
+
+const props = defineProps<{
+	/** Where the missing point is already asked for, so the button points there instead. */
+	missingHintId?: string
+}>()
 
 const HINT_ID = 'find-routes-hint'
 
@@ -24,23 +28,35 @@ const isNotice = computed(
 
 <template>
 	<div class="flex flex-col gap-2">
+		<p v-if="planner.isStale && !isBusy" class="flex gap-1.5 text-small text-graphite">
+			<Info class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+			{{ t('planner.findRoutes.staleHint') }}
+		</p>
 		<Button
 			size="lg"
 			class="w-full"
-			:disabled="planner.routeRequest === null || isBusy"
+			:disabled="planner.routeRequest === null"
 			:aria-busy="isBusy"
-			:aria-describedby="planner.missingPoint ? HINT_ID : undefined"
-			@click="planner.findRoutes()"
+			:aria-disabled="isBusy || undefined"
+			:aria-describedby="planner.missingPoint ? (props.missingHintId ?? HINT_ID) : undefined"
+			@click="isBusy || planner.findRoutes()"
 		>
+			<LoaderCircle v-if="isBusy" class="animate-spin" aria-hidden="true" />
 			{{
 				state.status === 'finding'
 					? t('planner.findRoutes.submitting')
 					: state.status === 'preparing'
 						? t('planner.findRoutes.preparing')
-						: t('planner.findRoutes.submit')
+						: planner.isStale
+							? t('planner.findRoutes.again')
+							: t('planner.findRoutes.submit')
 			}}
 		</Button>
-		<p v-if="planner.missingPoint" :id="HINT_ID" class="text-small text-graphite">
+		<p
+			v-if="planner.missingPoint && !props.missingHintId"
+			:id="HINT_ID"
+			class="text-small text-graphite"
+		>
 			{{ t(`planner.findRoutes.missing.${planner.missingPoint}`) }}
 		</p>
 		<p v-else-if="state.status === 'preparing'" role="status" class="text-small text-graphite">
@@ -59,10 +75,5 @@ const isNotice = computed(
 			/>
 			{{ t(`planner.findRoutes.errors.${state.error}`) }}
 		</p>
-		<RouteSummary
-			v-else-if="state.status === 'found' && planner.search"
-			:route="state.route"
-			:target-m="planner.search.request.target_distance_m"
-		/>
 	</div>
 </template>

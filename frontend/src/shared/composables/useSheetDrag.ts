@@ -26,6 +26,16 @@ export function settleStop(stops: readonly number[], heightPx: number, velocity:
 	return nearest
 }
 
+/**
+ * A sheet's stop heights in px, lowest first: the peek, half the screen, and all of it but a gap
+ * at the top. A tall peek pushes the middle stop up with it, and never goes past the highest.
+ */
+export function sheetStops(peekPx: number, viewportPx: number, topGapPx: number): number[] {
+	const highest = viewportPx - topGapPx
+	const lowest = Math.min(peekPx, highest)
+	return [lowest, Math.max(viewportPx / 2, lowest), highest]
+}
+
 /** Drags a sheet between stops (heights in px, lowest first) and settles on one when let go. */
 export function useSheetDrag(stops: Readonly<Ref<readonly number[]>>, stop: Ref<number>) {
 	const dragHeightPx = ref<number | null>(null)
