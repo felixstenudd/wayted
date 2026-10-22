@@ -1,7 +1,9 @@
 import dataclasses
 import math
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 import psycopg
 import pytest
@@ -13,10 +15,14 @@ from app.sources.tiles import Tile
 
 from ..enrichment.area_data import add_square, run
 from ..graph.raw_data import ORIGIN_LAT, ORIGIN_LON, STEP, Conn, add_line, edge_ids
+from ..logbook.app_data import add_segment_review, add_user
 
 pytestmark = pytest.mark.db
 
 type Pool = AsyncConnectionPool[Conn]
+# graph.edges.feedback: {activity: {topic: {"up": n, "down": n}}}, or a user's own votes as
+# routing.own_votes gives them: {edge id: {topic: 1 or -1}}
+type Votes = dict[str, dict[str, Any]]
 
 # Grid steps are about 57 m east-west and 111 m north-south.
 A = (1, 0, 0)
@@ -56,10 +62,12 @@ async def cost_sql(
     weights: Mapping[str, float],
     used: list[int] | None = None,
     area: str | None = None,
+    own: Votes | None = None,
+    others: bool = True,
 ) -> str:
     cur = await conn.execute(
-        "SELECT routing.cost_sql(routing.make_profile(%s, %s), %s::geometry, %s)",
-        (activity, Jsonb(weights), area, used or []),
+        "SELECT routing.cost_sql(routing.make_profile(%s, %s, '{}', %s, %s), %s::geometry, %s)",
+        (activity, Jsonb(weights), Jsonb(own or {}), others, area, used or []),
     )
     row = await cur.fetchone()
     assert row is not None
@@ -200,6 +208,8 @@ async def test_profile_lays_settings_over_the_defaults(api_pool: Pool) -> None:
         ("running", {}, {"plan": {"tolerance": 1}}, "plan.tolerance"),
         ("running", {}, {"plan": {"snap_m": 0}}, "plan.snap_m"),
         ("running", {}, {"plan": {"attempts": 0}}, "plan.attempts"),
+        ("running", {}, {"feedback": {"damping": 0}}, "feedback.damping"),
+        ("running", {}, {"feedback": {"access": 0.5}}, "feedback.access"),
     ],
 )
 async def test_profile_rejects_bad_input(
@@ -236,6 +246,215 @@ async def test_cost_weighs_length_by_class_preference_and_reuse(
     expected = row[0] * 1.1 * (1 + 0.7 * 0.25)
     assert fresh[edge] == pytest.approx((expected, -1))
     assert reused[edge] == pytest.approx((4 * expected, -1))
+
+
+async def voted_edge(conn: Conn, mapper_pool: Pool, feedback: Votes) -> int:
+    """The straight path, half green, with users' votes on it as the enricher counts them."""
+    await add_line(conn, STRAIGHT, [A, B], {"highway": "path"})
+    await map_pending(mapper_pool.connection)
+    await conn.execute(
+        "UPDATE graph.edges SET scores = %s, feedback = %s",
+        (Jsonb({"green": 0.5}), Jsonb(feedback)),
+    )
+    return (await edge_ids(conn))[(STRAIGHT, 1, 2, 1)]
+
+
+async def cost_ratio(
+    conn: Conn,
+    edge: int,
+    activity: str,
+    weights: Mapping[str, float],
+    feedback: Votes | None = None,
+    own: Votes | None = None,
+    others: bool = True,
+) -> float:
+    """The edge's cost under weights, over its cost without weights or votes."""
+    if feedback is not None:
+        await conn.execute("UPDATE graph.edges SET feedback = %s", (Jsonb(feedback),))
+    sql = await cost_sql(conn, activity, weights, own=own, others=others)
+    cost = (await edge_costs(conn, sql))[edge][0]
+    await conn.execute("UPDATE graph.edges SET scores = '{}', feedback = '{}'")
+    plain = (await edge_costs(conn, await cost_sql(conn, activity, {})))[edge][0]
+    await conn.execute("UPDATE graph.edges SET scores = %s", (Jsonb({"green": 0.5}),))
+    return cost / plain
+
+
+async def test_votes_count_only_for_a_wanted_topic_and_the_same_activity(
+    admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    feedback = {
+        "running": {"green": {"up": 3, "down": 0}},
+        "cycling": {"green": {"up": 0, "down": 9}},
+    }
+    edge = await voted_edge(admin_conn, mapper_pool, feedback)
+
+    wanted = await cost_ratio(admin_conn, edge, "running", {"green": 1}, feedback)
+    avoided = await cost_ratio(admin_conn, edge, "running", {"green": -1}, feedback)
+
+    # 3 up, damped by 3, balance 0.5: green 0.5 plus half of that.
+    assert wanted == pytest.approx(1 - 0.7 * (0.5 + 0.5 * 0.5))
+    # Avoiding green, the score alone counts; the cyclists' votes never count for a run.
+    assert avoided == pytest.approx(1 + 0.7 * 0.5)
+
+
+async def test_access_and_safety_votes_cost_more_whatever_the_weights(
+    admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    feedback = {
+        "running": {"access": {"up": 0, "down": 3}},
+        "cycling": {"safety": {"up": 0, "down": 3}},
+    }
+    edge = await voted_edge(admin_conn, mapper_pool, feedback)
+
+    run = await cost_ratio(admin_conn, edge, "running", {}, feedback)
+    ride = await cost_ratio(admin_conn, edge, "cycling", {}, feedback)
+
+    # Balances of -0.5: access 1 + 3 * 0.5 for runners only; safety 1 + 0.5 * 0.5 for both.
+    assert run == pytest.approx(2.5 * 1.25)
+    assert ride == pytest.approx(1.25)
+
+
+async def test_good_votes_on_safety_only_cancel_and_lighting_and_crowding_count_nothing(
+    admin_conn: Conn, mapper_pool: Pool
+) -> None:
+    feedback = {
+        "running": {
+            "safety": {"up": 6, "down": 0},
+            "lighting": {"up": 0, "down": 6},
+            "crowding": {"up": 0, "down": 6},
+        }
+    }
+    edge = await voted_edge(admin_conn, mapper_pool, feedback)
+
+    assert await cost_ratio(admin_conn, edge, "running", {}, feedback) == pytest.approx(1)
+
+
+async def test_appeal_and_cost_lean_on_votes_alike(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    # Scores and votes high enough that the preference is held at 1.
+    feedback = {"running": {"green": {"up": 10, "down": 0}, "water": {"up": 0, "down": 2}}}
+    edge = await voted_edge(admin_conn, mapper_pool, feedback)
+    await admin_conn.execute("UPDATE graph.edges SET scores = %s", (Jsonb({"green": 1}),))
+    weights = {"green": 1, "water": 0.25}
+
+    async with api_pool.connection() as conn:
+        cost = (await edge_costs(conn, await cost_sql(conn, "running", weights)))[edge][0]
+        plain = (await edge_costs(conn, await cost_sql(conn, "running", {})))[edge][0]
+        cur = await conn.execute(
+            """
+            SELECT routing.preference(p, e.scores, e.feedback), routing.preference(p, e.scores),
+                   (SELECT appeal FROM routing.vertex_stats(p, ARRAY[e.source]))
+            FROM routing.make_profile('running', %s) p, graph.edges e
+            WHERE e.id = %s
+            """,
+            (Jsonb(weights), edge),
+        )
+        row = await cur.fetchone()
+
+    assert row is not None
+    voted, measured, appeal = row
+    assert voted == pytest.approx((1 - cost / plain) / 0.7)
+    assert voted == pytest.approx(min(1, 0.8 + 0.5 * 0.8 * 10 / 13 - 0.5 * 0.2 * 2 / 5))
+    assert measured == pytest.approx(0.8)
+    assert appeal == pytest.approx(voted)
+
+
+async def reviewer(conn: Conn) -> UUID:
+    """A user with no reviews yet; app tables are not emptied between tests."""
+    await conn.execute("TRUNCATE app.users CASCADE")
+    return await add_user(conn)
+
+
+async def test_own_votes_are_the_latest_per_edge_and_topic_in_the_area(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    # Four paths side by side, one edge each, 1 to 4 from the west.
+    for way in range(1, 5):
+        await add_line(
+            admin_conn,
+            way,
+            [(10 * way, way * 10, 0), (10 * way + 1, way * 10 + 5, 0)],
+            {"highway": "path"},
+        )
+    await map_pending(mapper_pool.connection)
+    edge = {way: id_ for (way, *_), id_ in (await edge_ids(admin_conn)).items()}
+    user = await reviewer(admin_conn)
+    other = await add_user(admin_conn, "other@example.com")
+    then, later = datetime(2026, 5, 1, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC)
+    await add_segment_review(admin_conn, user, None, [edge[1]], ["green_good"], updated_at=then)
+    await add_segment_review(
+        admin_conn, user, None, [edge[1], edge[2]], ["green_bad", "access_bad"], updated_at=later
+    )
+    # A ride: its hills say nothing about runs, but feeling unsafe is about the place.
+    await add_segment_review(
+        admin_conn, user, None, [edge[3]], ["hills_good", "safety_bad"], activity="cycling"
+    )
+    await add_segment_review(admin_conn, user, None, [edge[4]], ["green_good"])
+    await add_segment_review(admin_conn, other, None, [edge[2]], ["green_good"])
+    async with api_pool.connection() as conn:
+        # The area takes in the first three paths only.
+        cur = await conn.execute(
+            """
+            SELECT routing.own_votes(%s, 'running', ST_MakeEnvelope(%s, %s, %s, %s, 4326)),
+                   routing.own_votes(NULL, 'running')
+            """,
+            (user, ORIGIN_LON, ORIGIN_LAT - STEP, ORIGIN_LON + 36 * STEP, ORIGIN_LAT + STEP),
+        )
+        row = await cur.fetchone()
+
+    assert row == (
+        {
+            str(edge[1]): {"green": -1, "access": -1},
+            str(edge[2]): {"green": -1, "access": -1},
+            str(edge[3]): {"safety": -1},
+        },
+        {},
+    )
+
+
+async def test_own_votes_stand_in_for_everyones(admin_conn: Conn, mapper_pool: Pool) -> None:
+    feedback = {
+        "running": {"green": {"up": 3, "down": 0}},
+        "cycling": {"safety": {"up": 0, "down": 3}},
+    }
+    edge = await voted_edge(admin_conn, mapper_pool, feedback)
+    own = {str(edge): {"green": -1, "access": -1}}
+
+    everyones = await cost_ratio(admin_conn, edge, "running", {"green": 1}, feedback, own)
+    own_only = await cost_ratio(admin_conn, edge, "running", {"green": 1}, feedback, own, False)
+
+    # Green 0.5 less half of the own -1: no preference left. Access at its full 4 at once, and
+    # everyone's safety votes at 1.25, which do not count when only the user's own do.
+    assert everyones == pytest.approx(4 * 1.25)
+    assert own_only == pytest.approx(4)
+
+
+async def test_planned_route_keeps_off_a_stretch_the_user_could_not_get_through(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, api_pool: Pool
+) -> None:
+    await two_paths(admin_conn, mapper_pool, enricher_pool)
+    straight = (await edge_ids(admin_conn))[(STRAIGHT, 1, 2, 1)]
+    user = await reviewer(admin_conn)
+    await add_segment_review(admin_conn, user, None, [straight], ["access_bad"])
+
+    async def ways(user_id: UUID | None) -> list[int]:
+        async with api_pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT DISTINCT e.way_id
+                FROM jsonb_array_elements(
+                         routing.plan_route('running', %s, %s, NULL, '{}', '{}', '[]', %s)
+                         -> 'edges'
+                     ) r
+                JOIN graph.edges e ON e.id = (r ->> 'edge_id')::bigint
+                """,
+                (point(0, 0), point(10, 0), user_id),
+            )
+            return [way_id for (way_id,) in await cur.fetchall()]
+
+    assert await ways(None) == [STRAIGHT]
+    assert await ways(user) == [DETOUR]
 
 
 async def test_length_is_plain_metres(admin_conn: Conn, mapper_pool: Pool, api_pool: Pool) -> None:

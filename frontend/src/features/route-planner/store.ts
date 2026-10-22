@@ -106,6 +106,8 @@ export const usePlannerStore = defineStore('route-planner', () => {
 					? { after_m: Math.round(placement.afterKm * 1000) }
 					: {}),
 			})),
+			// Switching off everyone else's stretch reviews is only for tuning the planner.
+			use_others_reviews: true,
 		}
 	})
 
