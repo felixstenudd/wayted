@@ -52,6 +52,8 @@ class RouteRequestIn(BaseModel):
     preferences: Annotated[dict[str, Weight], AfterValidator(_known_keys)] = {}
     # passed in the order the planner finds best, unless their at says otherwise
     waypoints: list[WaypointIn] = []
+    # For tuning: False counts only the user's own stretch reviews, not everyone's.
+    use_others_reviews: bool = True
 
     @model_validator(mode="after")
     def _finish_matches_shape(self) -> Self:
@@ -89,6 +91,9 @@ class RoutePropertiesOut(BaseModel):
     scores: dict[str, AttributeScoreOut]
     # length travelled more than once
     reused_m: float
+    # metres climbed and dropped in all; None when heights are known for under 90 % of the length
+    ascent_m: float | None
+    descent_m: float | None
     # too_short: the finish is farther than the target; target_missed: no route came close.
     # Always empty without a target.
     warnings: list[RouteWarning]

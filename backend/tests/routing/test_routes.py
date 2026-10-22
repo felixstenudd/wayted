@@ -86,6 +86,17 @@ async def test_new_area_is_queued_and_the_client_asked_to_wait(
     assert [layer for (layer,) in await cur.fetchall()] == sorted(LAYER_CODES)
 
 
+async def test_a_route_can_be_planned_on_the_users_own_reviews_alone(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
+) -> None:
+    await mapped_grid(admin_conn, mapper_pool, api_pool)
+
+    res = await client.post("/routing/routes", json=LOOP | {"use_others_reviews": False})
+
+    assert res.status_code == 200
+    assert res.json()["features"]
+
+
 async def test_area_in_the_graph_gets_a_route(
     admin_conn: Conn, mapper_pool: Pool, api_pool: Pool, client: httpx.AsyncClient
 ) -> None:
@@ -106,8 +117,9 @@ async def test_area_in_the_graph_gets_a_route(
     assert properties["length_m"] == pytest.approx(2_000, rel=0.07)
     assert properties["warnings"] == []
     assert properties["reused_m"] >= 0
-    # The grid has nothing to score, so there is nothing known about any attribute.
+    # The grid has nothing to score, so there is nothing known about any attribute or height.
     assert properties["scores"] == {}
+    assert (properties["ascent_m"], properties["descent_m"]) == (None, None)
     steps = properties["edges"]
     assert steps and all(set(step) == {"edge_id", "forward"} for step in steps)
     cur = await admin_conn.execute("SELECT count(*) FROM raw.pending_tiles")

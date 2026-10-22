@@ -490,7 +490,7 @@ export interface components {
             forward: boolean;
         };
         /** @enum {string} */
-        Group: "surroundings" | "streets" | "sights" | "surface";
+        Group: "surroundings" | "streets" | "sights" | "surface" | "terrain";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -740,6 +740,10 @@ export interface components {
             scores: {
                 [key: string]: components["schemas"]["AttributeScoreOut"];
             };
+            /** Ascent M */
+            ascent_m: number | null;
+            /** Descent M */
+            descent_m: number | null;
             geometry: components["schemas"]["LineString"];
             /** Edges */
             edges: components["schemas"]["RouteEdgeOut"][];
@@ -767,6 +771,10 @@ export interface components {
             };
             /** Reused M */
             reused_m: number;
+            /** Ascent M */
+            ascent_m: number | null;
+            /** Descent M */
+            descent_m: number | null;
             /** Warnings */
             warnings: components["schemas"]["RouteWarning"][];
             /** Edges */
@@ -802,6 +810,11 @@ export interface components {
              * @default []
              */
             waypoints: components["schemas"]["WaypointIn"][];
+            /**
+             * Use Others Reviews
+             * @default true
+             */
+            use_others_reviews: boolean;
         };
         /** RouteReviewIn */
         RouteReviewIn: {

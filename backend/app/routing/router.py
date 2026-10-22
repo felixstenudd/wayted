@@ -2,6 +2,8 @@
 HTTP endpoints for generating routes
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import JSONResponse
 
@@ -39,7 +41,7 @@ def attributes(_: UserId) -> list[AttributeOut]:
     return [AttributeOut(key=a.key, group=a.group, scored=a.scored) for a in ROUTE_ATTRIBUTES]
 
 
-def _query(request: RouteRequestIn) -> service.RouteQuery:
+def _query(request: RouteRequestIn, user_id: UUID) -> service.RouteQuery:
     finish = request.finish
     return service.RouteQuery(
         activity=request.activity,
@@ -53,6 +55,8 @@ def _query(request: RouteRequestIn) -> service.RouteQuery:
             )
             for w in request.waypoints
         ),
+        user_id=user_id,
+        use_others_reviews=request.use_others_reviews,
     )
 
 
@@ -69,13 +73,13 @@ def _query(request: RouteRequestIn) -> service.RouteQuery:
     },
 )
 async def routes(
-    _: UserId, request: RouteRequestIn, db_conn: Conn
+    user_id: UserId, request: RouteRequestIn, db_conn: Conn
 ) -> PlannedRoutesOut | JSONResponse:
     """
     Plan a route, with up to two options that go other ways. Answers 202 while the map data
     around it is downloaded and scored; the client asks again until it gets the routes.
     """
-    query = _query(request)
+    query = _query(request, user_id)
     # Commit before planning: the worker only sees the queued tiles once they are committed.
     async with db_conn.transaction():
         ready = await service.prepare(db_conn, query)
@@ -141,6 +145,8 @@ def _feature(route: service.PlannedRoute) -> PlannedRouteOut:
                 for k, v in route.scores.items()
             },
             reused_m=route.reused_m,
+            ascent_m=route.ascent_m,
+            descent_m=route.descent_m,
             warnings=route.warnings,
             edges=[EdgeStepOut(edge_id=e.edge_id, forward=e.forward) for e in route.edges],
             waypoint_order=route.waypoint_order,

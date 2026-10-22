@@ -117,6 +117,27 @@ async def test_without_a_drop_the_stretch_takes_the_plain_way_again(
     assert plain["handle"] is None
 
 
+async def test_an_edit_goes_its_way_whatever_users_said_of_the_road(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+    spur = await along(
+        api_pool,
+        [(c, 12) for c in range(2, 13)] + [(12, 13)] + [(c, 12) for c in range(12, 23)],
+    )
+    # Many could not get through along row 12 around the spur, so a plan would go round.
+    blocked = await along(api_pool, [(11, 12), (12, 12), (13, 12)])
+    await admin_conn.execute(
+        """UPDATE graph.edges SET feedback = '{"running": {"access": {"up": 0, "down": 30}}}'
+           WHERE id = ANY(%s)""",
+        ([s["edge_id"] for s in blocked["edges"]],),
+    )
+
+    plain = await reroute(api_pool, spur, grid_point(12, 13), None)
+
+    assert plain["length_m"] == pytest.approx(20 * 113.7, rel=0.01)
+
+
 async def test_edited_route_is_scored_and_warned_like_a_planned_one(
     admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
 ) -> None:

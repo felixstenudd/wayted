@@ -68,6 +68,24 @@ async def test_saving_derives_the_line_distance_and_scores(
         {"seq": 1, "length_m": 40, "last_point": 3},
     ]
     assert saved["preferences"] == {"green": 0.5}
+    # No heights are known on these edges.
+    assert (saved["ascent_m"], saved["descent_m"]) == (None, None)
+
+
+async def test_saving_keeps_the_metres_climbed_and_dropped_as_they_were(
+    client: httpx.AsyncClient, app_conn: Conn
+) -> None:
+    a, b, _ = await add_network(app_conn)
+    await app_conn.execute("UPDATE graph.edges SET ascent_m = 5, descent_m = 1 WHERE id = %s", (a,))
+    await app_conn.execute("UPDATE graph.edges SET ascent_m = 2, descent_m = 3 WHERE id = %s", (b,))
+
+    # Travelled backwards, each edge climbs what it drops forwards.
+    saved = await create(client, route([(b, False), (a, False)]))
+    await app_conn.execute("UPDATE graph.edges SET ascent_m = 50, descent_m = 50")
+    read = (await client.get(f"/logbook/routes/{saved['id']}")).json()
+
+    assert (saved["ascent_m"], saved["descent_m"]) == (4, 7)
+    assert (read["ascent_m"], read["descent_m"]) == (4, 7)
 
 
 async def test_edges_run_backwards_when_not_forward(

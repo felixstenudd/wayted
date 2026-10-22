@@ -105,6 +105,7 @@ describe('route request', () => {
 			target_distance_m: 10_500,
 			preferences: { nature: 0.5 },
 			waypoints: [],
+			use_others_reviews: true,
 		})
 	})
 
@@ -369,6 +370,8 @@ describe('route edits', () => {
 			length_m: lengthM,
 			scores: {},
 			reused_m: 0,
+			ascent_m: null,
+			descent_m: null,
 			warnings: [],
 			edges: [],
 			waypoint_order: [],
@@ -478,6 +481,7 @@ describe('loadPlan', () => {
 			finish: TAVLEBORG,
 			preferences: { green: 0.5 },
 			waypoints: [{ lon: 20.28, lat: 63.825, at: 'after', after_m: 3_000 }],
+			use_others_reviews: true,
 		})
 		expect(planner.search?.request).toEqual(planner.routeRequest)
 	})

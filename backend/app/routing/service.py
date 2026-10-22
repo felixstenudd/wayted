@@ -6,6 +6,7 @@ and scored first: prepare queues what is missing and says when everything is in 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast, get_args
+from uuid import UUID
 
 import psycopg
 from psycopg import AsyncConnection
@@ -96,7 +97,8 @@ REROUTE = """
 
 PLAN_ROUTE = f"""
     SELECT routing.plan_route(
-        %(activity)s, {POINTS}, %(target_m)s, %(weights)s, '{{}}', %(waypoints)s
+        %(activity)s, {POINTS}, %(target_m)s, %(weights)s, '{{}}', %(waypoints)s,
+        %(user_id)s, %(use_others_reviews)s
     )
 """
 
@@ -147,6 +149,10 @@ class RouteQuery:
     weights: Mapping[str, float]
     # points the route passes, in the order given
     waypoints: tuple[Waypoint, ...] = ()
+    # whose own stretch reviews outweigh everyone's; None for nobody's
+    user_id: UUID | None = None
+    # whether other users' stretch reviews count, which tuning may switch off
+    use_others_reviews: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +178,9 @@ class PlannedRoute:
     scores: dict[str, AttributeScore]
     # length travelled more than once
     reused_m: float
+    # metres climbed and dropped in all; None when heights are known for under 90 % of the length
+    ascent_m: float | None
+    descent_m: float | None
     warnings: list[RouteWarning]
     # in travel order
     edges: list[EdgeStep]
@@ -189,6 +198,8 @@ def _params(query: RouteQuery) -> dict[str, Any]:
         "target_m": query.target_m,
         "weights": Jsonb({k: w for k, w in query.weights.items() if k in SCORED_KEYS}),
         "waypoints": Jsonb([_waypoint(w) for w in query.waypoints]),
+        "user_id": query.user_id,
+        "use_others_reviews": query.use_others_reviews,
     }
 
 
@@ -257,6 +268,8 @@ def _planned(route: dict[str, Any]) -> PlannedRoute:
         length_m=route["length_m"],
         scores={key: AttributeScore(**score) for key, score in route["scores"].items()},
         reused_m=route["reused_m"],
+        ascent_m=route["ascent_m"],
+        descent_m=route["descent_m"],
         warnings=route["warnings"],
         edges=[EdgeStep(**step) for step in route["edges"]],
         waypoint_order=route["waypoint_order"],

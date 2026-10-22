@@ -105,6 +105,9 @@ class RouteOut(BaseModel):
     waypoints: list[WaypointIn]
     distance_m: float
     scores: dict[str, AttributeScoreOut]
+    # metres climbed and dropped in all, as when saved; None when heights were not known
+    ascent_m: float | None
+    descent_m: float | None
     geometry: LineString
     edges: list[RouteEdgeOut]
     # turn by turn, in route order; none at the start and the finish
