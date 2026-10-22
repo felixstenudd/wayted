@@ -7,7 +7,7 @@ export const PAUSE_MS = 150
 // The edit window grows with the drag, so long drags take long to route; they are not previewed.
 const MAX_DRAG_M = 1_500
 // A preview that took longer than this ends previewing for the drag; it would lag the pointer.
-const SLOW_MS = 300
+const SLOW_MS = 500
 // A drop this near the spot last previewed takes that preview as it is.
 const SAME_SPOT_M = 5
 

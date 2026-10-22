@@ -59,11 +59,11 @@ describe('useDragPreview', () => {
 	})
 
 	it('stops for the rest of the drag once a preview is slow', async () => {
-		const { grab, pointer, fetch } = setup(400)
+		const { grab, pointer, fetch } = setup(600)
 		grab.value = GRAB
 		pointer.value = NEAR
 		await nextTick()
-		await vi.advanceTimersByTimeAsync(PAUSE_MS + 500)
+		await vi.advanceTimersByTimeAsync(PAUSE_MS + 700)
 
 		pointer.value = { lon: 20.261, lat: 63.821 }
 		await nextTick()
