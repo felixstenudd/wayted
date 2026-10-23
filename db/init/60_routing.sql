@@ -1258,6 +1258,51 @@ CREATE TYPE routing.evaluation AS (
     score      double precision
 );
 
+-- How much each of p_lines doubles (see routing.doubled_m), past what p_before already did when
+-- they carry it on, measured in order: p_lines come with p_bases, their scores as if nothing were
+-- doubled, lowest first, and p_lengths. Doubling only adds to a score, so with p_keep, once a
+-- line's base is above the p_keep-th best score measured, neither it nor any after it can be
+-- among the p_keep best, and they are left NULL. NULL p_keep measures them all.
+CREATE FUNCTION routing.doubled_in_order(
+    p_profile          routing.profile,
+    p_lines            geometry[],
+    p_bases            double precision[],
+    p_lengths          double precision[],
+    p_keep             integer,
+    p_before           geometry,
+    p_before_doubled_m double precision
+) RETURNS double precision[]
+LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE
+    v_weight  double precision := (p_profile.settings -> 'score' ->> 'doubled')::double precision;
+    v_doubled double precision[] := array_fill(
+        NULL::double precision, ARRAY[coalesce(cardinality(p_lines), 0)]
+    );
+    v_scores  double precision[] := '{}';
+    v_bound   double precision := 'Infinity';
+BEGIN
+    FOR i IN 1 .. coalesce(cardinality(p_lines), 0) LOOP
+        -- The margin keeps rounding from leaving out a line that only ties.
+        EXIT WHEN p_bases[i] > v_bound + 1e-9;
+        v_doubled[i] := CASE WHEN p_before IS NULL
+            THEN routing.doubled_m(p_lines[i], p_profile.settings -> 'doubling')
+            ELSE greatest(
+                routing.doubled_m(
+                    ST_MakeLine(p_before, p_lines[i]), p_profile.settings -> 'doubling'
+                ) - p_before_doubled_m,
+                0
+            )
+        END;
+        v_scores := v_scores
+            || p_bases[i] + v_weight * coalesce(v_doubled[i] / nullif(p_lengths[i], 0), 0);
+        IF cardinality(v_scores) >= p_keep THEN
+            v_bound := (SELECT s FROM unnest(v_scores) s ORDER BY s OFFSET p_keep - 1 LIMIT 1);
+        END IF;
+    END LOOP;
+    RETURN v_doubled;
+END
+$$;
+
 -- Every candidate evaluated from one pgr_dijkstra call over the distinct legs of all of them, on
 -- routing.turns_sql's network so that turns count as they will on the route. Legs are found apart,
 -- so a leg does not know how the one before arrived; where its cheapest way out of the via turns
@@ -1271,13 +1316,15 @@ CREATE TYPE routing.evaluation AS (
 -- back where the route will not. Candidates with a leg that cannot be travelled are left out.
 -- p_before is the route so far when the candidates carry it on (as routing.route_json gives it):
 -- going back over its edges counts as reused, and coming back alongside it as doubled, though
--- neither its length nor what it already doubles counts.
+-- neither its length nor what it already doubles counts. With p_keep, candidates that cannot be
+-- among the p_keep best are left out, which spares measuring how much they double.
 CREATE FUNCTION routing.evaluate(
     p_profile routing.profile,
     p_area geometry,
     p_target_m double precision,
     p_candidates routing.candidate[],
-    p_before jsonb DEFAULT NULL
+    p_before jsonb DEFAULT NULL,
+    p_keep integer DEFAULT NULL
 ) RETURNS SETOF routing.evaluation
 LANGUAGE sql AS $$
     WITH before AS MATERIALIZED (
@@ -1448,20 +1495,6 @@ LANGUAGE sql AS $$
         JOIN graph.edges e ON e.id = l.arc / 2
         GROUP BY l.n
     ),
-    -- Measured once a candidate; the joins below could otherwise measure it again.
-    doubled AS MATERIALIZED (
-        SELECT l.n,
-               CASE WHEN b.line IS NULL
-                   THEN routing.doubled_m(l.line, p_profile.settings -> 'doubling')
-                   ELSE greatest(
-                       routing.doubled_m(
-                           ST_MakeLine(b.line, l.line), p_profile.settings -> 'doubling'
-                       ) - b.doubled_m,
-                       0
-                   )
-               END AS doubled_m
-        FROM lines l LEFT JOIN before b ON true
-    ),
     uses AS (
         SELECT l.n, l.arc / 2 AS edge, count(*) AS times
         FROM leg_arcs l
@@ -1480,6 +1513,40 @@ LANGUAGE sql AS $$
         JOIN graph.edges e ON e.id = u.edge
         LEFT JOIN before_edges b ON b.id = u.edge
         GROUP BY u.n
+    ),
+    penalties AS (
+        SELECT t.n, CASE WHEN r.n IS NULL AND s.n IS NULL THEN 0
+                         ELSE routing.setting(p_profile, 'evaluate', 'spike_penalty') END AS m
+        FROM totals t
+        LEFT JOIN turning_round r USING (n)
+        LEFT JOIN spikes s USING (n)
+    ),
+    -- Each candidate's score as if it doubled nothing, to measure the doubling in that order.
+    bases AS (
+        SELECT l.n, l.line, t.length_m,
+               routing.score(
+                   p_target_m, t.length_m, t.preferred_m / nullif(t.length_m, 0), 0, t.reused_m,
+                   p_profile.settings -> 'score'
+               ) + p.m AS base
+        FROM lines l JOIN totals t USING (n) JOIN penalties p USING (n)
+    ),
+    -- Measured once a candidate; the joins below could otherwise measure it again.
+    doubled AS MATERIALIZED (
+        SELECT d.n, d.doubled_m
+        FROM (
+            SELECT array_agg(n ORDER BY base, n) AS ns, array_agg(line ORDER BY base, n) AS lines,
+                   array_agg(base ORDER BY base, n) AS bases,
+                   array_agg(length_m ORDER BY base, n) AS lengths
+            FROM bases
+        ) a
+        LEFT JOIN before b ON true,
+        unnest(
+            a.ns,
+            routing.doubled_in_order(
+                p_profile, a.lines, a.bases, a.lengths, p_keep, b.line, b.doubled_m
+            )
+        ) AS d(n, doubled_m)
+        WHERE d.doubled_m IS NOT NULL
     )
     SELECT ROW(
         c.vias,
@@ -1489,14 +1556,12 @@ LANGUAGE sql AS $$
         routing.score(
             p_target_m, t.length_m, t.preferred_m / nullif(t.length_m, 0), d.doubled_m, t.reused_m,
             p_profile.settings -> 'score'
-        ) + CASE WHEN r.n IS NULL AND s.n IS NULL THEN 0
-                 ELSE routing.setting(p_profile, 'evaluate', 'spike_penalty') END
+        ) + p.m
     )::routing.evaluation
     FROM totals t
     JOIN candidates c USING (n)
     JOIN doubled d USING (n)
-    LEFT JOIN turning_round r USING (n)
-    LEFT JOIN spikes s USING (n)
+    JOIN penalties p USING (n)
 $$;
 
 -- The edges of the route through p_vias in travel order, with the vertex each is entered from.
@@ -1994,7 +2059,8 @@ BEGIN
                     FROM routing.detour_candidates(p_profile, p_area, p_from, p_to, v_goal_m) c
                     WHERE p_from <> p_to
                 ),
-                p_before
+                p_before,
+                v_kept
             ) e
             ORDER BY e.score
             LIMIT v_kept

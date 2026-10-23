@@ -300,6 +300,36 @@ async def test_evaluation_measures_a_via_as_the_route_will_pass_it(
     assert doubled_m == 0
 
 
+async def test_evaluating_for_the_best_few_keeps_them_as_they_are(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    async def evaluated(keep: int | None) -> list[tuple[list[int], float]]:
+        async with api_pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                WITH p AS (SELECT routing.make_profile('running') AS p)
+                SELECT (e).vias, (e).score
+                FROM p, routing.evaluate(
+                    p.p, NULL, 4000,
+                    ARRAY(SELECT c FROM routing.loop_candidates(p.p, NULL, %s, 4000) c),
+                    NULL, %s
+                ) e
+                ORDER BY (e).score
+                """,
+                (node_id(12, 12), keep),
+            )
+            return [(vias, score) for vias, score in await cur.fetchall()]
+
+    every = await evaluated(None)
+    best = await evaluated(3)
+
+    assert len(best) < len(every)
+    assert [score for _, score in best[:3]] == [score for _, score in every[:3]]
+    assert all(candidate in every for candidate in best)
+
+
 async def test_candidate_that_must_turn_round_at_a_via_scores_as_missing_the_target(
     admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
 ) -> None:
