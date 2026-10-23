@@ -23,7 +23,7 @@ def grade(share: float) -> str:
     return f"[rast.x] * {share * COLUMN_M}"
 
 
-async def add_heights(conn: Conn, heights: str) -> None:
+async def add_heights(conn: Conn, heights: str, tile: Tile = TILE) -> None:
     """The height model as one elevation tile, each cell as high as the map algebra expression."""
     await conn.execute(
         """
@@ -37,7 +37,7 @@ async def add_heights(conn: Conn, heights: str) -> None:
         )
         ON CONFLICT (z, x, y) DO UPDATE SET rast = EXCLUDED.rast
         """,
-        {"z": TILE.z, "x": TILE.x, "y": TILE.y, "heights": heights},
+        {"z": tile.z, "x": tile.x, "y": tile.y, "heights": heights},
     )
 
 
@@ -154,6 +154,24 @@ async def test_a_ferry_scores_nothing(
 
     assert await hills(admin_conn, EAST) == 0
     assert (await climb(admin_conn, EAST))[:2] == (0, 0)
+
+
+async def test_a_point_takes_heights_from_its_own_tile(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    # A neighbour reaching over the whole road, stored first so a lookup by area finds it first.
+    await add_heights(admin_conn, "1000", Tile(TILE.x + 1, TILE.y, TILE.z))
+    await add_heights(admin_conn, grade(0.05))
+    metres_per_degree = 111_320 * math.cos(math.radians(ORIGIN_LAT))
+    middle_m = ((TILE.bounds.west + TILE.bounds.east) / 2 - ORIGIN_LON) * metres_per_degree
+    await add_node_m(admin_conn, 101, middle_m - 200, 0.005 * 110_574)
+    await add_node_m(admin_conn, 102, middle_m + 200, 0.005 * 110_574)
+    await add_way(admin_conn, EAST, [101, 102], {"highway": "path"})
+
+    await run(mapper_pool, enricher_pool)
+
+    ascent_m, _, length_m = await climb(admin_conn, EAST)
+    assert ascent_m == pytest.approx(0.05 * length_m, rel=0.05)
 
 
 async def test_heights_arriving_after_the_edge_was_scored_rescore_it(

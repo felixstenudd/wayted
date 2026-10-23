@@ -94,8 +94,10 @@ SURFACE = """
 
 # How much the edge climbs and drops for its length, from heights sampled every sample_m along
 # it. A height is the mean of the point and four points smooth_m north, east, south and west of
-# it, each blended between the cells of the elevation tile it lies in (any of the tiles a point
-# is in: their margins hold the same cells), which evens out trees and roofs. Rises and drops
+# it, each blended between the cells of the elevation tile it lies in, which evens out trees and
+# roofs. That is the tile whose key the point falls in, not any tile reaching over it: at the
+# outer edge of a neighbour's margin there is no cell to blend with. Looking the tile up by its
+# key also reads each raster once per batch instead of once per point. Rises and drops
 # are counted through enrich.climb with threshold_m, and each is at least the difference
 # between the ends once that is ends_m or more, so a long even hill split into short edges that
 # each rise less than threshold_m still counts. Without the smoothing and ends_m, noise on a
@@ -115,27 +117,40 @@ HEIGHT_CHANGE = """
         JOIN graph.edges e USING (id)
         JOIN graph.ways w ON w.id = e.way_id
     ),
-    samples AS (
-        SELECT e.id, (d).path[1] AS n, h.height
+    layer AS (SELECT zoom, 2 ^ zoom AS tiles FROM ref.source_layers WHERE code = 'elevation'),
+    points AS (
+        SELECT e.id, (d).path[1] AS n, o.point,
+               floor((ST_X(o.point) + 180) / 360 * z.tiles)::int AS x,
+               floor((1 - asinh(tan(radians(ST_Y(o.point)))) / pi()) / 2 * z.tiles)::int AS y
         FROM edges e
+        CROSS JOIN layer z
         CROSS JOIN LATERAL ST_DumpPoints(
             ST_Segmentize(e.geom::geography, %(sample_m)s)::geometry
         ) d
         CROSS JOIN LATERAL (
-            SELECT avg((
-                SELECT ST_Value(t.rast, 1, o.point, true, 'bilinear')
-                FROM raw.elevation_tiles t
-                WHERE ST_Intersects(ST_ConvexHull(t.rast), o.point)
-                LIMIT 1
-            )) AS height
-            FROM (
-                SELECT (d).geom AS point
-                UNION ALL
-                SELECT ST_Project((d).geom::geography, %(smooth_m)s, radians(a))::geometry
-                FROM unnest(ARRAY[0, 90, 180, 270]) a
-            ) o
-        ) h
+            SELECT (d).geom AS point
+            UNION ALL
+            SELECT ST_Project((d).geom::geography, %(smooth_m)s, radians(a))::geometry
+            FROM unnest(ARRAY[0, 90, 180, 270]) a
+        ) o
         WHERE NOT e.ferry
+    ),
+    tiles AS MATERIALIZED (
+        SELECT t.x, t.y, t.rast
+        FROM raw.elevation_tiles t
+        WHERE t.z = (SELECT zoom FROM layer) AND (t.x, t.y) IN (SELECT DISTINCT x, y FROM points)
+    ),
+    samples AS (
+        -- A point whose own tile is missing takes any tile reaching over it.
+        SELECT p.id, p.n, avg(CASE WHEN t.x IS NULL THEN (
+                   SELECT ST_Value(f.rast, 1, p.point, true, 'bilinear')
+                   FROM raw.elevation_tiles f
+                   WHERE ST_Intersects(ST_ConvexHull(f.rast), p.point)
+                   LIMIT 1
+               ) ELSE ST_Value(t.rast, 1, p.point, true, 'bilinear') END) AS height
+        FROM points p
+        LEFT JOIN tiles t USING (x, y)
+        GROUP BY p.id, p.n
     ),
     profiles AS (
         SELECT id, array_agg(height ORDER BY n) AS heights
