@@ -585,7 +585,7 @@ $$;
 -- left. The ways out of
 -- p_departures and into p_arrivals join their departure and arrival nodes; a route may also
 -- start from an arc, to carry on from where the last one arrived. The angles come from the ends
--- of each edge's line.
+-- of each edge's line (graph.edges' leaving and arriving azimuths).
 CREATE FUNCTION routing.turns_sql(
     p_sql text, p_profile routing.profile, p_departures bigint[], p_arrivals bigint[]
 ) RETURNS text
@@ -595,14 +595,12 @@ LANGUAGE sql IMMUTABLE AS $$
         WITH n AS (%1$s),
         arcs AS MATERIALIZED (
             SELECT 2 * n.id AS arc, n.id AS edge, n.source AS tail, n.target AS head, n.cost,
-                   ST_Azimuth(ST_PointN(e.geom, 1), ST_PointN(e.geom, 2)) AS leaving,
-                   ST_Azimuth(ST_PointN(e.geom, -2), ST_PointN(e.geom, -1)) AS arriving
+                   e.leaving_forward AS leaving, e.arriving_forward AS arriving
             FROM n JOIN graph.edges e USING (id)
             WHERE n.cost >= 0
             UNION ALL
             SELECT 2 * n.id + 1, n.id, n.target, n.source, n.reverse_cost,
-                   ST_Azimuth(ST_PointN(e.geom, -1), ST_PointN(e.geom, -2)),
-                   ST_Azimuth(ST_PointN(e.geom, 2), ST_PointN(e.geom, 1))
+                   e.leaving_backward, e.arriving_backward
             FROM n JOIN graph.edges e USING (id)
             WHERE n.reverse_cost >= 0
         ),
@@ -652,13 +650,9 @@ $$;
 CREATE FUNCTION routing.turn_angle(p_from bigint, p_to bigint) RETURNS double precision
 LANGUAGE sql STABLE AS $$
     SELECT CASE WHEN p_from / 2 = p_to / 2 THEN pi() ELSE coalesce(routing.angle_between(
-        (SELECT CASE WHEN p_from % 2 = 0
-                     THEN ST_Azimuth(ST_PointN(geom, -2), ST_PointN(geom, -1))
-                     ELSE ST_Azimuth(ST_PointN(geom, 2), ST_PointN(geom, 1)) END
+        (SELECT CASE WHEN p_from % 2 = 0 THEN arriving_forward ELSE arriving_backward END
          FROM graph.edges WHERE id = p_from / 2),
-        (SELECT CASE WHEN p_to % 2 = 0
-                     THEN ST_Azimuth(ST_PointN(geom, 1), ST_PointN(geom, 2))
-                     ELSE ST_Azimuth(ST_PointN(geom, -1), ST_PointN(geom, -2)) END
+        (SELECT CASE WHEN p_to % 2 = 0 THEN leaving_forward ELSE leaving_backward END
          FROM graph.edges WHERE id = p_to / 2)
     ), 0) END
 $$;
