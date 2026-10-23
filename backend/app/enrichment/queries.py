@@ -110,6 +110,13 @@ CLAIM_EDGES = """
 
 HAS_PENDING_EDGES = "SELECT EXISTS (SELECT 1 FROM graph.pending_edges)"
 
+HAS_PENDING_FEATURES = """
+    SELECT EXISTS (SELECT 1 FROM enrich.pending_ways)
+        OR EXISTS (SELECT 1 FROM enrich.pending_relations)
+        OR EXISTS (SELECT 1 FROM enrich.pending_nodes)
+        OR EXISTS (SELECT 1 FROM enrich.pending_elevation)
+"""
+
 
 def merge_scores_head(columns: tuple[str, ...] = ()) -> str:
     """

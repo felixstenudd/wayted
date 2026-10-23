@@ -83,12 +83,17 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
         edges_queued += (
             await conn.execute(queries.QUEUE_ON_CHANGED_ELEVATION, {"reach_m": HEIGHTS_REACH_M})
         ).rowcount
-        # Sees the edges queued just above, so most are scored in this batch.
-        edges_scored = (await conn.execute(queries.CLAIM_EDGES, params)).rowcount
-        await conn.execute("ANALYZE claimed_edges")
-        for attribute in ATTRIBUTES:
-            await attribute.score(conn)
-        await conn.execute(queries.COUNT_FEEDBACK)
+        # Scores once every queued feature is built, as a later one would queue the same edges
+        # again; then sees the edges queued just above.
+        cur = await conn.execute(queries.HAS_PENDING_FEATURES)
+        row = await cur.fetchone()
+        edges_scored = 0
+        if row is not None and not row[0]:
+            edges_scored = (await conn.execute(queries.CLAIM_EDGES, params)).rowcount
+            await conn.execute("ANALYZE claimed_edges")
+            for attribute in ATTRIBUTES:
+                await attribute.score(conn)
+            await conn.execute(queries.COUNT_FEEDBACK)
     return BatchResult(
         ways_claimed=ways_claimed,
         relations_claimed=relations_claimed,

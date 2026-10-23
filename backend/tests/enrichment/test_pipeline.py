@@ -102,6 +102,22 @@ async def test_an_edge_queued_twice_is_scored_once(
     assert await queue_sizes(admin_conn) == (0, 0, 0, 0)
 
 
+async def test_features_built_over_several_batches_score_each_edge_once(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_square(admin_conn, 101, 1, (0, 0, 10, 10), PARK)
+    await add_square(admin_conn, 102, 5, (20, 0, 30, 10), PARK)
+    await add_road(admin_conn, 200, (201, 3, 5), (202, 25, 5))
+    await map_pending(mapper_pool.connection)
+
+    result = await enrich_pending(enricher_pool.connection, batch_size=1)
+
+    edges = await (await admin_conn.execute("SELECT count(*) FROM graph.edges")).fetchone()
+    assert edges is not None
+    assert sum(b.edges_scored for b in result.batches) == edges[0]
+    assert 0 < (await scores(admin_conn))[200]["green"] < 1
+
+
 async def test_failed_batch_leaves_everything_untouched(
     admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
