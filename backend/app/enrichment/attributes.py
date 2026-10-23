@@ -117,11 +117,13 @@ HEIGHT_CHANGE = """
         JOIN graph.edges e USING (id)
         JOIN graph.ways w ON w.id = e.way_id
     ),
-    layer AS (SELECT zoom, 2 ^ zoom AS tiles FROM ref.source_layers WHERE code = 'elevation'),
+    layer AS (
+        SELECT zoom, 2 ^ zoom AS tiles_across FROM ref.source_layers WHERE code = 'elevation'
+    ),
     points AS (
         SELECT e.id, (d).path[1] AS n, o.point,
-               floor((ST_X(o.point) + 180) / 360 * z.tiles)::int AS x,
-               floor((1 - asinh(tan(radians(ST_Y(o.point)))) / pi()) / 2 * z.tiles)::int AS y
+               floor((ST_X(o.point) + 180) / 360 * z.tiles_across)::int AS x,
+               floor((1 - asinh(tan(radians(ST_Y(o.point)))) / pi()) / 2 * z.tiles_across)::int AS y
         FROM edges e
         CROSS JOIN layer z
         CROSS JOIN LATERAL ST_DumpPoints(

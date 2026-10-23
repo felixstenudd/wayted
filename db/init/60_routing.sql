@@ -1260,9 +1260,10 @@ CREATE TYPE routing.evaluation AS (
 
 -- How much each of p_lines doubles (see routing.doubled_m), past what p_before already did when
 -- they carry it on, measured in order: p_lines come with p_bases, their scores as if nothing were
--- doubled, lowest first, and p_lengths. Doubling only adds to a score, so with p_keep, once a
--- line's base is above the p_keep-th best score measured, neither it nor any after it can be
--- among the p_keep best, and they are left NULL. NULL p_keep measures them all.
+-- doubled, lowest first, and p_lengths. Doubling only adds to a score, as routing.make_profile
+-- rejects negative settings, so with p_keep, once a line's base is above the p_keep-th best score
+-- measured, neither it nor any after it can be among the p_keep best, and they are left NULL.
+-- NULL p_keep measures them all.
 CREATE FUNCTION routing.doubled_in_order(
     p_profile          routing.profile,
     p_lines            geometry[],
@@ -1530,7 +1531,8 @@ LANGUAGE sql AS $$
                ) + p.m AS base
         FROM lines l JOIN totals t USING (n) JOIN penalties p USING (n)
     ),
-    -- Measured once a candidate; the joins below could otherwise measure it again.
+    -- In one call, lowest base first, so it can stop at the first candidate that cannot be among
+    -- the p_keep best.
     doubled AS MATERIALIZED (
         SELECT d.n, d.doubled_m
         FROM (
@@ -2062,10 +2064,11 @@ BEGIN
                 p_before,
                 v_kept
             ) e
-            ORDER BY e.score
+            -- Vias settle a tie, so the same request plans the same route.
+            ORDER BY e.score, e.vias
             LIMIT v_kept
         );
-        SELECT * INTO v_retry FROM unnest(v_ranked) e ORDER BY e.score LIMIT 1;
+        SELECT * INTO v_retry FROM unnest(v_ranked) e ORDER BY e.score, e.vias LIMIT 1;
         IF FOUND AND (v_best.vias IS NULL OR v_retry.score < v_best.score) THEN
             v_best := v_retry;
         END IF;
@@ -2088,7 +2091,7 @@ BEGIN
         SELECT d.* FROM (
             SELECT DISTINCT ON (e.vias) e.* FROM unnest(v_ranked) e ORDER BY e.vias, e.score
         ) d
-        ORDER BY d.score
+        ORDER BY d.score, d.vias
         LIMIT routing.setting(p_profile, 'plan', 'routed')::integer
     LOOP
         v_routed := routing.route_json(p_profile, p_area, v_try.vias, '{}');
@@ -2111,7 +2114,7 @@ BEGIN
                 SELECT DISTINCT ON (e.vias) e.* FROM unnest(v_ranked) e ORDER BY e.vias, e.score
             ) d
             WHERE d.vias <> v_vias
-            ORDER BY d.score
+            ORDER BY d.score, d.vias
             LIMIT routing.setting(p_profile, 'options', 'routed')::integer
         LOOP
             EXIT WHEN jsonb_array_length(v_options) >= p_options - 1;
@@ -2142,7 +2145,7 @@ BEGIN
             );
         END LOOP;
         v_options := coalesce((
-            SELECT jsonb_agg(o - 'score' ORDER BY (o ->> 'score')::double precision)
+            SELECT jsonb_agg(o - 'score' ORDER BY (o ->> 'score')::double precision, o -> 'vias')
             FROM jsonb_array_elements(v_options) o
         ), '[]');
     END IF;
