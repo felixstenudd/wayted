@@ -14,29 +14,30 @@ LAYER = "elevation"
 
 LAYER_ZOOM = "SELECT zoom FROM ref.source_layers WHERE code = %(layer)s"
 
-# The source files are read once a store, cut to the rectangle (with room for the tiles'
-# margins) and split, so a tile is cut from a few small rasters instead of the whole file.
+# The source files are read once a store and split on their own grid, so a tile is cut from a
+# few small rasters instead of the whole file, and from the same ones whatever the rectangle:
+# cut to the rectangle first, their corners would move in the last digit with it and change the
+# stored bytes of unchanged tiles.
 CREATE_SOURCE = """
     CREATE TEMP TABLE elevation_source (n int NOT NULL, rast raster NOT NULL) ON COMMIT DROP
 """
 
 LOAD_SOURCE = """
     INSERT INTO elevation_source (n, rast)
-    SELECT f.n, ST_Tile(c.rast, 100, 100)
+    SELECT f.n, c.rast
     FROM unnest(%(files)s::bytea[]) WITH ORDINALITY AS f(bytes, n)
-    CROSS JOIN LATERAL (
-        SELECT ST_Clip(
-            ST_FromGDALRaster(f.bytes),
-            ST_Expand(ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326), 0.01)
-        ) AS rast
-    ) c
-    WHERE c.rast IS NOT NULL
+    CROSS JOIN LATERAL ST_Tile(ST_FromGDALRaster(f.bytes), 100, 100) c(rast)
+    WHERE ST_Intersects(
+        ST_ConvexHull(c.rast),
+        ST_Expand(ST_MakeEnvelope(%(west)s, %(south)s, %(east)s, %(north)s, 4326), 0.01)
+    )
 """
 
 # Each tile is cut one cell wider than itself on every side, from every file it reaches into.
 # Files of different latitude bands have cells of different widths, so parts from another file
-# than the first are put on its grid before they are joined. A tile whose heights did not
-# change is not written, so the enricher is not woken for it.
+# than the first are put on its grid before they are joined, always in the same order so the
+# result is the same to the bit. A tile whose heights did not change is not written, so the
+# enricher is not woken for it.
 STORE_TILES = """
     WITH tiles AS (
         SELECT t.x, t.y, ST_Transform(ST_TileEnvelope(%(z)s, t.x, t.y), 4326) AS envelope
@@ -54,12 +55,15 @@ STORE_TILES = """
              )
     ),
     grids AS (
-        SELECT DISTINCT ON (x, y) x, y, rast FROM parts ORDER BY x, y, n
+        SELECT DISTINCT ON (x, y) x, y, rast
+        FROM parts
+        ORDER BY x, y, n, ST_UpperLeftY(rast) DESC, ST_UpperLeftX(rast)
     ),
     cut AS (
         SELECT p.x, p.y,
                ST_Union(CASE WHEN ST_SameAlignment(p.rast, g.rast) THEN p.rast
-                             ELSE ST_Resample(p.rast, g.rast) END) AS rast
+                             ELSE ST_Resample(p.rast, g.rast) END
+                        ORDER BY p.n, ST_UpperLeftY(p.rast) DESC, ST_UpperLeftX(p.rast)) AS rast
         FROM parts p JOIN grids g USING (x, y)
         GROUP BY p.x, p.y
     )
