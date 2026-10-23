@@ -4,9 +4,10 @@ counts users' segment reviews of queued edges.
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 from psycopg import AsyncConnection
-from psycopg.rows import TupleRow
+from psycopg.rows import TupleRow, dict_row
 
 from app.db import Connect, pipeline_lock
 
@@ -37,16 +38,23 @@ class EnrichResult:
 
 async def enrich_pending(connect: Connect, batch_size: int = 5000) -> EnrichResult:
     """Rebuild queued features and score queued edges, one transaction per batch, until done."""
+    async with connect() as conn:
+        cur = conn.cursor(row_factory=dict_row)
+        await cur.execute(queries.LAST_QUEUED_FEATURES)
+        backlog = await cur.fetchone()
+    assert backlog is not None
     batches: list[BatchResult] = []
     while True:
         async with connect() as conn, pipeline_lock(conn):
-            batch = await _enrich_batch(conn, batch_size)
+            batch = await _enrich_batch(conn, batch_size, backlog)
         if batch is None:
             return EnrichResult(tuple(batches))
         batches.append(batch)
 
 
-async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> BatchResult | None:
+async def _enrich_batch(
+    conn: AsyncConnection[TupleRow], batch_size: int, backlog: dict[str, Any]
+) -> BatchResult | None:
     async with conn.transaction():
         await conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         # As in the mapper: unanalyzed work tables make the planner compile small batches.
@@ -83,9 +91,9 @@ async def _enrich_batch(conn: AsyncConnection[TupleRow], batch_size: int) -> Bat
         edges_queued += (
             await conn.execute(queries.QUEUE_ON_CHANGED_ELEVATION, {"reach_m": HEIGHTS_REACH_M})
         ).rowcount
-        # Scores once every queued feature is built, as a later one would queue the same edges
-        # again; then sees the edges queued just above.
-        cur = await conn.execute(queries.HAS_PENDING_FEATURES)
+        # Scores once every feature queued before the run is built, as a later one would queue
+        # the same edges again; then sees the edges queued just above.
+        cur = await conn.execute(queries.HAS_EARLIER_FEATURES, backlog)
         row = await cur.fetchone()
         edges_scored = 0
         if row is not None and not row[0]:

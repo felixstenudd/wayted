@@ -110,21 +110,29 @@ async def test_failed_rectangle_does_not_affect_the_others(
 
 
 class SlowDownloader(FakeDownloader):
-    """Each fetch takes the seconds given for its call number; counts fetches in flight."""
+    """
+    Each fetch takes the seconds given for its call number and each store store_s; counts
+    rectangles from the start of their fetch to the end of their store.
+    """
 
-    def __init__(self, seconds: dict[int, float], max_requests: int) -> None:
+    def __init__(self, seconds: dict[int, float], max_requests: int, store_s: float = 0) -> None:
         super().__init__(max_requests=max_requests)
         self.seconds = seconds
+        self.store_s = store_s
         self.in_flight = 0
         self.most_in_flight = 0
 
     async def fetch(self, bounds: Bounds) -> int:
-        call = await super().fetch(bounds)
         self.in_flight += 1
         self.most_in_flight = max(self.most_in_flight, self.in_flight)
+        call = await super().fetch(bounds)
         await asyncio.sleep(self.seconds.get(call, 0.01))
-        self.in_flight -= 1
         return call
+
+    async def store(self, conn: AsyncConnection[TupleRow], payload: int) -> None:
+        await asyncio.sleep(self.store_s)
+        await super().store(conn, payload)
+        self.in_flight -= 1
 
 
 async def test_rectangles_are_fetched_up_to_max_requests_at_once(
@@ -139,6 +147,17 @@ async def test_rectangles_are_fetched_up_to_max_requests_at_once(
     assert [r.status for r in results] == [DownloadStatus.OK] * 3
     assert await fetched_tiles(admin_conn) == WEST | EAST | FAR
     assert await way_ids(admin_conn) == [1, 2, 3]
+
+
+async def test_a_rectangle_keeps_its_request_until_it_is_stored(
+    admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
+) -> None:
+    # Stores slower than fetches, as for a file already downloaded.
+    downloader = SlowDownloader({}, max_requests=2, store_s=0.1)
+    results = await download_tiles(downloader, WEST | EAST | FAR, downloader_pool.connection)
+
+    assert downloader.most_in_flight == 2
+    assert [r.status for r in results] == [DownloadStatus.OK] * 3
 
 
 async def test_store_failure_rolls_back_data_and_tiles(

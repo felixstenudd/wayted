@@ -21,7 +21,7 @@ async def download_tiles[P](
 ) -> list[RectangleResult]:
     """
     Fetch and store the tiles, one request per planned rectangle and up to the downloader's
-    max_requests at once. Results are in the planned order.
+    max_requests fetched and stored at once. Results are in the planned order.
 
     Every tile inside a stored rectangle is marked fetched for every layer of the downloader,
     including tiles that were only fetched to join clusters. A failed rectangle commits nothing
@@ -66,12 +66,14 @@ async def _download_rect[P](
     downloader: Downloader[P], rect: TileRect, slots: asyncio.Semaphore, connect: Connect
 ) -> RectangleResult:
     try:
+        # Held through the store too: a fetch served from a cache returns at once, and stores
+        # left to start together would take every connection in the pool.
         async with slots:
             payload = await downloader.fetch(rect.bounds)
-        async with connect() as conn, conn.transaction():
-            await downloader.store(conn, payload)
-            for layer in downloader.layers:
-                await mark_fetched(conn, layer, rect.tiles())
+            async with connect() as conn, conn.transaction():
+                await downloader.store(conn, payload)
+                for layer in downloader.layers:
+                    await mark_fetched(conn, layer, rect.tiles())
     except DownloadError as e:
         return RectangleResult(rect, e.status, e.message)
     except httpx.TimeoutException as e:

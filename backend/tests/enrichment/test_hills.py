@@ -174,6 +174,24 @@ async def test_a_point_takes_heights_from_its_own_tile(
     assert ascent_m == pytest.approx(0.05 * length_m, rel=0.05)
 
 
+@pytest.mark.parametrize("graded_first", [True, False])
+async def test_a_point_without_its_own_tile_reads_the_same_tile_whatever_was_stored_first(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, graded_first: bool
+) -> None:
+    # Two tiles reaching over the road, neither under its key; their centres are as near, so
+    # the lower key is read.
+    graded = (grade(0.05), Tile(TILE.x, TILE.y + 10, TILE.z))
+    flat = ("1000", Tile(TILE.x, TILE.y + 11, TILE.z))
+    for heights, tile in (graded, flat) if graded_first else (flat, graded):
+        await add_heights(admin_conn, heights, tile)
+    await add_road(admin_conn, EAST, (101, 1, 5), (102, 49, 5))
+
+    await run(mapper_pool, enricher_pool)
+
+    ascent_m, _, length_m = await climb(admin_conn, EAST)
+    assert ascent_m == pytest.approx(0.05 * length_m, rel=0.02)
+
+
 async def test_heights_arriving_after_the_edge_was_scored_rescore_it(
     admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
 ) -> None:

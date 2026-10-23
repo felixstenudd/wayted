@@ -110,11 +110,20 @@ CLAIM_EDGES = """
 
 HAS_PENDING_EDGES = "SELECT EXISTS (SELECT 1 FROM graph.pending_edges)"
 
-HAS_PENDING_FEATURES = """
-    SELECT EXISTS (SELECT 1 FROM enrich.pending_ways)
-        OR EXISTS (SELECT 1 FROM enrich.pending_relations)
-        OR EXISTS (SELECT 1 FROM enrich.pending_nodes)
-        OR EXISTS (SELECT 1 FROM enrich.pending_elevation)
+# The last row of each feature queue when a run starts. Scoring waits only for the rows up to
+# these, so downloads that keep queueing features cannot hold it back.
+LAST_QUEUED_FEATURES = """
+    SELECT (SELECT coalesce(max(id), 0) FROM enrich.pending_ways) AS last_way,
+           (SELECT coalesce(max(id), 0) FROM enrich.pending_relations) AS last_relation,
+           (SELECT coalesce(max(id), 0) FROM enrich.pending_nodes) AS last_node,
+           (SELECT coalesce(max(id), 0) FROM enrich.pending_elevation) AS last_elevation
+"""
+
+HAS_EARLIER_FEATURES = """
+    SELECT EXISTS (SELECT 1 FROM enrich.pending_ways WHERE id <= %(last_way)s)
+        OR EXISTS (SELECT 1 FROM enrich.pending_relations WHERE id <= %(last_relation)s)
+        OR EXISTS (SELECT 1 FROM enrich.pending_nodes WHERE id <= %(last_node)s)
+        OR EXISTS (SELECT 1 FROM enrich.pending_elevation WHERE id <= %(last_elevation)s)
 """
 
 

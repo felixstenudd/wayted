@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 import psycopg
 import pytest
 
@@ -116,6 +119,31 @@ async def test_features_built_over_several_batches_score_each_edge_once(
     assert edges is not None
     assert sum(b.edges_scored for b in result.batches) == edges[0]
     assert 0 < (await scores(admin_conn))[200]["green"] < 1
+
+
+async def test_features_queued_during_a_run_do_not_hold_scoring_back(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_square(admin_conn, 101, 1, (0, 0, 10, 10), PARK)
+    await add_road(admin_conn, 200, (201, 3, 5), (202, 7, 5))
+    await map_pending(mapper_pool.connection)
+    downloads = 10
+
+    @asynccontextmanager
+    async def connect_while_downloading() -> AsyncIterator[Conn]:
+        # A download storing the park again before each of the first batches.
+        nonlocal downloads
+        if downloads:
+            await admin_conn.execute("INSERT INTO enrich.pending_ways (way_id) VALUES (101)")
+            downloads -= 1
+        async with enricher_pool.connection() as conn:
+            yield conn
+
+    result = await enrich_pending(connect_while_downloading, batch_size=1)
+
+    assert downloads == 0
+    assert any(b.edges_scored for b in result.batches[: len(result.batches) // 2])
+    assert (await scores(admin_conn))[200]["green"] == 1
 
 
 async def test_failed_batch_leaves_everything_untouched(

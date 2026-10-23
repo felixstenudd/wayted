@@ -141,11 +141,14 @@ HEIGHT_CHANGE = """
         WHERE t.z = (SELECT zoom FROM layer) AND (t.x, t.y) IN (SELECT DISTINCT x, y FROM points)
     ),
     samples AS (
-        -- A point whose own tile is missing takes any tile reaching over it.
+        -- A point whose own tile is missing takes the tile reaching over it whose centre is
+        -- nearest, which has cells all around the point; the key settles a tie, so a rescore
+        -- reads the same tile.
         SELECT p.id, p.n, avg(CASE WHEN t.x IS NULL THEN (
                    SELECT ST_Value(f.rast, 1, p.point, true, 'bilinear')
                    FROM raw.elevation_tiles f
                    WHERE ST_Intersects(ST_ConvexHull(f.rast), p.point)
+                   ORDER BY ST_Centroid(ST_ConvexHull(f.rast)) <-> p.point, f.z, f.x, f.y
                    LIMIT 1
                ) ELSE ST_Value(t.rast, 1, p.point, true, 'bilinear') END) AS height
         FROM points p
