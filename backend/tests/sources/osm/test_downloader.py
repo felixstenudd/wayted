@@ -212,6 +212,18 @@ async def test_store_updates_moved_nodes_and_changed_ways(
 
 
 @pytest.mark.db
+async def test_an_element_listed_twice_is_stored_once(
+    admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
+) -> None:
+    node = OsmNode(id=1, tags={}, lon=18.0, lat=59.0)
+    async with httpx.AsyncClient() as client, downloader_pool.connection() as conn:
+        await OsmDownloader(client, [ROADS]).store(conn, OsmData([node, node], [], []))
+
+    cur = await admin_conn.execute("SELECT count(*) FROM raw.osm_nodes")
+    assert await cur.fetchone() == (1,)
+
+
+@pytest.mark.db
 async def test_empty_payload_stores_nothing(
     admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
 ) -> None:
