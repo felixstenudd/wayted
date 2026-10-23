@@ -1,3 +1,4 @@
+import asyncio
 import threading
 from typing import TypeAlias
 
@@ -20,6 +21,7 @@ Pool: TypeAlias = AsyncConnectionPool[AsyncConnection[TupleRow]]  # noqa: UP040
 # Two 2x2 clusters with a 2-column gap between them: merging them costs 4 extra tiles.
 WEST = {Tile(x=x, y=y, z=14) for x in (8800, 8801) for y in (4700, 4701)}
 EAST = {Tile(x=x, y=y, z=14) for x in (8804, 8805) for y in (4700, 4701)}
+FAR = {Tile(x=x, y=y, z=14) for x in (8808, 8809) for y in (4700, 4701)}
 
 
 class FakeDownloader:
@@ -30,12 +32,14 @@ class FakeDownloader:
         layers: tuple[str, ...] = ("roads",),
         max_extra_tiles: int = 0,
         max_tiles: int = 64,
+        max_requests: int = 1,
         fetch_errors: dict[int, Exception] | None = None,
         fail_store: bool = False,
     ) -> None:
         self.layers = layers
         self.max_extra_tiles = max_extra_tiles
         self.max_tiles = max_tiles
+        self.max_requests = max_requests
         self.fetch_errors = fetch_errors or {}
         self.fail_store = fail_store
         self.calls = 0
@@ -103,6 +107,38 @@ async def test_failed_rectangle_does_not_affect_the_others(
     ]
     assert await fetched_tiles(admin_conn) == EAST
     assert await way_ids(admin_conn) == [2]
+
+
+class SlowDownloader(FakeDownloader):
+    """Each fetch takes the seconds given for its call number; counts fetches in flight."""
+
+    def __init__(self, seconds: dict[int, float], max_requests: int) -> None:
+        super().__init__(max_requests=max_requests)
+        self.seconds = seconds
+        self.in_flight = 0
+        self.most_in_flight = 0
+
+    async def fetch(self, bounds: Bounds) -> int:
+        call = await super().fetch(bounds)
+        self.in_flight += 1
+        self.most_in_flight = max(self.most_in_flight, self.in_flight)
+        await asyncio.sleep(self.seconds.get(call, 0.01))
+        self.in_flight -= 1
+        return call
+
+
+async def test_rectangles_are_fetched_up_to_max_requests_at_once(
+    admin_conn: AsyncConnection[TupleRow], downloader_pool: Pool
+) -> None:
+    downloader = SlowDownloader({1: 0.1}, max_requests=2)
+    results = await download_tiles(downloader, WEST | EAST | FAR, downloader_pool.connection)
+
+    assert downloader.most_in_flight == 2
+    # The first rectangle finishes last but is still reported first.
+    assert [r.rect for r in results] == plan_rectangles(WEST | EAST | FAR, 0, 64)
+    assert [r.status for r in results] == [DownloadStatus.OK] * 3
+    assert await fetched_tiles(admin_conn) == WEST | EAST | FAR
+    assert await way_ids(admin_conn) == [1, 2, 3]
 
 
 async def test_store_failure_rolls_back_data_and_tiles(

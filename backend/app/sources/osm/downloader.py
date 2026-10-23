@@ -49,6 +49,7 @@ class OsmDownloader:
         layers: Sequence[OsmLayer],
         max_tiles: int = 64,
         max_extra_tiles: int = 16,
+        max_requests: int = 2,
     ) -> None:
         self.client = client
         self.layers = tuple(layer.code for layer in layers)
@@ -61,6 +62,8 @@ class OsmDownloader:
         ]
         self.max_tiles = max_tiles
         self.max_extra_tiles = max_extra_tiles
+        # The public Overpass instance runs two queries at a time per IP address.
+        self.max_requests = max_requests
 
     async def fetch(self, bounds: Bounds) -> OsmData:
         query = build_query(

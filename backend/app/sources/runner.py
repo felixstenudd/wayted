@@ -20,7 +20,8 @@ async def download_tiles[P](
     connect: Connect,
 ) -> list[RectangleResult]:
     """
-    Fetch and store the tiles, one request per planned rectangle.
+    Fetch and store the tiles, one request per planned rectangle and up to the downloader's
+    max_requests at once. Results are in the planned order.
 
     Every tile inside a stored rectangle is marked fetched for every layer of the downloader,
     including tiles that were only fetched to join clusters. A failed rectangle commits nothing
@@ -30,7 +31,16 @@ async def download_tiles[P](
     rects = await asyncio.to_thread(
         plan_rectangles, tiles, downloader.max_extra_tiles, downloader.max_tiles
     )
-    return [await _download_rect(downloader, rect, connect) for rect in rects]
+    slots = asyncio.Semaphore(downloader.max_requests)
+    try:
+        async with asyncio.TaskGroup() as group:
+            tasks = [
+                group.create_task(_download_rect(downloader, rect, slots, connect))
+                for rect in rects
+            ]
+    except ExceptionGroup as e:
+        raise e.exceptions[0] from None
+    return [task.result() for task in tasks]
 
 
 async def _check_zoom(layers: tuple[str, ...], tiles: Collection[Tile], connect: Connect) -> None:
@@ -53,10 +63,11 @@ async def _check_zoom(layers: tuple[str, ...], tiles: Collection[Tile], connect:
 
 
 async def _download_rect[P](
-    downloader: Downloader[P], rect: TileRect, connect: Connect
+    downloader: Downloader[P], rect: TileRect, slots: asyncio.Semaphore, connect: Connect
 ) -> RectangleResult:
     try:
-        payload = await downloader.fetch(rect.bounds)
+        async with slots:
+            payload = await downloader.fetch(rect.bounds)
         async with connect() as conn, conn.transaction():
             await downloader.store(conn, payload)
             for layer in downloader.layers:

@@ -98,6 +98,8 @@ class ElevationDownloader:
         self.layers: tuple[str, ...] = (LAYER,)
         self.max_tiles = max_tiles
         self.max_extra_tiles = max_extra_tiles
+        # One at a time, so a file two rectangles reach into is downloaded once.
+        self.max_requests = 1
         self.cached_files = cached_files
         self._files: OrderedDict[Cell, bytes | None] = OrderedDict()
 

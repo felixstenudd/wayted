@@ -36,6 +36,7 @@ class RoadDownloader:
 
     layers: tuple[str, ...] = ("roads", "parks")
     max_tiles = 64
+    max_requests = 2
 
     def __init__(
         self, max_extra_tiles: int = 0, fetch_errors: dict[int, Exception] | None = None
@@ -159,6 +160,43 @@ async def test_cycle_fetches_heights_with_the_roads(
     assert stored == WEST
     assert await fetched(admin_conn, elevation.LAYER) == WEST
     assert await fetched(admin_conn, "roads") == WEST
+    assert await queued(admin_conn) == {}
+
+
+class MeetingDownloader(OpenWaterDownloader):
+    """Fetches only once every downloader sharing the barrier is fetching."""
+
+    def __init__(self, layers: tuple[str, ...], barrier: asyncio.Barrier) -> None:
+        super().__init__()
+        self.layers = layers
+        self.barrier = barrier
+
+    async def fetch(self, bounds: Bounds) -> int:
+        async with asyncio.timeout(2):
+            await self.barrier.wait()
+        return await super().fetch(bounds)
+
+
+async def test_downloaders_fetch_side_by_side(
+    admin_conn: Conn, api_pool: Pool, downloader_pool: Pool, mapper_pool: Pool
+) -> None:
+    async with api_pool.connection() as conn:
+        await queue.request_area(
+            conn, bounds_for_tiles(WEST), layers=(*RoadDownloader.layers, elevation.LAYER)
+        )
+    barrier = asyncio.Barrier(2)
+
+    result = await worker.run_once(
+        [
+            MeetingDownloader(RoadDownloader.layers, barrier),
+            MeetingDownloader((elevation.LAYER,), barrier),
+        ],
+        downloader_pool.connection,
+        mapper_pool.connection,
+    )
+
+    assert result is not None
+    assert [r.status for r in result.rectangles] == [DownloadStatus.OK] * 2
     assert await queued(admin_conn) == {}
 
 

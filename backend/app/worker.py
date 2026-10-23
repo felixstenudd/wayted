@@ -57,14 +57,20 @@ async def run_once(
     if not claimed:
         return None
 
-    downloads: list[tuple[tuple[str, ...], list[RectangleResult]]] = []
-    for downloader in downloaders:
-        tiles: set[Tile] = set()
-        for layer in downloader.layers:
-            tiles |= claimed.get(layer, set())
-        if tiles:
-            results = await download_tiles(downloader, tiles, connect_downloader)
-            downloads.append((downloader.layers, results))
+    # Each downloader asks its own source, so they wait on the network side by side.
+    started: list[tuple[tuple[str, ...], asyncio.Task[list[RectangleResult]]]] = []
+    try:
+        async with asyncio.TaskGroup() as group:
+            for downloader in downloaders:
+                tiles: set[Tile] = set()
+                for layer in downloader.layers:
+                    tiles |= claimed.get(layer, set())
+                if tiles:
+                    task = group.create_task(download_tiles(downloader, tiles, connect_downloader))
+                    started.append((downloader.layers, task))
+    except ExceptionGroup as e:
+        raise e.exceptions[0] from None
+    downloads = [(downloader_layers, task.result()) for downloader_layers, task in started]
 
     mapped: MapResult | None = None
     mapper_error: str | None = None
