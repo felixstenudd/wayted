@@ -82,6 +82,26 @@ async def test_batches_of_one_give_the_same_result(
     assert green(await scores(admin_conn)) == pytest.approx(green(small))
 
 
+async def test_an_edge_queued_twice_is_scored_once(
+    admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool
+) -> None:
+    await add_square(admin_conn, 101, 1, (0, 0, 10, 10), PARK)
+    await add_road(admin_conn, 200, (201, 3, 5), (202, 7, 5))
+    await add_road(admin_conn, 300, (301, 0, 3), (302, 0, 7))
+    await run(mapper_pool, enricher_pool)
+    for _ in range(2):
+        await admin_conn.execute(
+            "INSERT INTO graph.pending_edges (edge_id) SELECT id FROM graph.edges ORDER BY id"
+        )
+
+    result = await enrich_pending(enricher_pool.connection, batch_size=1)
+
+    edges = await (await admin_conn.execute("SELECT count(*) FROM graph.edges")).fetchone()
+    assert edges is not None
+    assert [b.edges_scored for b in result.batches] == [1] * edges[0]
+    assert await queue_sizes(admin_conn) == (0, 0, 0, 0)
+
+
 async def test_failed_batch_leaves_everything_untouched(
     admin_conn: Conn, mapper_pool: Pool, enricher_pool: Pool, monkeypatch: pytest.MonkeyPatch
 ) -> None:

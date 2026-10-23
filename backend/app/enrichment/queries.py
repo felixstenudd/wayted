@@ -94,11 +94,16 @@ QUEUE_ON_CHANGED_ELEVATION = """
       ON e.geom && enrich.expand_m(ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326), %(reach_m)s)
 """
 
+# Every queue row of an edge at once: the mapper, features and elevation each queue the same
+# edge, and claiming rows instead scored it again in later batches.
 CLAIM_EDGES = """
-    WITH claimed AS (
-        DELETE FROM graph.pending_edges
-        WHERE id IN (SELECT id FROM graph.pending_edges ORDER BY id LIMIT %(batch_size)s)
-        RETURNING edge_id
+    WITH chosen AS (
+        SELECT edge_id FROM graph.pending_edges
+        GROUP BY edge_id ORDER BY min(id) LIMIT %(batch_size)s
+    ),
+    claimed AS (
+        DELETE FROM graph.pending_edges p USING chosen c WHERE p.edge_id = c.edge_id
+        RETURNING p.edge_id
     )
     INSERT INTO claimed_edges SELECT DISTINCT edge_id FROM claimed
 """
