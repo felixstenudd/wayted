@@ -300,6 +300,75 @@ async def test_evaluation_measures_a_via_as_the_route_will_pass_it(
     assert doubled_m == 0
 
 
+async def test_evaluating_for_the_best_few_keeps_them_as_they_are(
+    admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
+) -> None:
+    await grid(admin_conn, mapper_pool)
+
+    async def evaluated(keep: int | None) -> list[tuple[list[int], float]]:
+        async with api_pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                WITH p AS (SELECT routing.make_profile('running') AS p)
+                SELECT (e).vias, (e).score
+                FROM p, routing.evaluate(
+                    p.p, NULL, 4000,
+                    ARRAY(SELECT c FROM routing.loop_candidates(p.p, NULL, %s, 4000) c),
+                    NULL, %s
+                ) e
+                ORDER BY (e).score, (e).vias
+                """,
+                (node_id(12, 12), keep),
+            )
+            return [(vias, score) for vias, score in await cur.fetchall()]
+
+    every = await evaluated(None)
+    best = await evaluated(3)
+
+    assert len(best) < len(every)
+    assert best[:3] == every[:3]
+    assert all(candidate in every for candidate in best)
+
+
+async def test_doubling_is_measured_until_a_line_cannot_be_among_the_best(
+    admin_conn: Conn,
+) -> None:
+    # About 1 km out and back along the same street, and 2 km straight on.
+    out_and_back = (
+        f"LINESTRING({ORIGIN_LON} {ORIGIN_LAT}, {ORIGIN_LON + 0.018} {ORIGIN_LAT}, "
+        f"{ORIGIN_LON} {ORIGIN_LAT + 0.0001})"
+    )
+    straight = f"LINESTRING({ORIGIN_LON} {ORIGIN_LAT}, {ORIGIN_LON + 0.036} {ORIGIN_LAT})"
+
+    async def doubled(keep: int | None) -> list[float | None]:
+        cur = await admin_conn.execute(
+            """
+            SELECT routing.doubled_in_order(
+                routing.make_profile('running'),
+                ARRAY(SELECT ST_GeomFromText(w, 4326) FROM unnest(%s::text[]) w),
+                %s::double precision[], %s::double precision[], %s, NULL, NULL
+            )
+            """,
+            (
+                [out_and_back, straight, straight, straight, straight],
+                [0.1, 0.2, 0.3, 0.35, 5.0],
+                [2000.0] * 5,
+                keep,
+            ),
+        )
+        row = await cur.fetchone()
+        assert row is not None
+        measured: list[float | None] = row[0]
+        return measured
+
+    # The lowest base doubles itself out of the best two, so the third still counts; the fourth
+    # starts above the second best score.
+    first, *rest = await doubled(2)
+    assert first is not None and first > 500
+    assert rest == [0, 0, None, None]
+    assert None not in await doubled(None)
+
+
 async def test_candidate_that_must_turn_round_at_a_via_scores_as_missing_the_target(
     admin_conn: Conn, mapper_pool: Pool, api_pool: Pool
 ) -> None:

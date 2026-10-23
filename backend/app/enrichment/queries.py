@@ -94,16 +94,37 @@ QUEUE_ON_CHANGED_ELEVATION = """
       ON e.geom && enrich.expand_m(ST_Transform(ST_TileEnvelope(t.z, t.x, t.y), 4326), %(reach_m)s)
 """
 
+# Every queue row of an edge at once: the mapper, features and elevation each queue the same
+# edge, and claiming rows instead scored it again in later batches.
 CLAIM_EDGES = """
-    WITH claimed AS (
-        DELETE FROM graph.pending_edges
-        WHERE id IN (SELECT id FROM graph.pending_edges ORDER BY id LIMIT %(batch_size)s)
-        RETURNING edge_id
+    WITH chosen AS (
+        SELECT edge_id FROM graph.pending_edges
+        GROUP BY edge_id ORDER BY min(id) LIMIT %(batch_size)s
+    ),
+    claimed AS (
+        DELETE FROM graph.pending_edges p USING chosen c WHERE p.edge_id = c.edge_id
+        RETURNING p.edge_id
     )
     INSERT INTO claimed_edges SELECT DISTINCT edge_id FROM claimed
 """
 
 HAS_PENDING_EDGES = "SELECT EXISTS (SELECT 1 FROM graph.pending_edges)"
+
+# The last row of each feature queue when a run starts. Scoring waits only for the rows up to
+# these, so downloads that keep queueing features cannot hold it back.
+LAST_QUEUED_FEATURES = """
+    SELECT (SELECT coalesce(max(id), 0) FROM enrich.pending_ways) AS last_way,
+           (SELECT coalesce(max(id), 0) FROM enrich.pending_relations) AS last_relation,
+           (SELECT coalesce(max(id), 0) FROM enrich.pending_nodes) AS last_node,
+           (SELECT coalesce(max(id), 0) FROM enrich.pending_elevation) AS last_elevation
+"""
+
+HAS_EARLIER_FEATURES = """
+    SELECT EXISTS (SELECT 1 FROM enrich.pending_ways WHERE id <= %(last_way)s)
+        OR EXISTS (SELECT 1 FROM enrich.pending_relations WHERE id <= %(last_relation)s)
+        OR EXISTS (SELECT 1 FROM enrich.pending_nodes WHERE id <= %(last_node)s)
+        OR EXISTS (SELECT 1 FROM enrich.pending_elevation WHERE id <= %(last_elevation)s)
+"""
 
 
 def merge_scores_head(columns: tuple[str, ...] = ()) -> str:

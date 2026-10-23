@@ -47,6 +47,7 @@ class Downloader[P](Protocol):
     layers: tuple[str, ...]  # ref.source_layers codes, all at the same zoom
     max_tiles: int
     max_extra_tiles: int
+    max_requests: int  # rectangles fetched at once, as many as the source allows us
 
     async def fetch(self, bounds: Bounds) -> P: ...
 

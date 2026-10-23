@@ -27,6 +27,16 @@ CREATE TABLE graph.edges (
     -- ref.activities codes allowed from source to target, and back
     forward    text[]           NOT NULL,
     backward   text[]           NOT NULL,
+    -- azimuths of the line's first and last segment, leaving and arriving each way, for the turns
+    -- routing.turns_sql costs; stored, as working them out from geom slowed every route search
+    leaving_forward   double precision GENERATED ALWAYS AS
+                      (ST_Azimuth(ST_PointN(geom, 1), ST_PointN(geom, 2))) STORED,
+    arriving_forward  double precision GENERATED ALWAYS AS
+                      (ST_Azimuth(ST_PointN(geom, -2), ST_PointN(geom, -1))) STORED,
+    leaving_backward  double precision GENERATED ALWAYS AS
+                      (ST_Azimuth(ST_PointN(geom, -1), ST_PointN(geom, -2))) STORED,
+    arriving_backward double precision GENERATED ALWAYS AS
+                      (ST_Azimuth(ST_PointN(geom, 2), ST_PointN(geom, 1))) STORED,
     -- written by the enricher; '{}' until the edge is scored
     scores     jsonb            NOT NULL DEFAULT '{}',
     -- metres climbed and dropped from source to target, written by the enricher; NULL until it

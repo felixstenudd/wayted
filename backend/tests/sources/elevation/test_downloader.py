@@ -125,6 +125,18 @@ async def test_storing_the_same_heights_again_wakes_nothing(
     assert await height_at(admin_conn, WEST, 18.0007, 59.31) == 7
 
 
+async def test_a_tile_stored_again_with_another_rectangle_wakes_nothing(
+    admin_conn: Conn, downloader_pool: Pool
+) -> None:
+    rising = await rising_east(admin_conn)
+    await store(downloader_pool, ElevationData(EAST.bounds, (rising,)))
+    await admin_conn.execute("TRUNCATE enrich.pending_elevation")
+
+    await store(downloader_pool, ElevationData(RECT.bounds, (rising,)))
+
+    assert await queued(admin_conn) == [(14, WEST.x, WEST.y)]
+
+
 async def test_a_tile_across_two_files_with_other_cell_widths_has_both(
     admin_conn: Conn, downloader_pool: Pool
 ) -> None:
